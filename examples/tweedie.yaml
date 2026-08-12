@@ -1,0 +1,45 @@
+# Example RiskForge ExperimentConfig -- direct Tweedie GLM + GBM on the
+# synthetic portfolio (driver_age / vehicle_age / region / vehicle_brand).
+# Run via:
+#   uv run riskforge fit --config examples/tweedie.yaml
+# Assumes `data/synthetic.parquet` exists on disk. Generate it with:
+#   uv run python -c "from tests.conftest import make_synthetic_portfolio as m; \
+#     m(n=20000, seed=42).to_parquet('data/synthetic.parquet')"
+
+name: tweedie-v1
+data_path: data/synthetic.parquet
+
+spec:
+  target: claim_amount
+  exposure: exposure
+  claim_count: claim_count
+
+features:
+  - driver_age
+  - vehicle_age
+  - region
+  - vehicle_brand
+
+split: random
+test_size: 0.2
+random_state: 42
+
+models:
+  tweedie-glm:
+    kind: glm
+    params:
+      family: tweedie
+      link: log
+      exposure_col: exposure
+      tweedie_power: 1.5
+
+  tweedie-gbm:
+    kind: gbm
+    params:
+      objective: tweedie
+      exposure_col: exposure
+      tweedie_variance_power: 1.5
+      n_estimators: 50
+      num_leaves: 15
+      learning_rate: 0.05
+      random_state: 42
