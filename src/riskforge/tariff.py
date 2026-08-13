@@ -32,8 +32,10 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from sklearn.pipeline import Pipeline
 
 from riskforge.models import RiskGLM
+from riskforge.preprocessing import AutoBinner, AutoGrouper
 
 __all__ = ["export_tariff", "extract_tariff", "apply_tariff", "recalibrate_for_total"]
 
@@ -279,8 +281,54 @@ def recalibrate_for_total(
     return float(tariff["base_rate"] * (observed_total / predicted_total))
 
 
+def _pipeline_parts(estimator, X):
+    if not isinstance(estimator, Pipeline):
+        return estimator, X, pd.DataFrame()
+
+    rows = []
+    transformed = X
+    for _, step in estimator.steps[:-1]:
+        if isinstance(step, AutoBinner):
+            for feature, edges in step.mapping_.items():
+                labels = step._labels(np.arange(len(edges) + 2), edges)
+                rows.append(
+                    {
+                        "feature": feature,
+                        "role": "binned",
+                        "dtype": "category",
+                        "levels": ", ".join(labels),
+                        "n_levels": len(labels),
+                        "reference_level": "",
+                        "mapping": ", ".join(map(str, edges)),
+                    }
+                )
+        elif isinstance(step, AutoGrouper):
+            for feature, mapping in step.mapping_.items():
+                levels = sorted(set(mapping.values()), key=str)
+                rows.append(
+                    {
+                        "feature": feature,
+                        "role": "grouped",
+                        "dtype": "category",
+                        "levels": ", ".join(map(str, levels)),
+                        "n_levels": len(levels),
+                        "reference_level": "",
+                        "mapping": "; ".join(
+                            f"{level!r} -> {group!r}"
+                            for level, group in sorted(
+                                mapping.items(),
+                                key=lambda item: str(item[0]),
+                            )
+                        ),
+                    }
+                )
+        if transformed is not None:
+            transformed = step.transform(transformed)
+    return estimator.steps[-1][1], transformed, pd.DataFrame(rows)
+
+
 def export_tariff(
-    glm: RiskGLM,
+    glm: RiskGLM | Pipeline,
     path: str | Path,
     *,
     X: pd.DataFrame | None = None,
@@ -289,7 +337,7 @@ def export_tariff(
     reference: dict[str, str] | None = None,
     recalibrate: bool = True,
 ) -> Path:
-    """Write a multiplicative-tariff xlsx from a fitted ``RiskGLM``.
+    """Write a multiplicative-tariff xlsx from a fitted ``RiskGLM`` or pipeline.
 
     Three sheets per PRD section 3: ``base_rate`` / ``factors`` / ``mappings``.
     By default ``recalibrate=True`` and an ``(X, y, exposure_col)`` triple is
@@ -303,13 +351,16 @@ def export_tariff(
             "pass recalibrate=False for the structural (model-predictive) tariff."
         )
 
+    glm, transformed_X, upstream_mappings = _pipeline_parts(glm, X)
+    if not isinstance(glm, RiskGLM):
+        raise ValueError("export_tariff requires a RiskGLM or a pipeline ending in RiskGLM")
     tariff = extract_tariff(glm, reference=reference)
 
     recalibrated = False
     if recalibrate:
         exposure = np.asarray(X[exposure_col].to_numpy(), dtype=float)
         y_arr = np.asarray(y, dtype=float)
-        pred_total = float((np.asarray(glm.predict(X), dtype=float) * exposure).sum())
+        pred_total = float((np.asarray(glm.predict(transformed_X), dtype=float) * exposure).sum())
         obs_total = float(y_arr.sum())
         tariff["base_rate"] = recalibrate_for_total(
             tariff, predicted_total=pred_total, observed_total=obs_total
@@ -331,6 +382,8 @@ def export_tariff(
 
     factors_sheet = _factors_frame(tariff)
     mapping_sheet = tariff["mapping"]
+    if not upstream_mappings.empty:
+        mapping_sheet = pd.concat([mapping_sheet, upstream_mappings], ignore_index=True)
 
     p = Path(path)
     with pd.ExcelWriter(p, engine="openpyxl") as writer:

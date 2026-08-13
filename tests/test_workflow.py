@@ -186,6 +186,60 @@ def test_run_experiment_returns_estimators_when_requested(tmp_path: Path) -> Non
     assert hasattr(ests["gbm-tweedie"], "predict")
 
 
+def test_preprocessing_and_frequency_severity_run_end_to_end(tmp_path: Path) -> None:
+    data = _write_portfolio(tmp_path, n=4000)
+    models = """\
+  direct:
+    kind: glm
+    params:
+      family: tweedie
+      link: log
+      tweedie_power: 1.5
+  freq-sev:
+    kind: frequency_severity
+    frequency:
+      kind: glm
+      params:
+        family: poisson
+        link: log
+    severity:
+      kind: glm
+      params:
+        family: gamma
+        link: log
+"""
+    body = _basic_yaml(str(data), models=models).replace(
+        "models:\n",
+        """preprocessing:
+  binner:
+    cols: [driver_age, vehicle_age]
+    strategy: tree
+    max_bins: 4
+  grouper:
+    cols: [region, vehicle_brand]
+    strategy: rare
+    min_exposure: 10
+models:
+""",
+    )
+    cfg = ExperimentConfig.from_yaml(_write_yaml(tmp_path, body))
+
+    run, estimators = run_experiment(cfg, return_estimators=True)
+
+    from sklearn.pipeline import Pipeline
+
+    from riskforge.models import FrequencySeverityModel, RiskGLM
+
+    assert set(run.models) == {"direct", "freq-sev"}
+    assert all(isinstance(estimator, Pipeline) for estimator in estimators.values())
+    assert isinstance(estimators["direct"].named_steps["model"], RiskGLM)
+    assert isinstance(
+        estimators["freq-sev"].named_steps["model"], FrequencySeverityModel
+    )
+    assert estimators["direct"].named_steps["model"].exposure_col == "exposure"
+    assert np.isfinite(run["freq-sev"].metrics["deviance_test"])
+
+
 def test_run_experiment_temporal_split_requires_time_col(tmp_path: Path) -> None:
     data = _write_portfolio(tmp_path, n=2000)
     body = _basic_yaml(str(data)).replace("split: random", "split: temporal")

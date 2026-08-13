@@ -11,12 +11,6 @@ column is popped inside ``RiskGLM`` / ``RiskGBM``); diagnostics use aggregate
 ``claim_amount`` as ``y_true`` and the predicted pure premium (rate) as
 ``y_pred`` with ``sample_weight = exposure``.
 
-Deliberate ceilings (ponytail):
-  * ModelSpec supports ``glm`` and ``gbm`` only. ``FrequencySeverityModel``
-    needs nested freq/sev sub-specs -- add when a config wants it.
-  * No preprocessing in the config -- raw features feed the estimator directly.
-    ``AutoBinner`` / ``AutoGrouper`` step wiring is M6 territory (tariff
-    pipeline).
 """
 
 from __future__ import annotations
@@ -28,7 +22,9 @@ from typing import Any, Literal
 import numpy as np
 import pandas as pd
 import yaml
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import FunctionTransformer
 
 from riskforge.data import DatasetSpec, load_data
 from riskforge.metrics import (
@@ -38,16 +34,38 @@ from riskforge.metrics import (
     mean_tweedie_deviance,
     op_ratio,
 )
-from riskforge.models import RiskGBM, RiskGLM
+from riskforge.models import FrequencySeverityModel, RiskGBM, RiskGLM
+from riskforge.preprocessing import AutoBinner, AutoGrouper
 from riskforge.validation import temporal_split
 
 __all__ = [
+    "PreprocessingSpec",
     "ModelSpec",
     "ExperimentConfig",
     "ModelResult",
     "Run",
     "run_experiment",
 ]
+
+
+class PreprocessingSpec(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    binner: dict[str, Any] | None = None
+    grouper: dict[str, Any] | None = None
+
+    def build_steps(self, spec: DatasetSpec) -> list[tuple[str, Any]]:
+        special = {
+            "exposure_col": spec.exposure,
+            "claim_count_col": spec.claim_count,
+            "target_col": spec.target,
+        }
+        steps = []
+        if self.binner is not None:
+            steps.append(("binner", AutoBinner(**{**self.binner, **special})))
+        if self.grouper is not None:
+            steps.append(("grouper", AutoGrouper(**{**self.grouper, **special})))
+        return steps
 
 
 class ModelSpec(BaseModel):
@@ -60,14 +78,44 @@ class ModelSpec(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    kind: Literal["glm", "gbm"] = "glm"
+    kind: Literal["glm", "gbm", "frequency_severity"] = "glm"
     params: dict[str, Any] = Field(default_factory=dict)
+    frequency: ModelSpec | None = None
+    severity: ModelSpec | None = None
 
-    def build(self):
+    @model_validator(mode="after")
+    def _validate_nested_specs(self):
+        nested = self.frequency is not None or self.severity is not None
+        if self.kind == "frequency_severity":
+            if self.frequency is None or self.severity is None:
+                raise ValueError("frequency_severity requires frequency and severity specs")
+            if (
+                self.frequency.kind == "frequency_severity"
+                or self.severity.kind == "frequency_severity"
+            ):
+                raise ValueError("nested frequency_severity models are not supported")
+        elif nested:
+            raise ValueError("frequency and severity specs require kind=frequency_severity")
+        return self
+
+    def build(self, dataset_spec: DatasetSpec | None = None):
         """Construct the (unfitted) estimator from this spec."""
+        if self.kind == "frequency_severity":
+            if dataset_spec is None or dataset_spec.claim_count is None:
+                raise ValueError("frequency_severity requires spec.claim_count")
+            return FrequencySeverityModel(
+                freq=self.frequency.build(),
+                sev=self.severity.build(),
+                exposure_col=dataset_spec.exposure,
+                claim_count_col=dataset_spec.claim_count,
+                claim_amount_col=dataset_spec.target,
+            )
+        params = dict(self.params)
+        if dataset_spec is not None:
+            params["exposure_col"] = dataset_spec.exposure
         if self.kind == "glm":
-            return RiskGLM(**self.params)
-        return RiskGBM(**self.params)
+            return RiskGLM(**params)
+        return RiskGBM(**params)
 
 
 class ExperimentConfig(BaseModel):
@@ -84,6 +132,7 @@ class ExperimentConfig(BaseModel):
     data_path: str
     spec: DatasetSpec
     features: list[str] | None = None
+    preprocessing: PreprocessingSpec | None = None
     split: Literal["random", "temporal"] = "random"
     test_size: float = 0.2
     random_state: int = 42
@@ -179,6 +228,10 @@ def _deviance_test(
     return float(mean_tweedie_deviance(obs_rate, pred_rate, sample_weight=exposure))
 
 
+def _drop_columns(X: pd.DataFrame, *, columns: list[str]) -> pd.DataFrame:
+    return X.drop(columns=columns)
+
+
 def run_experiment(config: ExperimentConfig, *, return_estimators: bool = False):
     """Execute an ``ExperimentConfig`` end-to-end. Returns a ``Run``.
 
@@ -204,8 +257,6 @@ def run_experiment(config: ExperimentConfig, *, return_estimators: bool = False)
     if target not in df.columns:
         raise ValueError(f"spec.target {target!r} not in data columns")
 
-    X_train = train_df[feature_names + [exposure_col]]
-    X_test = test_df[feature_names + [exposure_col]]
     y_train = (train_df[target] / train_df[exposure_col]).to_numpy(dtype=float)
     obs_train_agg = train_df[target].to_numpy(dtype=float)
     obs_test_agg = test_df[target].to_numpy(dtype=float)
@@ -215,7 +266,29 @@ def run_experiment(config: ExperimentConfig, *, return_estimators: bool = False)
     results: dict[str, ModelResult] = {}
     estimators: dict[str, Any] = {}
     for name, spec in config.models.items():
-        estimator = spec.build()
+        columns = [*feature_names, exposure_col]
+        if config.preprocessing is not None or spec.kind == "frequency_severity":
+            columns.append(target)
+            if config.spec.claim_count is not None:
+                columns.append(config.spec.claim_count)
+        columns = list(dict.fromkeys(columns))
+        X_train = train_df[columns]
+        X_test = test_df[columns]
+
+        estimator = spec.build(config.spec)
+        if config.preprocessing is not None:
+            steps = config.preprocessing.build_steps(config.spec)
+            if spec.kind != "frequency_severity":
+                specials = [target]
+                if config.spec.claim_count is not None:
+                    specials.append(config.spec.claim_count)
+                steps.append(
+                    (
+                        "drop_specials",
+                        FunctionTransformer(_drop_columns, kw_args={"columns": specials}),
+                    )
+                )
+            estimator = Pipeline([*steps, ("model", estimator)])
         estimator.fit(X_train, y_train)
         pred_train = np.asarray(estimator.predict(X_train), dtype=float)
         pred_test = np.asarray(estimator.predict(X_test), dtype=float)
@@ -232,10 +305,14 @@ def run_experiment(config: ExperimentConfig, *, return_estimators: bool = False)
             ),
         }
         cal = calibration_table(obs_test_agg, pred_test, exp_test, n_bins=10)
+        params = dict(spec.params)
+        if spec.kind == "frequency_severity":
+            params["frequency"] = spec.frequency.model_dump(exclude_none=True)
+            params["severity"] = spec.severity.model_dump(exclude_none=True)
         results[name] = ModelResult(
             name=name,
             kind=spec.kind,
-            params=dict(spec.params),
+            params=params,
             metrics=metrics,
             calibration_table=cal,
         )

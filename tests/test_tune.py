@@ -173,6 +173,17 @@ def test_tune_experiment_rejects_zero_trials(tmp_path: Path) -> None:
         tune_experiment(cfg, n_trials=0)
 
 
+def test_tune_experiment_rejects_frequency_severity(tmp_path: Path) -> None:
+    freq_sev = ModelSpec(
+        kind="frequency_severity",
+        frequency=ModelSpec(kind="glm", params={"family": "poisson", "link": "log"}),
+        severity=ModelSpec(kind="glm", params={"family": "gamma", "link": "log"}),
+    )
+    cfg = _config(tmp_path, models={"freq-sev": freq_sev})
+    with pytest.raises(ValueError, match="frequency_severity"):
+        tune_experiment(cfg, n_trials=1)
+
+
 def test_tune_experiment_best_value_is_a_real_objective(tmp_path: Path) -> None:
     """The best value should match the same objective evaluated on the final
     run's metrics (deviance + penalty * |1 - op|)."""

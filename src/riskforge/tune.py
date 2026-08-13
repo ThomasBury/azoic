@@ -141,6 +141,12 @@ def tune_experiment(
     """
     if n_trials < 1:
         raise ValueError(f"n_trials must be >= 1; got {n_trials}")
+    unsupported = [
+        name for name, spec in config.models.items()
+        if spec.kind == "frequency_severity"
+    ]
+    if unsupported:
+        raise ValueError(f"tuning frequency_severity models is not supported: {unsupported}")
     optuna = _import_optuna()
 
     best_params: dict[str, dict[str, Any]] = {}

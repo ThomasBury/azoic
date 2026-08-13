@@ -192,14 +192,14 @@ def export_tariff(
             f"model {model!r} not in config models {list(ests)}; check the YAML `models:` keys."
         )
     est = ests[model]
-    if not isinstance(est, RiskGLM):
+    final_est = est.steps[-1][1] if hasattr(est, "steps") else est
+    if not isinstance(final_est, RiskGLM):
         raise typer.BadParameter(
-            f"model {model!r} is a {type(est).__name__}; export-tariff requires a RiskGLM."
+            f"model {model!r} ends in {type(final_est).__name__}; export-tariff requires a RiskGLM."
         )
 
     df = load_data(cfg.data_path, spec=cfg.spec)
-    feats = cfg.feature_columns(df)
-    X = df[feats + [cfg.spec.exposure]]
+    X = df[list(est.feature_names_in_)]
     y = df[cfg.spec.target]
 
     _export_tariff(

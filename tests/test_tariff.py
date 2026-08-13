@@ -311,6 +311,56 @@ def test_export_tariff_custom_reference_applied(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
+def test_export_tariff_unwraps_preprocessing_pipeline(tmp_path: Path) -> None:
+    from riskforge.workflow import ExperimentConfig, ModelSpec, run_experiment
+
+    df = make_synthetic_portfolio(n=3000, seed=42)
+    data = tmp_path / "portfolio.parquet"
+    df.to_parquet(data)
+    cfg = ExperimentConfig(
+        data_path=str(data),
+        spec={
+            "target": "claim_amount",
+            "exposure": "exposure",
+            "claim_count": "claim_count",
+        },
+        features=["driver_age", "vehicle_age", "region", "vehicle_brand"],
+        preprocessing={
+            "binner": {"cols": ["driver_age", "vehicle_age"], "max_bins": 4},
+            "grouper": {"cols": ["region", "vehicle_brand"], "strategy": "rare"},
+        },
+        models={
+            "glm": ModelSpec(
+                kind="glm",
+                params={"family": "tweedie", "link": "log", "tweedie_power": 1.5},
+            )
+        },
+    )
+    _, estimators = run_experiment(cfg, return_estimators=True)
+    pipeline = estimators["glm"]
+    X = df[list(pipeline.feature_names_in_)]
+    out = tmp_path / "pipeline-tariff.xlsx"
+
+    export_tariff(
+        pipeline,
+        out,
+        X=X,
+        y=df["claim_amount"],
+        exposure_col="exposure",
+    )
+
+    mappings = pd.read_excel(out, sheet_name="mappings")
+    assert {"binned", "grouped"}.issubset(set(mappings["role"]))
+
+    transformed = X
+    for _, step in pipeline.steps[:-1]:
+        transformed = step.transform(transformed)
+    tariff = extract_tariff(pipeline.named_steps["model"])
+    tariff["base_rate"] = pd.read_excel(out, sheet_name="base_rate").loc[0, "base_rate"]
+    predicted_total = float((apply_tariff(tariff, transformed) * df["exposure"]).sum())
+    assert predicted_total == pytest.approx(df["claim_amount"].sum())
+
+
 def test_m6_acceptance_tariff_reproduces_portfolio_total(tmp_path: Path) -> None:
     """M6 done-when: the recalibrated xlsx tariff, reapplied to the portfolio,
     reproduces the total observed claim amount within tight tolerance."""
