@@ -85,6 +85,7 @@ def log_run(
                 "experiment.split": run.config.split,
                 "experiment.test_size": float(run.config.test_size),
                 "experiment.random_state": int(run.config.random_state),
+                "experiment.data_fingerprint": run.data_fingerprint,
                 "experiment.n_rows": int(run.n_rows),
                 "experiment.n_train": int(run.n_train),
                 "experiment.n_test": int(run.n_test),

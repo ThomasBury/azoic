@@ -77,6 +77,7 @@ def _render_markdown(run: Run) -> str:
         f"- data: `{cfg.data_path}`",
         f"- split: `{cfg.split}` (test_size={cfg.test_size}, random_state={cfg.random_state})",
         f"- target: `{cfg.spec.target}`  exposure: `{cfg.spec.exposure}`",
+        f"- data fingerprint: `{run.data_fingerprint}`",
         f"- rows: {run.n_rows}  (train {run.n_train} / test {run.n_test})",
         f"- features ({len(run.feature_names)}): "
         + ", ".join(f"`{c}`" for c in run.feature_names),

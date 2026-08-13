@@ -21,6 +21,7 @@ Deliberate ceilings (ponytail):
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 from typing import Any, Literal
 
@@ -127,6 +128,7 @@ class Run(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid", arbitrary_types_allowed=True)
 
     config: ExperimentConfig
+    data_fingerprint: str
     n_rows: int
     n_train: int
     n_test: int
@@ -152,6 +154,15 @@ def _split_indices(
     if not 0 < n_test < len(df):
         raise ValueError(f"`test_size` resolves to {n_test}; must be 1..{len(df) - 1}")
     return perm[n_test:], perm[:n_test]
+
+
+def _data_fingerprint(df: pd.DataFrame) -> str:
+    digest = hashlib.sha256()
+    digest.update(str(df.shape).encode())
+    digest.update(pd.util.hash_pandas_object(df.columns, index=False).to_numpy().tobytes())
+    digest.update("\0".join(map(str, df.dtypes)).encode())
+    digest.update(pd.util.hash_pandas_object(df, index=True).to_numpy().tobytes())
+    return digest.hexdigest()
 
 
 def _deviance_test(
@@ -232,6 +243,7 @@ def run_experiment(config: ExperimentConfig, *, return_estimators: bool = False)
 
     run = Run(
         config=config,
+        data_fingerprint=_data_fingerprint(df),
         n_rows=int(len(df)),
         n_train=int(len(train_df)),
         n_test=int(len(test_df)),

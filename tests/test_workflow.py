@@ -13,6 +13,7 @@ from riskforge.workflow import (
     ModelResult,
     ModelSpec,
     Run,
+    _data_fingerprint,
     run_experiment,
 )
 from tests.conftest import make_synthetic_portfolio
@@ -144,6 +145,7 @@ def test_run_experiment_basic_returns_run_with_results(tmp_path: Path) -> None:
     run = run_experiment(cfg)
 
     assert isinstance(run, Run)
+    assert len(run.data_fingerprint) == 64
     assert run.n_rows == 4000
     assert run.n_train + run.n_test == run.n_rows
     assert run.n_test == int(round(4000 * 0.2))
@@ -161,6 +163,17 @@ def test_run_experiment_basic_returns_run_with_results(tmp_path: Path) -> None:
         assert "o_p_ratio" in res.calibration_table.columns
     # __getitem__ access.
     assert run["glm-tweedie"].name == "glm-tweedie"
+
+
+def test_data_fingerprint_covers_values_columns_dtypes_and_index() -> None:
+    df = pd.DataFrame({"x": [1, 2]}, index=[10, 20]).astype({"x": "int64"})
+    fingerprint = _data_fingerprint(df)
+
+    assert _data_fingerprint(df.copy()) == fingerprint
+    assert _data_fingerprint(df.assign(x=[1, 3])) != fingerprint
+    assert _data_fingerprint(df.rename(columns={"x": "y"})) != fingerprint
+    assert _data_fingerprint(df.astype({"x": "float64"})) != fingerprint
+    assert _data_fingerprint(df.set_axis([11, 20])) != fingerprint
 
 
 def test_run_experiment_returns_estimators_when_requested(tmp_path: Path) -> None:

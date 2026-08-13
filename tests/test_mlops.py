@@ -89,6 +89,7 @@ def test_log_run_returns_run_id_and_records_experiment_params(tmp_path: Path) ->
     assert int(data.params["experiment.n_rows"]) == run.n_rows
     assert int(data.params["experiment.n_train"]) == run.n_train
     assert int(data.params["experiment.n_test"]) == run.n_test
+    assert data.params["experiment.data_fingerprint"] == run.data_fingerprint
     assert "experiment.feature_names" in data.params
 
 

@@ -44,6 +44,7 @@ def test_model_card_md_contains_run_and_model_summary(tmp_path: Path) -> None:
     assert "Model: `glm-tweedie` (glm)" in md
     assert "gini (test):" in md
     assert "O/P ratio (test):" in md
+    assert run.data_fingerprint in md
     assert "Calibration table" in md
     # Calibration table preview header row + a separator row.
     assert "| group |" in md
