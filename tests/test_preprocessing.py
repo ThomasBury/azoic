@@ -12,7 +12,7 @@ import pandas as pd
 import pytest
 from sklearn.utils.estimator_checks import parametrize_with_checks
 
-from riskforge.preprocessing import AutoBinner, AutoGrouper
+from riskforge.preprocessing import AutoBinner, AutoGrouper, _merge_small_bins
 from tests.conftest import make_synthetic_portfolio
 
 
@@ -79,6 +79,28 @@ def test_autobinner_min_exposure_merges_small_bins() -> None:
     codes = np.searchsorted(edges, df["driver_age"].to_numpy(), side="right")
     exp_per = np.bincount(codes, weights=df["exposure"].to_numpy(), minlength=len(edges) + 1)
     assert (exp_per >= big_floor - 1e-9).all()
+
+
+def test_merge_small_bins_matches_rebinning_algorithm() -> None:
+    rng = np.random.default_rng(42)
+    values = rng.normal(size=2000)
+    weights = rng.uniform(0.1, 2.0, size=len(values))
+    original = np.quantile(values, np.linspace(0, 1, 21)[1:-1])
+
+    edges = list(original)
+    while edges:
+        codes = np.searchsorted(np.asarray(edges), values, side="right")
+        bin_weights = np.bincount(codes, weights=weights, minlength=len(edges) + 1)
+        small = np.flatnonzero(bin_weights < 150.0)
+        if len(small) == 0:
+            break
+        index = int(small[0])
+        edges.pop(0 if index == 0 else -1 if index >= len(edges) else index)
+
+    np.testing.assert_array_equal(
+        _merge_small_bins(values, weights, original, 150.0),
+        np.asarray(edges),
+    )
 
 
 def test_autobinner_set_mapping_roundtrip() -> None:

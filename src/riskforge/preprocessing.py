@@ -37,30 +37,28 @@ def _to_frame(X):
 
 
 def _merge_small_bins(values, weights, edges, min_weight):
-    """Iteratively merge bins below the weight floor into an adjacent bin.
-
-    ponytail: O(n * n_bins) repetitive re-binning; fine until >1e6 rows.
-    """
+    """Iteratively merge bins below the weight floor into an adjacent bin."""
     if min_weight is None or len(edges) == 0:
         return edges
     total = float(weights.sum())
     if total < min_weight:
         return np.array([])  # impossible to satisfy any floor; single bin
-    v, w = values, weights
     edges = list(edges)
+    codes = np.searchsorted(np.asarray(edges), values, side="right")
+    bin_weights = np.bincount(codes, weights=weights, minlength=len(edges) + 1).tolist()
     while edges:
-        codes = np.searchsorted(np.array(edges), v, side="right")
-        exp_per = np.bincount(codes, weights=w, minlength=len(edges) + 1)
-        small = np.where(exp_per < min_weight)[0]
-        if len(small) == 0:
+        small = next((i for i, weight in enumerate(bin_weights) if weight < min_weight), None)
+        if small is None:
             break
-        i = int(small[0])
-        if i == 0:
+        if small == 0:
             edges.pop(0)
-        elif i >= len(edges):
+            bin_weights[0] += bin_weights.pop(1)
+        elif small >= len(edges):
             edges.pop(-1)
+            bin_weights[-2] += bin_weights.pop()
         else:
-            edges.pop(i)
+            edges.pop(small)
+            bin_weights[small] += bin_weights.pop(small + 1)
     return np.array(edges, dtype=float)
 
 
