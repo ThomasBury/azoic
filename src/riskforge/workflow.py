@@ -30,7 +30,6 @@ from riskforge.data import DatasetSpec, load_data
 from riskforge.metrics import (
     calibration_table,
     gini,
-    mean_poisson_deviance,
     mean_tweedie_deviance,
     op_ratio,
 )
@@ -60,7 +59,12 @@ class PreprocessingSpec(BaseModel):
             "claim_count_col": spec.claim_count,
             "target_col": spec.target,
         }
-        steps = []
+        fit_columns = [spec.target]
+        if spec.claim_count is not None:
+            fit_columns.append(spec.claim_count)
+        steps = [
+            ("fit_columns", FunctionTransformer(_ensure_columns, kw_args={"columns": fit_columns}))
+        ]
         if self.binner is not None:
             steps.append(("binner", AutoBinner(**{**self.binner, **special})))
         if self.grouper is not None:
@@ -136,7 +140,19 @@ class ExperimentConfig(BaseModel):
     split: Literal["random", "temporal"] = "random"
     test_size: float = 0.2
     random_state: int = 42
-    models: dict[str, ModelSpec]
+    models: dict[str, ModelSpec] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _validate_features(self):
+        if self.features is None:
+            return self
+        duplicates = sorted({name for name in self.features if self.features.count(name) > 1})
+        if duplicates:
+            raise ValueError(f"features must be unique; duplicates: {duplicates}")
+        special_features = sorted(set(self.features) & set(self.spec.required_columns()))
+        if special_features:
+            raise ValueError(f"features contains special columns: {special_features}")
+        return self
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> ExperimentConfig:
@@ -164,7 +180,6 @@ class ModelResult(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid", arbitrary_types_allowed=True)
 
-    name: str
     kind: str
     params: dict[str, Any]
     metrics: dict[str, float]
@@ -184,13 +199,8 @@ class Run(BaseModel):
     feature_names: list[str]
     models: dict[str, ModelResult]
 
-    def __getitem__(self, name: str) -> ModelResult:
-        return self.models[name]
 
-
-def _split_indices(
-    config: ExperimentConfig, df: pd.DataFrame
-) -> tuple[np.ndarray, np.ndarray]:
+def _split_indices(config: ExperimentConfig, df: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
     """(train_idx, test_idx) positional indices into ``df``."""
     if config.split == "temporal":
         time_col = config.spec.time_col
@@ -216,40 +226,58 @@ def _data_fingerprint(df: pd.DataFrame) -> str:
 
 def _deviance_test(
     *,
-    family_hint: str,
     obs_rate: np.ndarray,
     pred_rate: np.ndarray,
     exposure: np.ndarray,
 ) -> float:
-    """Tweedie (p=1.5) deviance for GLM/GBM Tweedie fits, Poisson for Poisson
-    frequency fits -- otherwise default to Tweedie p=1.5 (pure premium)."""
-    if "poisson" in family_hint and "tweedie" not in family_hint:
-        return float(mean_poisson_deviance(obs_rate, pred_rate, sample_weight=exposure))
-    return float(mean_tweedie_deviance(obs_rate, pred_rate, sample_weight=exposure))
+    """Exposure-weighted mean Tweedie deviance with fixed pure-premium power 1.5."""
+    return float(
+        mean_tweedie_deviance(
+            obs_rate,
+            pred_rate,
+            sample_weight=exposure,
+            power=1.5,
+        )
+    )
+
+
+def _validate_portfolio(config: ExperimentConfig, df: pd.DataFrame) -> None:
+    exposure = df[config.spec.exposure].to_numpy(dtype=float)
+    target = df[config.spec.target].to_numpy(dtype=float)
+    if not np.isfinite(exposure).all() or np.any(exposure <= 0):
+        raise ValueError("exposure must contain only positive finite values")
+    if not np.isfinite(target).all() or np.any(target < 0):
+        raise ValueError("target must contain only non-negative finite values")
+    if config.spec.claim_count is None:
+        return
+    claim_count = df[config.spec.claim_count].to_numpy(dtype=float)
+    if not np.isfinite(claim_count).all() or np.any(claim_count < 0):
+        raise ValueError("claim_count must contain only non-negative finite values")
+    if np.any((claim_count == 0) != (target == 0)):
+        raise ValueError("claim_count and target rows must be zero or positive together")
+
+
+def _ensure_columns(X: pd.DataFrame, *, columns: list[str]) -> pd.DataFrame:
+    missing = {column: 0.0 for column in columns if column not in X.columns}
+    return X.assign(**missing)
 
 
 def _drop_columns(X: pd.DataFrame, *, columns: list[str]) -> pd.DataFrame:
-    return X.drop(columns=columns)
+    return X.drop(columns=columns, errors="ignore")
 
 
-def run_experiment(config: ExperimentConfig, *, return_estimators: bool = False):
-    """Execute an ``ExperimentConfig`` end-to-end. Returns a ``Run``.
-
-    Pipeline: ``load_data`` -> split (random or temporal) -> for each named
-    model spec, build + fit on the train rows -> predict on both sets ->
-    metrics + calibration table on the test set. ``return_estimators=True``
-    also returns ``{name: fitted_estimator}`` alongside the ``Run`` so callers
-    (CLI export, M6 tariff) can reach the fitted estimator.
-    """
-    df = load_data(config.data_path, spec=config.spec)
-    if len(df) == 0:
-        raise ValueError("loaded dataset is empty")
-
+def _evaluate_split(
+    config: ExperimentConfig,
+    df: pd.DataFrame,
+    train_idx: np.ndarray,
+    test_idx: np.ndarray,
+    *,
+    return_estimators: bool = False,
+):
+    """Fit and score one explicit train/test partition."""
     feature_names = config.feature_columns(df)
     if not feature_names:
         raise ValueError("no feature columns resolved; check `features` / `spec`")
-
-    train_idx, test_idx = _split_indices(config, df)
     train_df, test_df = df.iloc[train_idx], df.iloc[test_idx]
 
     target = config.spec.target
@@ -298,7 +326,6 @@ def run_experiment(config: ExperimentConfig, *, return_estimators: bool = False)
             "gini_test": float(gini(obs_test_agg, pred_test, sample_weight=exp_test)),
             "op_ratio_test": float(op_ratio(obs_test_agg, pred_test, sample_weight=exp_test)),
             "deviance_test": _deviance_test(
-                family_hint=str(spec.params.get("family") or spec.params.get("objective", "")),
                 obs_rate=obs_test_agg / exp_test,
                 pred_rate=pred_test,
                 exposure=exp_test,
@@ -310,7 +337,6 @@ def run_experiment(config: ExperimentConfig, *, return_estimators: bool = False)
             params["frequency"] = spec.frequency.model_dump(exclude_none=True)
             params["severity"] = spec.severity.model_dump(exclude_none=True)
         results[name] = ModelResult(
-            name=name,
             kind=spec.kind,
             params=params,
             metrics=metrics,
@@ -330,3 +356,19 @@ def run_experiment(config: ExperimentConfig, *, return_estimators: bool = False)
     if return_estimators:
         return run, estimators
     return run
+
+
+def run_experiment(config: ExperimentConfig, *, return_estimators: bool = False):
+    """Load, validate, split, fit, and score an experiment."""
+    df = load_data(config.data_path, spec=config.spec)
+    if len(df) == 0:
+        raise ValueError("loaded dataset is empty")
+    _validate_portfolio(config, df)
+    train_idx, test_idx = _split_indices(config, df)
+    return _evaluate_split(
+        config,
+        df,
+        train_idx,
+        test_idx,
+        return_estimators=return_estimators,
+    )

@@ -13,6 +13,8 @@ Both follow the scikit-learn transformer API and survive
 
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator, TransformerMixin
@@ -21,7 +23,6 @@ from sklearn.tree import DecisionTreeRegressor
 from sklearn.utils.validation import validate_data
 
 __all__ = ["AutoBinner", "AutoGrouper"]
-
 
 
 def _to_frame(X):
@@ -34,6 +35,31 @@ def _to_frame(X):
     arr = np.asarray(X)
     n = arr.shape[1]
     return pd.DataFrame(arr, columns=[f"x{i}" for i in range(n)]), False
+
+
+def _column_array(X, name):
+    if name and name in X.columns:
+        return X[name].to_numpy(dtype=float)
+    return None
+
+
+def _resolve_target(X, y, target_col, exposure_col):
+    target = _column_array(X, target_col)
+    exposure = _column_array(X, exposure_col)
+    if target is not None and exposure is not None:
+        with np.errstate(divide="ignore", invalid="ignore"):
+            return np.where(exposure > 0, target / exposure, 0.0)
+    if target is not None:
+        return target
+    return None if y is None else np.asarray(y, dtype=float)
+
+
+def _feature_names_out(estimator, input_features):
+    if input_features is not None:
+        return np.asarray(input_features)
+    if hasattr(estimator, "feature_names_in_"):
+        return estimator.feature_names_in_
+    return np.asarray([f"x{i}" for i in range(estimator.n_features_in_)])
 
 
 def _merge_small_bins(values, weights, edges, min_weight):
@@ -65,9 +91,9 @@ def _merge_small_bins(values, weights, edges, min_weight):
 class AutoBinner(TransformerMixin, BaseEstimator):
     """Bin numeric columns into actuarially-credible tariff bins.
 
-    Binned columns become readable interval labels (DataFrame input) or integer
-    bin codes (ndarray input). Non-target columns pass through unchanged. NaN
-    is assigned to the last bin (ponytail: dedicated missing bin when needed).
+    Binned columns become ordered interval categoricals (DataFrame input) or
+    integer bin codes (ndarray input). Non-target columns pass through
+    unchanged. NaN is assigned to a reserved ``"Missing"`` category.
 
     Parameters
     ----------
@@ -82,7 +108,7 @@ class AutoBinner(TransformerMixin, BaseEstimator):
         Minimum total exposure per bin; smaller bins merged into neighbours.
         Requires ``exposure_col``; ignored if absent.
     min_claims : float | None
-        Minimum total claim_count per bin (tree strategy min_samples_leaf).
+        Minimum aggregate claim count per bin; smaller bins merge into neighbours.
     exposure_col, claim_count_col, target_col : str | None
         Special columns inside X. For tree binning, the target is
         ``target_col / exposure_col`` (pure premium) when both are set, else
@@ -100,6 +126,8 @@ class AutoBinner(TransformerMixin, BaseEstimator):
     ----------
     mapping_ : dict[str, np.ndarray]
         Bin edges per binned column (length n_bins - 1).
+    category_dtypes_ : dict[str, pd.CategoricalDtype]
+        Stable ordered output vocabularies for DataFrame inputs.
     bin_cols_ : list[str]
     n_features_in_ : int
     feature_names_in_ : list[str] | None
@@ -135,40 +163,33 @@ class AutoBinner(TransformerMixin, BaseEstimator):
         tags.input_tags.string = True
         return tags
 
-    def _array(self, X, name):
-        if name and name in X.columns:
-            return X[name].to_numpy(dtype=float)
-        return None
-
     def fit(self, X, y=None):
         validate_data(self, X, y=y, dtype=None, ensure_all_finite=False)
         X_df, _ = _to_frame(X)
         cols = self._select_cols(X_df)
-        exp = self._array(X_df, self.exposure_col)
-        cc = self._array(X_df, self.claim_count_col)
-        target = self._resolve_target(X_df, y)
+        exp = _column_array(X_df, self.exposure_col)
+        cc = _column_array(X_df, self.claim_count_col)
+        if self.min_claims is not None and cc is None:
+            raise ValueError("min_claims requires claim_count_col in X")
+        target = _resolve_target(X_df, y, self.target_col, self.exposure_col)
         self.mapping_ = {}
         for col in cols:
             edges = self._edges(X_df[col].to_numpy(dtype=float), target, exp, cc)
             self.mapping_[col] = edges
+        self.category_dtypes_ = {
+            col: self._category_dtype(edges) for col, edges in self.mapping_.items()
+        }
         self.bin_cols_ = cols
         return self
 
-    def _resolve_target(self, X, y):
-        t = self._array(X, self.target_col)
-        e = self._array(X, self.exposure_col)
-        if t is not None and e is not None:
-            with np.errstate(divide="ignore", invalid="ignore"):
-                pp = np.where(e > 0, t / e, 0.0)
-            return pp
-        if t is not None:
-            return t
-        return None if y is None else np.asarray(y, dtype=float)
-
     def _select_cols(self, X):
+        specials = {c for c in (self.exposure_col, self.claim_count_col, self.target_col) if c}
         if self.cols is not None:
+            invalid = sorted(set(self.cols) & specials)
+            if invalid:
+                raise ValueError(f"cols contains special columns: {invalid}")
             return [c for c in self.cols if c in X.columns]
-        return [c for c in X.columns if pd.api.types.is_numeric_dtype(X[c])]
+        return [c for c in X.columns if c not in specials and pd.api.types.is_numeric_dtype(X[c])]
 
     def _edges(self, values, target, exp, cc):
         mask = ~np.isnan(values)
@@ -180,7 +201,7 @@ class AutoBinner(TransformerMixin, BaseEstimator):
             ym = target[mask] if target is not None else None
             if ym is not None and not np.all(np.isnan(ym)):
                 ym = np.nan_to_num(ym, nan=0.0)
-                edges = self._tree_edges(v, ym, w, cc)
+                edges = self._tree_edges(v, ym, w)
             else:
                 edges = self._quantile_edges(v, w)
         else:
@@ -189,7 +210,9 @@ class AutoBinner(TransformerMixin, BaseEstimator):
             t = target[mask]
             edges = self._enforce_monotonic(edges, v, w, t)
         weights = w if w is not None else np.ones_like(v)
-        return _merge_small_bins(v, weights, edges, self.min_exposure)
+        edges = _merge_small_bins(v, weights, edges, self.min_exposure)
+        claim_counts = cc[mask] if cc is not None else np.ones_like(v)
+        return _merge_small_bins(v, claim_counts, edges, self.min_claims)
 
     def _mono_direction(self):
         """True=increasing, False=decreasing, None=off; raise on garbage."""
@@ -200,9 +223,7 @@ class AutoBinner(TransformerMixin, BaseEstimator):
             return True
         if isinstance(m, str) and m == "decreasing":
             return False
-        raise ValueError(
-            f"monotonic must be False, True, 'increasing', or 'decreasing'; got {m!r}"
-        )
+        raise ValueError(f"monotonic must be False, True, 'increasing', or 'decreasing'; got {m!r}")
 
     def _enforce_monotonic(self, edges, values, weights, target):
         """Smooth bin means with isotonic regression and merge equal-adjacent.
@@ -241,10 +262,9 @@ class AutoBinner(TransformerMixin, BaseEstimator):
             edges = vs[idx]
         return np.unique(edges)
 
-    def _tree_edges(self, v, y, w, cc):
-        msl = max(1, int(self.min_claims)) if self.min_claims else 1
+    def _tree_edges(self, v, y, w):
         tree = DecisionTreeRegressor(
-            max_leaf_nodes=self.max_bins, min_samples_leaf=msl, random_state=self.random_state
+            max_leaf_nodes=self.max_bins, min_samples_leaf=1, random_state=self.random_state
         )
         tree.fit(v.reshape(-1, 1), y, sample_weight=w)
         thr = tree.tree_.threshold
@@ -264,7 +284,10 @@ class AutoBinner(TransformerMixin, BaseEstimator):
             if col not in out.columns:
                 continue
             codes = self._codes(out[col].to_numpy(dtype=float), edges)
-            out[col] = self._labels(codes, edges) if was_df else codes.astype(float)
+            if was_df:
+                out[col] = pd.Categorical.from_codes(codes, dtype=self.category_dtypes_[col])
+            else:
+                out[col] = codes.astype(float)
         return out if was_df else out.to_numpy()
 
     @staticmethod
@@ -276,6 +299,7 @@ class AutoBinner(TransformerMixin, BaseEstimator):
     @staticmethod
     def _labels(codes, edges):
         n = len(edges)
+        edge_labels = [repr(float(edge)) for edge in edges]
         labels = np.empty(len(codes), dtype=object)
         for i, c in enumerate(codes):
             if c > n:
@@ -283,12 +307,17 @@ class AutoBinner(TransformerMixin, BaseEstimator):
             elif n == 0:
                 labels[i] = "(-inf, inf)"
             elif c == 0:
-                labels[i] = f"(-inf, {edges[0]:.4g}]"
+                labels[i] = f"(-inf, {edge_labels[0]}]"
             elif c >= n:
-                labels[i] = f"({edges[-1]:.4g}, inf)"
+                labels[i] = f"({edge_labels[-1]}, inf)"
             else:
-                labels[i] = f"({edges[c - 1]:.4g}, {edges[c]:.4g}]"
+                labels[i] = f"({edge_labels[c - 1]}, {edge_labels[c]}]"
         return labels
+
+    @staticmethod
+    def _category_dtype(edges):
+        categories = AutoBinner._labels(np.arange(len(edges) + 2), edges).tolist()
+        return pd.CategoricalDtype(categories, ordered=True)
 
     def get_feature_names_out(self, input_features=None):
         if input_features is not None:
@@ -300,6 +329,9 @@ class AutoBinner(TransformerMixin, BaseEstimator):
     def set_mapping(self, mapping):
         """Override fitted bin edges: ``{col: array_of_edges}``."""
         self.mapping_ = {c: np.asarray(e, dtype=float) for c, e in mapping.items()}
+        self.category_dtypes_ = {
+            col: self._category_dtype(edges) for col, edges in self.mapping_.items()
+        }
         self.bin_cols_ = list(mapping.keys())
 
 
@@ -309,15 +341,17 @@ class AutoGrouper(TransformerMixin, BaseEstimator):
     Strategies
     ----------
     "rare"        Levels below ``min_exposure`` / ``min_claims`` -> ``other_label``.
-    "similarity"  Greedily merge adjacent levels (sorted by pure premium) into
-                  groups that each meet the credibility floor.
+    "similarity"  Nominal levels are risk-sorted before grouping. Ordered
+                  categoricals merge only adjacent levels, choosing the
+                  closest exposure-weighted pure premium and breaking ties
+                  to the left.
 
     ``mapping_`` is ``{col: {original_level: group_label}}``. Unknown levels at
     transform time map to ``other_label``.
 
     Attributes
     ----------
-    mapping_, group_cols_, n_features_in_, feature_names_in_.
+    mapping_, category_dtypes_, group_cols_, n_features_in_, feature_names_in_.
     """
 
     def __init__(
@@ -348,57 +382,71 @@ class AutoGrouper(TransformerMixin, BaseEstimator):
         tags.input_tags.string = True
         return tags
 
-    def _array(self, X, name):
-        if name and name in X.columns:
-            return X[name].to_numpy(dtype=float)
-        return None
-
     def fit(self, X, y=None):
         validate_data(self, X, y=y, dtype=None, ensure_all_finite=False)
         X_df, _ = _to_frame(X)
         cols = self._select_cols(X_df)
-        exp = self._array(X_df, self.exposure_col)
-        cc = self._array(X_df, self.claim_count_col)
-        target = self._resolve_target(X_df, y)
-        self.mapping_ = {c: self._group_levels(X_df[c].to_numpy(), exp, cc, target) for c in cols}
+        exp = _column_array(X_df, self.exposure_col)
+        cc = _column_array(X_df, self.claim_count_col)
+        if self.min_claims is not None and cc is None:
+            raise ValueError("min_claims requires claim_count_col in X")
+        target = _column_array(X_df, self.target_col)
+        if target is None and y is not None:
+            target = np.asarray(y, dtype=float)
+            if exp is not None:
+                target = target * exp
+        self.mapping_ = {}
+        self.category_dtypes_ = {}
+        for col in cols:
+            series = X_df[col]
+            ordered_levels = (
+                list(series.cat.categories)
+                if isinstance(series.dtype, pd.CategoricalDtype) and series.cat.ordered
+                else None
+            )
+            mapping = self._group_levels(series, exp, cc, target, ordered_levels)
+            self.mapping_[col] = mapping
+            self.category_dtypes_[col] = self._category_dtype(
+                mapping, ordered=ordered_levels is not None
+            )
         self.group_cols_ = cols
         return self
 
-    def _resolve_target(self, X, y):
-        t = self._array(X, self.target_col)
-        e = self._array(X, self.exposure_col)
-        if t is not None and e is not None:
-            with np.errstate(divide="ignore", invalid="ignore"):
-                return np.where(e > 0, t / e, 0.0)
-        if t is not None:
-            return t
-        return None if y is None else np.asarray(y, dtype=float)
-
     def _select_cols(self, X):
+        specials = {c for c in (self.exposure_col, self.claim_count_col, self.target_col) if c}
         if self.cols is not None:
+            invalid = sorted(set(self.cols) & specials)
+            if invalid:
+                raise ValueError(f"cols contains special columns: {invalid}")
             return [c for c in self.cols if c in X.columns]
-        return [c for c in X.columns if not pd.api.types.is_numeric_dtype(X[c])]
+        return [
+            c for c in X.columns if c not in specials and not pd.api.types.is_numeric_dtype(X[c])
+        ]
 
     def _level_stats(self, values, exp, cc, target):
         df = pd.DataFrame({"lvl": values})
         df["exp"] = exp if exp is not None else 1.0
-        g = df.groupby("lvl", observed=True)
+        g = df.groupby("lvl", observed=True, sort=False)
         stats = pd.DataFrame({"exp": g["exp"].sum()})
         if cc is not None:
             df["cc"] = cc
-            stats["cc"] = df.groupby("lvl", observed=True)["cc"].sum()
+            stats["cc"] = df.groupby("lvl", observed=True, sort=False)["cc"].sum()
         if target is not None:
             df["tgt"] = target
-            stats["tgt"] = df.groupby("lvl", observed=True)["tgt"].sum()
+            stats["tgt"] = df.groupby("lvl", observed=True, sort=False)["tgt"].sum()
             stats["pp"] = stats["tgt"] / stats["exp"].replace(0.0, np.nan)
         else:
             stats["pp"] = 0.0
         return stats
 
-    def _group_levels(self, values, exp, cc, target):
+    def _group_levels(self, values, exp, cc, target, ordered_levels=None):
         stats = self._level_stats(values, exp, cc, target)
+        if ordered_levels is not None:
+            stats = stats.reindex([level for level in ordered_levels if level in stats.index])
         if self.strategy == "rare":
             return self._rare_mapping(stats)
+        if ordered_levels is not None:
+            return self._ordered_similarity_mapping(stats)
         return self._similarity_mapping(stats)
 
     def _rare_mapping(self, stats):
@@ -413,7 +461,7 @@ class AutoGrouper(TransformerMixin, BaseEstimator):
         return mp
 
     def _similarity_mapping(self, stats):
-        order = stats.sort_values("pp").index.tolist()
+        order = stats.sort_values("pp", kind="stable").index.tolist()
         floor_exp = self.min_exposure or 0.0
         floor_cc = self.min_claims or 0.0
         has_cc = "cc" in stats.columns
@@ -428,7 +476,10 @@ class AutoGrouper(TransformerMixin, BaseEstimator):
                 groups.append(cur)
                 cur, cur_exp, cur_cc = [], 0.0, 0.0
         if cur:
-            groups.append(cur)
+            if groups:
+                groups[-1].extend(cur)
+            else:
+                groups.append(cur)
         if self.max_groups and len(groups) > self.max_groups:
             while len(groups) > self.max_groups:
                 groups[-2].extend(groups.pop())
@@ -439,6 +490,63 @@ class AutoGrouper(TransformerMixin, BaseEstimator):
                 mp[lvl] = label
         return mp
 
+    def _ordered_similarity_mapping(self, stats):
+        groups = [[level] for level in stats.index]
+        floor_exp = self.min_exposure or 0.0
+        floor_cc = self.min_claims or 0.0
+
+        def total(group, column):
+            return float(stats.loc[group, column].sum())
+
+        def risk(group):
+            exposure = total(group, "exp")
+            return total(group, "tgt") / exposure if "tgt" in stats and exposure > 0 else 0.0
+
+        while len(groups) > 1:
+            index = next(
+                (
+                    i
+                    for i, group in enumerate(groups)
+                    if total(group, "exp") < floor_exp
+                    or ("cc" in stats and total(group, "cc") < floor_cc)
+                ),
+                None,
+            )
+            if index is None:
+                break
+            if index == 0:
+                merge_left = False
+            elif index == len(groups) - 1:
+                merge_left = True
+            else:
+                merge_left = abs(risk(groups[index]) - risk(groups[index - 1])) <= abs(
+                    risk(groups[index]) - risk(groups[index + 1])
+                )
+            if merge_left:
+                groups[index - 1].extend(groups.pop(index))
+            else:
+                groups[index].extend(groups.pop(index + 1))
+
+        while self.max_groups and len(groups) > self.max_groups:
+            differences = [
+                abs(risk(groups[i]) - risk(groups[i + 1])) for i in range(len(groups) - 1)
+            ]
+            index = min(range(len(differences)), key=differences.__getitem__)
+            groups[index].extend(groups.pop(index + 1))
+
+        mp = {}
+        for i, group in enumerate(groups):
+            label = group[0] if len(group) == 1 else f"group_{i}"
+            for level in group:
+                mp[level] = label
+        return mp
+
+    def _category_dtype(self, mapping, *, ordered):
+        categories = [
+            level for level in dict.fromkeys(mapping.values()) if level != self.other_label
+        ]
+        return pd.CategoricalDtype([*categories, self.other_label], ordered=ordered)
+
     def transform(self, X):
         validate_data(self, X, reset=False, dtype=None, ensure_all_finite=False)
         X_df, was_df = _to_frame(X)
@@ -446,10 +554,27 @@ class AutoGrouper(TransformerMixin, BaseEstimator):
         if feature_names is not None and all(c in X_df.columns for c in feature_names):
             X_df = X_df[feature_names]
         out = X_df.copy()
+        unseen = {}
         for col, mp in self.mapping_.items():
             if col not in out.columns:
                 continue
-            out[col] = out[col].map(mp).fillna(self.other_label)
+            unknown = out[col].notna() & ~out[col].isin(mp)
+            if unknown.any():
+                unseen[col] = out.loc[unknown, col].drop_duplicates().tolist()
+            out[col] = (
+                out[col]
+                .astype(object)
+                .map(mp)
+                .fillna(self.other_label)
+                .astype(self.category_dtypes_[col])
+            )
+        if unseen:
+            details = "; ".join(f"{column}={levels!r}" for column, levels in unseen.items())
+            warnings.warn(
+                f"AutoGrouper mapped unseen levels to {self.other_label!r}: {details}",
+                UserWarning,
+                stacklevel=2,
+            )
         return out if was_df else out.to_numpy()
 
     def get_feature_names_out(self, input_features=None):
@@ -461,5 +586,14 @@ class AutoGrouper(TransformerMixin, BaseEstimator):
 
     def set_mapping(self, mapping):
         """Override fitted level groups: ``{col: {level: group_label}}``."""
+        ordered = {
+            col: self.category_dtypes_[col].ordered
+            for col in mapping
+            if hasattr(self, "category_dtypes_") and col in self.category_dtypes_
+        }
         self.mapping_ = {c: dict(m) for c, m in mapping.items()}
+        self.category_dtypes_ = {
+            col: self._category_dtype(values, ordered=ordered.get(col, False))
+            for col, values in self.mapping_.items()
+        }
         self.group_cols_ = list(mapping.keys())

@@ -70,6 +70,21 @@ def test_gini_zero_total_claims_or_exposure() -> None:
     assert gini(np.arange(10.0), np.arange(10.0), np.zeros(10)) == 0.0
 
 
+def test_gini_and_lorenz_are_invariant_within_prediction_ties() -> None:
+    y_true = np.array([0.0, 8.0, 1.0, 5.0, 2.0])
+    y_pred = np.array([3.0, 3.0, 2.0, 2.0, 1.0])
+    exposure = np.array([1.0, 4.0, 2.0, 1.0, 3.0])
+    perm = np.array([1, 0, 3, 2, 4])
+
+    expected = lorenz(y_true, y_pred, exposure)
+    actual = lorenz(y_true[perm], y_pred[perm], exposure[perm])
+
+    assert gini(y_true, y_pred, exposure) == gini(y_true[perm], y_pred[perm], exposure[perm])
+    np.testing.assert_allclose(actual.exposure_pct, expected.exposure_pct)
+    np.testing.assert_allclose(actual.claims_pct, expected.claims_pct)
+    assert len(actual.exposure_pct) == len(np.unique(y_pred)) + 1
+
+
 def test_lorenz_endpoints_and_monotonic() -> None:
     df = make_synthetic_portfolio(n=2000, seed=11)
     pp_true = df["claim_amount"] / df["exposure"]  # a naive "predicted" pp

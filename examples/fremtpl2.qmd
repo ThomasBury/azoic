@@ -1,0 +1,569 @@
+---
+title: "From claims data to an executable technical tariff"
+subtitle: "RiskForge on the French Motor Third-Party Liability portfolio"
+format:
+  html:
+    toc: true
+    embed-resources: true
+    code-fold: false
+jupyter: python3
+execute:
+  echo: true
+  warning: false
+---
+
+## What this tutorial builds
+
+A **technical tariff** estimates expected claim cost before expenses, commission,
+profit, taxes, and other commercial loadings. For policy \(i\):
+
+- **exposure** is the insured time at risk and is the modelling weight;
+- **frequency** is expected claims per exposure unit;
+- **severity** is expected cost per claim, fitted only where claims occurred;
+- **pure premium** is expected claim cost per exposure unit, either modelled
+  directly or as frequency × severity.
+
+Training rows contain rating features, exposure, and outcomes. Held-out evaluation
+rows contain outcomes only so we can measure ranking and calibration honestly.
+Production scoring rows need rating features and exposure, but no claim count or
+claim amount.
+
+This tutorial uses the French freMTPL2 portfolio because one dataset supports
+direct Tweedie, frequency–severity, preprocessing, diagnostics, tariff export,
+reporting, and experiment tracking. The
+[Swedish motorcycle study](https://link.springer.com/article/10.1007/s13385-021-00264-3)
+is a useful methodological reference, but is narrower and is not duplicated as a
+second tutorial.
+
+## Setup and generated files
+
+Install the Python environment with:
+
+```bash
+uv sync --group demo --extra mlops --extra plot
+```
+
+Quarto is an external system prerequisite. Render from the repository root with
+`just demo`. Only this `.qmd` is source-controlled; every generated file goes
+under `examples/_artifacts/fremtpl2/`, while the standalone HTML is ignored.
+
+```{python}
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+from IPython.display import display
+from sklearn.datasets import fetch_openml
+
+from riskforge.data import DatasetSpec
+from riskforge.mlops import log_run
+from riskforge.profile import profile_features, screen_features
+from riskforge.reporting import comparison_dashboard, comparison_table, model_card
+from riskforge.tariff import apply_tariff, export_tariff
+from riskforge.workflow import (
+    ExperimentConfig,
+    ModelSpec,
+    PreprocessingSpec,
+    run_experiment,
+)
+
+ROOT = Path.cwd()
+if not (ROOT / "pyproject.toml").exists():
+    ROOT = ROOT.parent
+
+ARTIFACT_DIR = ROOT / "examples" / "_artifacts" / "fremtpl2"
+ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
+
+SAMPLE_SIZE = 100_000
+RANDOM_STATE = 42
+JOINED_PATH = ARTIFACT_DIR / "fremtpl2_joined.parquet"
+PORTFOLIO_PATH = ARTIFACT_DIR / "portfolio.parquet"
+```
+
+Set `SAMPLE_SIZE` to the number of cleaned policies to use, or to a value
+larger than the portfolio for a full run. The fixed seed makes the default
+sample reproducible; it is pedagogical, not a benchmark.
+
+## Fetch, join, and clean pinned OpenML data
+
+The frequency and severity datasets are pinned by OpenML data IDs
+[41214](https://www.openml.org/d/41214) and
+[41215](https://www.openml.org/d/41215). They are fetched through
+`sklearn.datasets.fetch_openml`, following the
+[scikit-learn insurance example](https://scikit-learn.org/stable/auto_examples/linear_model/plot_tweedie_regression_insurance_claims.html).
+The source IDs and names below remain visible even when the joined Parquet cache
+avoids another download.
+
+Cleaning is deliberately deterministic and conservative:
+
+1. aggregate severity rows to policy-level claim amount and left-join by policy ID;
+2. retain unique policies with \(0 < exposure \le 1\), non-negative outcomes,
+   positive density, plausible non-negative ages, and consistent zero/positive
+   claim count and amount;
+3. rename only the columns used by RiskForge; do not winsorize losses or derive
+   outcome-informed features.
+
+```{python}
+source_metadata = pd.DataFrame(
+    [
+        {
+            "openml_id": 41214,
+            "name": "freMTPL2freq",
+            "role": "policy exposure and claim counts",
+            "source": "https://www.openml.org/d/41214",
+        },
+        {
+            "openml_id": 41215,
+            "name": "freMTPL2sev",
+            "role": "individual claim amounts",
+            "source": "https://www.openml.org/d/41215",
+        },
+    ]
+)
+display(source_metadata)
+```
+
+```{python}
+if JOINED_PATH.exists():
+    joined = pd.read_parquet(JOINED_PATH)
+else:
+    openml_cache = ARTIFACT_DIR / "openml-cache"
+    frequency = fetch_openml(
+        data_id=41214,
+        as_frame=True,
+        parser="auto",
+        data_home=openml_cache,
+    )
+    severity = fetch_openml(
+        data_id=41215,
+        as_frame=True,
+        parser="auto",
+        data_home=openml_cache,
+    )
+
+    frequency_frame = frequency.frame.copy()
+    severity_frame = severity.frame.copy()
+    claim_totals = (
+        severity_frame.groupby("IDpol", observed=True, as_index=False)["ClaimAmount"]
+        .sum()
+    )
+    joined = frequency_frame.merge(
+        claim_totals,
+        on="IDpol",
+        how="left",
+        validate="one_to_one",
+    )
+    joined["ClaimAmount"] = joined["ClaimAmount"].fillna(0.0)
+    joined = joined.rename(
+        columns={
+            "IDpol": "policy_id",
+            "Exposure": "exposure",
+            "ClaimNb": "claim_count",
+            "ClaimAmount": "claim_amount",
+            "DrivAge": "driver_age",
+            "VehAge": "vehicle_age",
+            "Density": "density",
+            "Region": "region",
+            "VehBrand": "vehicle_brand",
+        }
+    )
+
+    numeric_columns = [
+        "policy_id",
+        "exposure",
+        "claim_count",
+        "claim_amount",
+        "driver_age",
+        "vehicle_age",
+        "density",
+    ]
+    joined[numeric_columns] = joined[numeric_columns].apply(pd.to_numeric)
+    for column in ["region", "vehicle_brand"]:
+        joined[column] = joined[column].astype("string").fillna("Missing").astype(str)
+
+    consistent_outcomes = (
+        ((joined["claim_count"] == 0) & (joined["claim_amount"] == 0))
+        | ((joined["claim_count"] > 0) & (joined["claim_amount"] > 0))
+    )
+    valid = (
+        joined["policy_id"].notna()
+        & joined["policy_id"].duplicated(keep=False).eq(False)
+        & joined["exposure"].gt(0)
+        & joined["exposure"].le(1)
+        & joined["claim_count"].ge(0)
+        & joined["claim_amount"].ge(0)
+        & joined["driver_age"].between(18, 100)
+        & joined["vehicle_age"].between(0, 100)
+        & joined["density"].gt(0)
+        & consistent_outcomes
+    )
+    joined = joined.loc[
+        valid,
+        [
+            "policy_id",
+            "exposure",
+            "claim_count",
+            "claim_amount",
+            "driver_age",
+            "vehicle_age",
+            "density",
+            "region",
+            "vehicle_brand",
+        ],
+    ].reset_index(drop=True)
+    joined.to_parquet(JOINED_PATH, index=False)
+
+assert joined["policy_id"].is_unique
+assert (joined["exposure"] > 0).all()
+assert ((joined["claim_count"] > 0) == (joined["claim_amount"] > 0)).all()
+
+portfolio = (
+    joined.sample(
+        n=min(SAMPLE_SIZE, len(joined)),
+        random_state=RANDOM_STATE,
+        replace=False,
+    )
+    .sort_values("policy_id")
+    .reset_index(drop=True)
+)
+portfolio.to_parquet(PORTFOLIO_PATH, index=False)
+
+pd.DataFrame(
+    {
+        "policies": [len(portfolio)],
+        "exposure": [portfolio["exposure"].sum()],
+        "claims": [portfolio["claim_count"].sum()],
+        "claim_amount": [portfolio["claim_amount"].sum()],
+        "observed_frequency": [
+            portfolio["claim_count"].sum() / portfolio["exposure"].sum()
+        ],
+        "observed_pure_premium": [
+            portfolio["claim_amount"].sum() / portfolio["exposure"].sum()
+        ],
+    }
+)
+```
+
+## Descriptive review before learned preprocessing
+
+Profiling and screening are descriptive review aids. They do not learn tariff
+relativities and do not replace actuarial judgement. Binning and grouping below
+are fitted later, using training rows only.
+
+```{python}
+features = [
+    "driver_age",
+    "vehicle_age",
+    "density",
+    "region",
+    "vehicle_brand",
+]
+profile = profile_features(portfolio[features])
+screening = screen_features(profile, max_groups=10, max_numeric_unique=20)
+display(profile)
+display(screening)
+```
+
+## One reproducible experiment
+
+freMTPL2 has no suitable policy-time field, so an out-of-time split would invent
+an order that is not present. We therefore use a fixed random holdout. Tree bins
+for driver age, vehicle age, and density and similarity groups for region and
+vehicle brand are learned on the training partition only. Special outcome and
+weight columns remain available to supervised preprocessing but are excluded from
+candidate features. Grouping relativities are `sum(claim_amount) / sum(exposure)`,
+and `min_claims` is an aggregate claim-count floor; any trailing under-credible
+similarity group merges into its neighbour.
+
+The three comparable pipelines are:
+
+- a direct log-link Tweedie GLM;
+- a Tweedie LightGBM;
+- Poisson-frequency × Gamma-severity GLMs. Frequency fits
+  `claim_count / exposure` with exposure weights; the positive-claim severity
+  filter stays inside `FrequencySeverityModel.fit`.
+
+```{python}
+config = ExperimentConfig(
+    name="fremtpl2-technical-tariff",
+    data_path=str(PORTFOLIO_PATH),
+    spec=DatasetSpec(
+        target="claim_amount",
+        exposure="exposure",
+        claim_count="claim_count",
+        id_col="policy_id",
+    ),
+    features=features,
+    preprocessing=PreprocessingSpec(
+        binner={
+            "cols": ["driver_age", "vehicle_age", "density"],
+            "strategy": "tree",
+            "max_bins": 8,
+            "min_exposure": 250,
+            "min_claims": 20,
+            "random_state": RANDOM_STATE,
+        },
+        grouper={
+            "cols": ["region", "vehicle_brand"],
+            "strategy": "similarity",
+            "max_groups": 8,
+            "min_exposure": 500,
+            "min_claims": 20,
+        },
+    ),
+    split="random",
+    test_size=0.2,
+    random_state=RANDOM_STATE,
+    models={
+        "direct-tweedie-glm": ModelSpec(
+            kind="glm",
+            params={
+                "family": "tweedie",
+                "link": "log",
+                "tweedie_power": 1.5,
+                "alpha": 0.001,
+            },
+        ),
+        "tweedie-lightgbm": ModelSpec(
+            kind="gbm",
+            params={
+                "objective": "tweedie",
+                "tweedie_variance_power": 1.5,
+                "n_estimators": 100,
+                "num_leaves": 31,
+                "learning_rate": 0.05,
+                "random_state": RANDOM_STATE,
+            },
+        ),
+        "frequency-severity-glm": ModelSpec(
+            kind="frequency_severity",
+            frequency=ModelSpec(
+                kind="glm",
+                params={"family": "poisson", "link": "log", "alpha": 0.001},
+            ),
+            severity=ModelSpec(
+                kind="glm",
+                params={"family": "gamma", "link": "log", "alpha": 0.001},
+            ),
+        ),
+    },
+)
+display(pd.json_normalize(config.model_dump(exclude_none=True)))
+```
+
+```{python}
+run, estimators = run_experiment(config, return_estimators=True)
+assert set(run.models) == set(config.models)
+```
+
+The split happens before pipeline fitting, so the held-out outcomes cannot
+influence the learned bins or groups.
+
+## Held-out ranking, calibration, deviance, and lift
+
+The reported Gini is a **concentration Gini for ranking only**, not a normalized
+Gini. Equal prediction scores are aggregated into tied blocks, so row order inside
+a tie cannot change the result. It does not establish calibration. O/P ratio,
+exposure-weighted calibration deciles, and exposure-weighted mean Tweedie deviance
+with fixed power 1.5 assess different aspects of fit and must be reviewed alongside
+ranking.
+
+```{python}
+metrics = comparison_table([run]).drop(columns="config")
+display(metrics)
+
+calibration_and_lift = []
+for model_name, result in run.models.items():
+    table = result.calibration_table.copy()
+    portfolio_rate = table["claim_amount"].sum() / table["exposure"].sum()
+    table["lift"] = table["observed_pure_premium"] / portfolio_rate
+    table.insert(0, "model", model_name)
+    calibration_and_lift.append(table)
+
+calibration_and_lift = pd.concat(calibration_and_lift, ignore_index=True)
+display(
+    calibration_and_lift[
+        [
+            "model",
+            "group",
+            "exposure",
+            "observed_pure_premium",
+            "predicted_pure_premium",
+            "o_p_ratio",
+            "lift",
+        ]
+    ]
+)
+```
+
+These deciles are exposure-weighted. Lift compares each decile's observed pure
+premium with the portfolio observed pure premium; O/P compares observed with
+predicted level inside the same decile.
+
+## Score an outcome-free portfolio
+
+The scoring interface remains `estimator.predict(raw_frame)`. No scoring
+service or persistence layer is required. The frame below contains only rating
+features and exposure.
+
+```{python}
+scoring_frame = portfolio[[*features, "exposure"]].copy()
+scored = pd.DataFrame(index=scoring_frame.index)
+
+for model_name, estimator in estimators.items():
+    prediction = np.asarray(estimator.predict(scoring_frame), dtype=float)
+    assert len(prediction) == len(scoring_frame)
+    assert np.isfinite(prediction).all()
+    assert (prediction >= 0).all()
+    scored[model_name] = prediction
+
+display(scored.describe().T)
+```
+
+## Export and verify the direct GLM tariff
+
+Only the direct log-link GLM is exported as a multiplicative tariff. The
+workbook contains `base_rate`, `factors`, and `mappings` sheets. Recalibration
+changes the base so applying the workbook tariff over this portfolio reproduces
+the observed aggregate claim amount. Application is strict: unseen categorical
+levels and non-finite numeric inputs are rejected rather than assigned a neutral
+factor.
+
+```{python}
+tariff_path = ARTIFACT_DIR / "direct_tweedie_tariff.xlsx"
+tariff_X = portfolio[
+    [*features, "exposure", "claim_amount", "claim_count"]
+]
+direct_pipeline = estimators["direct-tweedie-glm"]
+
+export_tariff(
+    direct_pipeline,
+    tariff_path,
+    X=tariff_X,
+    y=portfolio["claim_amount"],
+    exposure_col="exposure",
+    recalibrate=True,
+)
+
+sheets = pd.read_excel(tariff_path, sheet_name=None)
+assert list(sheets) == ["base_rate", "factors", "mappings"]
+display(sheets["base_rate"])
+display(sheets["factors"].head(20))
+display(sheets["mappings"].head(20))
+```
+
+```{python}
+factors = sheets["factors"]
+numeric_factors = {}
+categorical_factors = {}
+for row in factors.itertuples(index=False):
+    if row.level == "_per_unit":
+        numeric_factors[row.feature] = float(np.log(row.multiplicative_factor))
+    else:
+        categorical_factors.setdefault(row.feature, {})[str(row.level)] = float(
+            row.multiplicative_factor
+        )
+
+workbook_tariff = {
+    "base_rate": float(sheets["base_rate"].iloc[0]["base_rate"]),
+    "numeric": numeric_factors,
+    "categorical": categorical_factors,
+}
+transformed_rating_frame = direct_pipeline[:-1].transform(tariff_X)
+tariff_rate = apply_tariff(workbook_tariff, transformed_rating_frame)
+tariff_total = float((tariff_rate * portfolio["exposure"].to_numpy()).sum())
+observed_total = float(portfolio["claim_amount"].sum())
+
+assert np.isclose(tariff_total, observed_total, rtol=1e-6)
+pd.DataFrame(
+    {
+        "observed_total": [observed_total],
+        "recalibrated_tariff_total": [tariff_total],
+        "ratio": [tariff_total / observed_total],
+    }
+)
+```
+
+## Reports and local MLflow tracking
+
+The model card is Markdown. The comparison dashboard is standalone HTML with
+Plotly embedded, and its metrics table contains all three fitted models.
+
+```{python}
+model_card_path = ARTIFACT_DIR / "model_card.md"
+dashboard_path = ARTIFACT_DIR / "comparison_dashboard.html"
+
+model_card_path.write_text(model_card(run, fmt="md"), encoding="utf-8")
+dashboard_path.write_text(comparison_dashboard([run]), encoding="utf-8")
+
+assert metrics["model"].nunique() == 3
+assert model_card_path.stat().st_size > 0
+assert dashboard_path.stat().st_size > 0
+display(metrics[["model", "gini_test", "op_ratio_test", "deviance_test"]])
+```
+
+MLflow uses a local SQLite backend. Its artifact root is also placed under the
+tutorial artifact directory. `log_run` records the data fingerprint,
+experiment and model parameters, all finite metrics, and the three generated
+artifacts.
+
+```{python}
+import mlflow
+
+tracking_database = (ARTIFACT_DIR / "mlflow.db").resolve()
+tracking_uri = f"sqlite:///{tracking_database}"
+experiment_name = "riskforge-fremtpl2-tutorial"
+artifact_root = (ARTIFACT_DIR / "mlruns").resolve()
+
+mlflow.set_tracking_uri(tracking_uri)
+if mlflow.get_experiment_by_name(experiment_name) is None:
+    mlflow.create_experiment(
+        experiment_name,
+        artifact_location=artifact_root.as_uri(),
+    )
+
+mlflow_run_id = log_run(
+    run,
+    tracking_uri=tracking_uri,
+    experiment_name=experiment_name,
+    artifacts=[tariff_path, model_card_path, dashboard_path],
+)
+
+client = mlflow.MlflowClient(tracking_uri=tracking_uri)
+logged = client.get_run(mlflow_run_id)
+logged_artifacts = client.list_artifacts(mlflow_run_id, path="artifacts")
+
+assert logged.data.params["experiment.data_fingerprint"] == run.data_fingerprint
+assert all(
+    f"{model_name}.gini_test" in logged.data.metrics
+    for model_name in run.models
+)
+assert {Path(item.path).name for item in logged_artifacts} == {
+    tariff_path.name,
+    model_card_path.name,
+    dashboard_path.name,
+}
+
+pd.DataFrame(
+    {
+        "run_id": [mlflow_run_id],
+        "tracking_database": [str(tracking_database)],
+        "artifact_count": [len(logged_artifacts)],
+    }
+)
+```
+
+To inspect the run later, start the UI manually; rendering never starts a server:
+
+```bash
+uv run mlflow ui \
+  --backend-store-uri sqlite:///examples/_artifacts/fremtpl2/mlflow.db
+```
+
+## Operational boundaries
+
+This walkthrough produces fitted in-memory estimators and reproducible local
+artifacts. It does **not** provide model persistence or deployment, expense or
+profit loadings, a commercial premium, causal interpretations of associations,
+remote MLflow, or a production scoring service. Claim outcomes are required for
+training and evaluation, but not for scoring.

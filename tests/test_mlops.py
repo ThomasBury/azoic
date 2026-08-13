@@ -16,7 +16,7 @@ import pytest
 
 mlflow = pytest.importorskip("mlflow")  # skip the whole module if mlops extra absent
 
-from riskforge.mlops import MissingMLOpsExtra, log_run  # noqa: E402
+from riskforge.mlops import log_run  # noqa: E402
 from riskforge.workflow import ExperimentConfig, ModelSpec, run_experiment  # noqa: E402
 from tests.conftest import make_synthetic_portfolio  # noqa: E402
 
@@ -29,16 +29,21 @@ def _run(tmp_path: Path, *, models: dict[str, ModelSpec] | None = None) -> tuple
             "glm-tweedie": ModelSpec(
                 kind="glm",
                 params={
-                    "family": "tweedie", "link": "log", "exposure_col": "exposure",
+                    "family": "tweedie",
+                    "link": "log",
+                    "exposure_col": "exposure",
                     "tweedie_power": 1.5,
                 },
             ),
             "gbm-tweedie": ModelSpec(
                 kind="gbm",
                 params={
-                    "objective": "tweedie", "exposure_col": "exposure",
-                    "tweedie_variance_power": 1.5, "n_estimators": 20,
-                    "num_leaves": 15, "random_state": 42,
+                    "objective": "tweedie",
+                    "exposure_col": "exposure",
+                    "tweedie_variance_power": 1.5,
+                    "n_estimators": 20,
+                    "num_leaves": 15,
+                    "random_state": 42,
                 },
             ),
         }
@@ -100,13 +105,13 @@ def test_log_run_records_per_model_params_and_metrics(tmp_path: Path) -> None:
     data = _data(run_id)
 
     for name in run.models:
-        assert data.params[f"{name}.kind"] == run[name].kind
+        assert data.params[f"{name}.kind"] == run.models[name].kind
         # GLM/GBM constructor params round-trip as strings.
-        for k, v in run[name].params.items():
+        for k, v in run.models[name].params.items():
             assert f"{name}.params.{k}" in data.params
             assert data.params[f"{name}.params.{k}"] == str(v)
         # Every finite metric is logged with the <model>.<metric> key.
-        for k, v in run[name].metrics.items():
+        for k, v in run.models[name].metrics.items():
             fv = float(v)
             if fv == fv and fv not in (float("inf"), float("-inf")):
                 assert f"{name}.{k}" in data.metrics
@@ -123,7 +128,9 @@ def test_log_run_logs_artifact_files(tmp_path: Path) -> None:
     f2.write_text("# card", encoding="utf-8")
 
     run_id = log_run(
-        run, tracking_uri=uri, experiment_name="riskforge-tests",
+        run,
+        tracking_uri=uri,
+        experiment_name="riskforge-tests",
         artifacts=[f1, f2],
     )
 
@@ -141,7 +148,9 @@ def test_log_run_logs_artifact_directory(tmp_path: Path) -> None:
     (art_dir / "b.txt").write_text("b", encoding="utf-8")
 
     run_id = log_run(
-        run, tracking_uri=uri, experiment_name="riskforge-tests",
+        run,
+        tracking_uri=uri,
+        experiment_name="riskforge-tests",
         artifacts=[art_dir],
     )
 
@@ -155,19 +164,27 @@ def test_log_run_missing_artifact_raises(tmp_path: Path) -> None:
     uri = _tracking_uri(tmp_path)
     with pytest.raises(FileNotFoundError, match="artifact not found"):
         log_run(
-            run, tracking_uri=uri, experiment_name="riskforge-tests",
+            run,
+            tracking_uri=uri,
+            experiment_name="riskforge-tests",
             artifacts=[tmp_path / "nope.txt"],
         )
 
 
 def test_log_run_run_name_overrides_default(tmp_path: Path) -> None:
-    cfg, run = _run(tmp_path, models={
-        "glm": ModelSpec(kind="glm", params={"family": "tweedie", "link": "log",
-                                             "exposure_col": "exposure"}),
-    })
+    cfg, run = _run(
+        tmp_path,
+        models={
+            "glm": ModelSpec(
+                kind="glm", params={"family": "tweedie", "link": "log", "exposure_col": "exposure"}
+            ),
+        },
+    )
     uri = _tracking_uri(tmp_path)
     run_id = log_run(
-        run, tracking_uri=uri, experiment_name="riskforge-tests",
+        run,
+        tracking_uri=uri,
+        experiment_name="riskforge-tests",
         run_name="custom-name",
     )
     info = mlflow.get_run(run_id).info
@@ -192,59 +209,62 @@ def test_log_run_skips_nonfinite_metrics(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# MissingMLOpsExtra error path (lazy import)
+# Missing mlops extra error path (lazy import)
 # ---------------------------------------------------------------------------
 
 
 def test_log_run_missing_mlflow_raises_helpful_error(monkeypatch, tmp_path: Path) -> None:
-    """If mlflow is uninstallable, log_run raises MissingMLOpsExtra with the
+    """If mlflow is uninstallable, log_run raises ImportError with the
     ``mlops`` extra pointer. We force ImportError via sys.modules shim even
     when mlflow is installed so the test runs in the dev env."""
     import sys
 
     monkeypatch.setitem(sys.modules, "mlflow", None)
     cfg, run = _run(tmp_path)
-    with pytest.raises(MissingMLOpsExtra, match="mlops"):
+    with pytest.raises(ImportError, match="mlops"):
         log_run(run, tracking_uri=_tracking_uri(tmp_path))
 
 
 # ---------------------------------------------------------------------------
-# M6 acceptance: a logged run records params / metrics / artifacts together
-# ---------------------------------------------------------------------------
 
 
-def test_m6_acceptance_mlflow_run_records_params_metrics_artifacts(tmp_path: Path) -> None:
-    cfg, run = _run(tmp_path, models={
-        "glm-tweedie": ModelSpec(
-            kind="glm",
-            params={"family": "tweedie", "link": "log", "exposure_col": "exposure",
-                    "tweedie_power": 1.5},
-        ),
-    })
-    # Persist the model card as the artifact.
+def test_m6_acceptance_mlflow_run_records_params_metrics_artifacts(
+    tmp_path: Path,
+) -> None:
     from riskforge.reporting import model_card
 
+    config, run = _run(
+        tmp_path,
+        models={
+            "glm-tweedie": ModelSpec(
+                kind="glm",
+                params={
+                    "family": "tweedie",
+                    "link": "log",
+                    "exposure_col": "exposure",
+                    "tweedie_power": 1.5,
+                },
+            ),
+        },
+    )
     card_path = tmp_path / "card.md"
     card_path.write_text(model_card(run, fmt="md"), encoding="utf-8")
-
     uri = _tracking_uri(tmp_path)
     run_id = log_run(
-        run, tracking_uri=uri, experiment_name="riskforge-m6-acceptance",
+        run,
+        tracking_uri=uri,
+        experiment_name="riskforge-m6-acceptance",
         artifacts=[card_path],
     )
     mlflow.set_tracking_uri(uri)
     data = _data(run_id)
 
-    # 1. Parameters: experiment fingerprint + per-model params.
-    assert data.params["experiment.name"] == cfg.name
+    assert data.params["experiment.name"] == config.name
     assert data.params["glm-tweedie.kind"] == "glm"
     assert data.params["glm-tweedie.params.family"] == "tweedie"
-
-    # 2. Metrics: finite per-model metrics logged.
     assert "glm-tweedie.gini_test" in data.metrics
     assert "glm-tweedie.op_ratio_test" in data.metrics
     assert np.isfinite(float(data.metrics["glm-tweedie.gini_test"]))
-
-    # 3. Artifact: the model card landed under artifacts/.
-    arts = _list_artifacts(run_id, path="artifacts")
-    assert any(a.path.endswith("card.md") for a in arts)
+    assert any(
+        artifact.path.endswith("card.md") for artifact in _list_artifacts(run_id, path="artifacts")
+    )

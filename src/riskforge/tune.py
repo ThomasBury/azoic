@@ -9,13 +9,10 @@ lieu of the cut TariffOptimizer constraint DSL):
 
     deviance_test + calibration_penalty * |1 - op_ratio_test|
 
-per trial → fit/predict/score on the SAME train/test split as
-``run_experiment`` (deterministic on ``config.random_state``), so trial scores
-are apples-to-apples. After the studies, ``tune_experiment`` re-runs
-``run_experiment`` once with every model's best params and returns a
-``TuneResult`` carrying ``best_params``, ``best_values``, ``n_trials`` and the
-canonical ``Run`` -- immediately pluggable into ``model_card`` /
-``export_tariff`` / ``log_run`` with zero new plumbing.
+per trial → fit/predict/score on a fixed inner split of the outer training
+partition. The outer test partition remains untouched until the selected models
+are refit on all outer training rows and evaluated once for the returned
+canonical ``Run``.
 
 The default search space touches only regularization / tree-structure
 hyperparams. The YAML's identity-defining params (``family`` / ``link`` /
@@ -35,27 +32,17 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
-from riskforge.workflow import ExperimentConfig, ModelSpec, Run, run_experiment
+from riskforge.data import load_data
+from riskforge.workflow import (
+    ExperimentConfig,
+    ModelSpec,
+    Run,
+    _evaluate_split,
+    _split_indices,
+    _validate_portfolio,
+)
 
-__all__ = ["tune_experiment", "TuneResult", "MissingTuneExtra"]
-
-
-class MissingTuneExtra(ImportError):
-    """Raised by ``tune_experiment`` when the ``tune`` extra (optuna) is missing."""
-
-
-def _import_optuna():
-    try:
-        import optuna
-    except ImportError as e:
-        raise MissingTuneExtra(
-            "riskforge.tune.tune_experiment requires the `tune` extra "
-            "(`uv sync --extra tune`); optuna could not be imported."
-        ) from e
-    # Optuna logs every trial completion at INFO; default to WARNING so a
-    # tuned run does not flood the actuary's CLI / pytest output.
-    optuna.logging.set_verbosity(optuna.logging.WARNING)
-    return optuna
+__all__ = ["tune_experiment", "TuneResult"]
 
 
 def _suggest(trial, kind: str, base: dict[str, Any]) -> dict[str, Any]:
@@ -91,13 +78,19 @@ def _objective_value(metrics: dict[str, float], calibration_penalty: float) -> f
 
 
 def _make_objective(
-    config: ExperimentConfig, name: str, spec: ModelSpec, calibration_penalty: float
+    config: ExperimentConfig,
+    name: str,
+    spec: ModelSpec,
+    calibration_penalty: float,
+    df,
+    train_idx,
+    test_idx,
 ):
     def objective(trial):
         tuned_params = _suggest(trial, spec.kind, dict(spec.params))
         tuned_spec = spec.model_copy(update={"params": tuned_params})
         tuned_config = config.model_copy(update={"models": {name: tuned_spec}})
-        run = run_experiment(tuned_config)
+        run = _evaluate_split(tuned_config, df, train_idx, test_idx)
         return _objective_value(run.models[name].metrics, calibration_penalty)
 
     return objective
@@ -127,7 +120,7 @@ def tune_experiment(
     return_estimators: bool = False,
 ) -> TuneResult | tuple[TuneResult, dict[str, Any]]:
     """Run an optuna study per named model; return a ``TuneResult`` whose
-    ``run`` is a fresh ``run_experiment`` with every model's best params.
+    ``run`` refits every selected model on outer training data and scores outer test.
 
     ``calibration_penalty`` scales ``|1 - op_ratio_test|`` to be commensurate
     with ``deviance_test`` -- tune it to your portfolio's deviance magnitude
@@ -142,12 +135,27 @@ def tune_experiment(
     if n_trials < 1:
         raise ValueError(f"n_trials must be >= 1; got {n_trials}")
     unsupported = [
-        name for name, spec in config.models.items()
-        if spec.kind == "frequency_severity"
+        name for name, spec in config.models.items() if spec.kind == "frequency_severity"
     ]
     if unsupported:
         raise ValueError(f"tuning frequency_severity models is not supported: {unsupported}")
-    optuna = _import_optuna()
+    try:
+        import optuna
+    except ImportError as e:
+        raise ImportError(
+            "riskforge.tune.tune_experiment requires the `tune` extra "
+            "(`uv sync --extra tune`); optuna could not be imported."
+        ) from e
+    optuna.logging.set_verbosity(optuna.logging.WARNING)
+
+    df = load_data(config.data_path, spec=config.spec)
+    if len(df) == 0:
+        raise ValueError("loaded dataset is empty")
+    _validate_portfolio(config, df)
+    outer_train_idx, outer_test_idx = _split_indices(config, df)
+    inner_train_rel, inner_test_rel = _split_indices(config, df.iloc[outer_train_idx])
+    inner_train_idx = outer_train_idx[inner_train_rel]
+    inner_test_idx = outer_train_idx[inner_test_rel]
 
     best_params: dict[str, dict[str, Any]] = {}
     best_values: dict[str, float] = {}
@@ -155,7 +163,18 @@ def tune_experiment(
         study = optuna.create_study(
             direction="minimize", sampler=optuna.samplers.TPESampler(seed=random_state + i)
         )
-        study.optimize(_make_objective(config, name, spec, calibration_penalty), n_trials=n_trials)
+        study.optimize(
+            _make_objective(
+                config,
+                name,
+                spec,
+                calibration_penalty,
+                df,
+                inner_train_idx,
+                inner_test_idx,
+            ),
+            n_trials=n_trials,
+        )
         best_params[name] = dict(study.best_trial.params)
         best_values[name] = float(study.best_trial.value)
 
@@ -168,7 +187,13 @@ def tune_experiment(
     final_config = config.model_copy(update={"models": final_models})
 
     if return_estimators:
-        run, estimators = run_experiment(final_config, return_estimators=True)
+        run, estimators = _evaluate_split(
+            final_config,
+            df,
+            outer_train_idx,
+            outer_test_idx,
+            return_estimators=True,
+        )
         return (
             TuneResult(
                 best_params=best_params,
@@ -178,7 +203,7 @@ def tune_experiment(
             ),
             estimators,
         )
-    run = run_experiment(final_config)
+    run = _evaluate_split(final_config, df, outer_train_idx, outer_test_idx)
     return TuneResult(
         best_params=best_params,
         best_values=best_values,

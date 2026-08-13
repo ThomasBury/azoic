@@ -10,8 +10,10 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 import pytest
+from sklearn.pipeline import Pipeline
 from sklearn.utils.estimator_checks import parametrize_with_checks
 
+from riskforge.models import RiskGLM
 from riskforge.preprocessing import AutoBinner, AutoGrouper, _merge_small_bins
 from tests.conftest import make_synthetic_portfolio
 
@@ -111,8 +113,23 @@ def test_autobinner_set_mapping_roundtrip() -> None:
     assert np.allclose(binner.mapping_["driver_age"], custom["driver_age"])
     out = binner.transform(df)
     assert out["driver_age"].nunique() <= 4
-    labels = sorted(str(lbl) for lbl in out["driver_age"].unique())
-    assert any("(-inf, 25]" in lbl for lbl in labels)
+    assert "(-inf, 25.0]" in out["driver_age"].cat.categories
+
+
+def test_autobinner_reserves_ordered_interval_vocabulary() -> None:
+    df = pd.DataFrame({"x": [0.0, 1.0, 2.0, 3.0]})
+    binner = AutoBinner(cols=["x"], max_bins=2).fit(df)
+
+    out = binner.transform(df.iloc[[0]])
+
+    assert out["x"].dtype == binner.category_dtypes_["x"]
+    assert out["x"].cat.ordered
+    assert len(out["x"].cat.categories) == len(binner.mapping_["x"]) + 2
+    assert (
+        list(out["x"].cat.categories)
+        == binner._labels(np.arange(len(binner.mapping_["x"]) + 2), binner.mapping_["x"]).tolist()
+    )
+    assert out["x"].cat.categories[-1] == "Missing"
 
 
 def test_autobinner_ndarray_input_returns_codes() -> None:
@@ -203,9 +220,9 @@ def test_autobinner_monotonic_false_default_unchanged() -> None:
 
 def test_autobinner_monotonic_no_target_is_noop() -> None:
     df = _df()
-    binner = AutoBinner(
-        cols=["driver_age"], strategy="quantile", max_bins=6, monotonic=True
-    ).fit(df)
+    binner = AutoBinner(cols=["driver_age"], strategy="quantile", max_bins=6, monotonic=True).fit(
+        df
+    )
     edges = binner.mapping_["driver_age"]
     assert len(edges) >= 1  # just runs the standard quantile path
 
@@ -275,6 +292,7 @@ def test_autogrouper_set_mapping_roundtrip() -> None:
     grouper.set_mapping(custom)
     out = grouper.transform(df)
     assert set(out["region"].unique()) == {"urban", "rural"}
+    assert list(out["region"].cat.categories) == ["urban", "rural", "Other"]
 
 
 def test_autogrouper_unknown_level_to_other() -> None:
@@ -283,8 +301,102 @@ def test_autogrouper_unknown_level_to_other() -> None:
     cols = list(df.columns)
     unseen = pd.concat([df.iloc[:2].copy(), pd.DataFrame({"region": ["mars"]}, index=[2])])
     unseen = unseen[cols].iloc[[2]]  # same columns as fit, only the unseen row
-    out = grouper.transform(unseen)
+    with pytest.warns(UserWarning, match="region=.*mars"):
+        out = grouper.transform(unseen)
     assert out["region"].iloc[0] == "Other"
+    assert out["region"].dtype == grouper.category_dtypes_["region"]
+
+
+def test_autogrouper_aggregates_unseen_warnings_and_silently_groups_missing() -> None:
+    train = pd.DataFrame({"first": ["A", "B"], "second": ["X", "Y"]})
+    grouper = AutoGrouper(cols=["first", "second"], strategy="rare", min_exposure=0.0).fit(train)
+
+    with pytest.warns(UserWarning) as caught:
+        out = grouper.transform(pd.DataFrame({"first": ["new-a", None], "second": ["new-b", None]}))
+
+    assert len(caught) == 1
+    message = str(caught[0].message)
+    assert "first=['new-a']" in message
+    assert "second=['new-b']" in message
+    assert "None" not in message
+    assert (out.iloc[1] == "Other").all()
+    assert all(out[col].cat.categories[-1] == "Other" for col in out)
+
+
+def test_autogrouper_ordered_similarity_merges_only_adjacent_levels() -> None:
+    levels = ["A", "B", "C", "D"]
+    df = pd.DataFrame(
+        {
+            "segment": pd.Series(levels, dtype=pd.CategoricalDtype(levels, ordered=True)),
+            "exposure": [10.0, 1.0, 10.0, 10.0],
+            "claim_amount": [0.0, 1.0, 20.0, 1_000.0],
+        }
+    )
+    grouper = AutoGrouper(
+        cols=["segment"],
+        strategy="similarity",
+        min_exposure=5.0,
+        max_groups=2,
+        exposure_col="exposure",
+        target_col="claim_amount",
+    ).fit(df)
+
+    mapping = grouper.mapping_["segment"]
+    assert mapping["A"] == mapping["B"] == mapping["C"]
+    assert mapping["C"] != mapping["D"]
+    out = grouper.transform(df)
+    assert out["segment"].cat.ordered
+    assert list(out["segment"].cat.categories) == [mapping["A"], "D", "Other"]
+
+
+def test_autogrouper_nominal_similarity_vocabulary_follows_risk() -> None:
+    df = pd.DataFrame(
+        {
+            "segment": ["A", "B", "C"],
+            "exposure": [10.0, 10.0, 10.0],
+            "claim_amount": [20.0, 0.0, 10.0],
+        }
+    )
+    grouper = AutoGrouper(
+        cols=["segment"],
+        strategy="similarity",
+        exposure_col="exposure",
+        target_col="claim_amount",
+    ).fit(df)
+
+    assert list(grouper.category_dtypes_["segment"].categories) == ["B", "C", "A", "Other"]
+    assert not grouper.category_dtypes_["segment"].ordered
+
+
+def test_autogrouper_set_mapping_rebuilds_ordered_vocabulary() -> None:
+    dtype = pd.CategoricalDtype(["A", "B", "C"], ordered=True)
+    grouper = AutoGrouper(cols=["segment"]).fit(
+        pd.DataFrame({"segment": pd.Series(["A", "B", "C"], dtype=dtype)})
+    )
+
+    grouper.set_mapping({"segment": {"B": "second", "A": "first", "C": "second"}})
+
+    fitted = grouper.category_dtypes_["segment"]
+    assert fitted.ordered
+    assert list(fitted.categories) == ["second", "first", "Other"]
+
+
+def test_autogrouper_reserved_other_supports_glm_prediction() -> None:
+    X = pd.DataFrame({"segment": ["A", "B", "A", "B"]})
+    model = Pipeline(
+        [
+            (
+                "grouper",
+                AutoGrouper(cols=["segment"], strategy="rare", min_exposure=0.0),
+            ),
+            ("model", RiskGLM()),
+        ]
+    ).fit(X, np.array([1.0, 2.0, 1.5, 2.5]))
+
+    with pytest.warns(UserWarning, match="segment=.*unseen"):
+        prediction = model.predict(pd.DataFrame({"segment": ["unseen"]}))
+
+    assert np.isfinite(prediction).all()
 
 
 def test_autogrouper_preserves_other_columns() -> None:
@@ -292,3 +404,95 @@ def test_autogrouper_preserves_other_columns() -> None:
     grouper = AutoGrouper(cols=["region"]).fit(df)
     out = grouper.transform(df)
     pd.testing.assert_series_equal(out["vehicle_brand"], df["vehicle_brand"], check_names=True)
+
+
+def test_supervised_preprocessors_exclude_and_reject_special_columns() -> None:
+    df = _df(n=500)
+    binner = AutoBinner(
+        exposure_col="exposure",
+        claim_count_col="claim_count",
+        target_col="claim_amount",
+    ).fit(df)
+    grouper = AutoGrouper(
+        exposure_col="exposure",
+        claim_count_col="claim_count",
+        target_col="claim_amount",
+    ).fit(df)
+
+    specials = {"exposure", "claim_count", "claim_amount"}
+    assert specials.isdisjoint(binner.bin_cols_)
+    assert specials.isdisjoint(grouper.group_cols_)
+    with pytest.raises(ValueError, match="special"):
+        AutoBinner(cols=["exposure"], exposure_col="exposure").fit(df)
+    with pytest.raises(ValueError, match="special"):
+        AutoGrouper(cols=["claim_amount"], target_col="claim_amount").fit(df)
+
+
+def test_autogrouper_relativities_use_aggregate_claims_over_exposure() -> None:
+    df = pd.DataFrame(
+        {
+            "segment": ["A", "A", "B", "B"],
+            "exposure": [1.0, 9.0, 1.0, 9.0],
+            "claim_amount": [10.0, 0.0, 0.0, 20.0],
+        }
+    )
+    grouper = AutoGrouper(
+        cols=["segment"],
+        exposure_col="exposure",
+        target_col="claim_amount",
+    ).fit(df)
+    stats = grouper._level_stats(
+        df["segment"].to_numpy(),
+        df["exposure"].to_numpy(),
+        None,
+        df["claim_amount"].to_numpy(),
+    )
+    assert stats.loc["A", "pp"] == pytest.approx(1.0)
+    assert stats.loc["B", "pp"] == pytest.approx(2.0)
+
+
+def test_autobinner_min_claims_uses_aggregate_claim_count_per_bin() -> None:
+    df = pd.DataFrame(
+        {
+            "x": np.arange(20, dtype=float),
+            "exposure": np.ones(20),
+            "claim_count": np.r_[np.zeros(10), np.ones(10)],
+            "claim_amount": np.r_[np.zeros(10), np.arange(1.0, 11.0)],
+        }
+    )
+    binner = AutoBinner(
+        cols=["x"],
+        strategy="tree",
+        max_bins=6,
+        min_claims=3,
+        exposure_col="exposure",
+        claim_count_col="claim_count",
+        target_col="claim_amount",
+    ).fit(df)
+    edges = binner.mapping_["x"]
+    codes = np.searchsorted(edges, df["x"].to_numpy(), side="right")
+    counts = np.bincount(
+        codes,
+        weights=df["claim_count"].to_numpy(),
+        minlength=len(edges) + 1,
+    )
+    assert (counts >= 3).all()
+
+
+def test_autogrouper_merges_trailing_group_below_credibility_floor() -> None:
+    df = pd.DataFrame(
+        {
+            "segment": ["A", "B", "C"],
+            "exposure": [10.0, 10.0, 1.0],
+            "claim_amount": [10.0, 20.0, 3.0],
+        }
+    )
+    grouper = AutoGrouper(
+        cols=["segment"],
+        strategy="similarity",
+        min_exposure=10.0,
+        exposure_col="exposure",
+        target_col="claim_amount",
+    ).fit(df)
+    mapping = grouper.mapping_["segment"]
+    assert mapping["B"] == mapping["C"]

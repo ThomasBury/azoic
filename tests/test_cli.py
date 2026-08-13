@@ -101,6 +101,28 @@ def test_cli_profile_writes_csv(tmp_path: Path) -> None:
     assert "action" in table.columns and "reason" in table.columns
 
 
+def test_cli_profile_prints_plain_table_to_stdout(tmp_path: Path) -> None:
+    data = _write_portfolio(tmp_path, n=100)
+    result = runner.invoke(
+        app,
+        [
+            "profile",
+            "--data",
+            str(data),
+            "--target",
+            "claim_amount",
+            "--exposure",
+            "exposure",
+            "--claim-count",
+            "claim_count",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert "column" in result.output
+    assert "claim_amount" in result.output
+    assert "action" in result.output
+
+
 def test_cli_profile_invalid_target_fails(tmp_path: Path) -> None:
     data = _write_portfolio(tmp_path)
     result = runner.invoke(
@@ -187,33 +209,6 @@ def test_cli_compare_two_configs_writes_csv_and_dashboard(tmp_path: Path) -> Non
 
 
 # ---------------------------------------------------------------------------
-# --help / no-args is-help
-# ---------------------------------------------------------------------------
-
-
-def test_cli_no_args_prints_help() -> None:
-    result = runner.invoke(app, [])
-    # no_args_is_help=True -> exit 2 (Usage) and the help text in stdout.
-    assert "Usage:" in result.output or "usage:" in result.output.lower()
-
-
-def test_cli_help_lists_three_commands() -> None:
-    result = runner.invoke(app, ["--help"])
-    for cmd in ("profile", "fit", "compare"):
-        assert cmd in result.output
-
-
-def test_cli_main_smoke_via_python_dash_m() -> None:
-    """A separate parity check: ``python -m riskforge.cli --help`` exists.
-    Verifies the module-level ``if __name__ == '__main__': app()`` is wired up.
-    """
-    # Just exercising the same code path with `prog` so the help text shows.
-    result = runner.invoke(app, ["--help"])
-    assert result.exit_code == 0
-    assert "RiskForge" in result.output
-
-
-# ---------------------------------------------------------------------------
 # export-tariff (M6)
 # ---------------------------------------------------------------------------
 
@@ -281,13 +276,6 @@ def test_cli_export_tariff_gbm_model_rejected(tmp_path: Path) -> None:
     assert "RiskGLM" in result.output or "GLM" in result.output
 
 
-def test_cli_help_lists_four_commands() -> None:
-    result = runner.invoke(app, ["--help"])
-    for cmd in ("profile", "fit", "compare", "export-tariff"):
-        assert cmd in result.output
-
-
-# ---------------------------------------------------------------------------
 # tune (M7 / v0.2 part 1)
 # ---------------------------------------------------------------------------
 

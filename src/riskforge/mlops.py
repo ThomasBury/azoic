@@ -20,22 +20,7 @@ from pathlib import Path
 
 from riskforge.workflow import Run
 
-__all__ = ["log_run", "MissingMLOpsExtra"]
-
-
-class MissingMLOpsExtra(ImportError):
-    """Raised by ``log_run`` when the ``mlops`` extra (mlflow) is not installed."""
-
-
-def _import_mlflow():
-    try:
-        import mlflow
-    except ImportError as e:
-        raise MissingMLOpsExtra(
-            "riskforge.mlops.log_run requires the `mlops` extra "
-            "(`uv sync --extra mlops`); mlflow could not be imported."
-        ) from e
-    return mlflow
+__all__ = ["log_run"]
 
 
 def _flatten_params(prefix: str, params: dict) -> dict:
@@ -70,7 +55,13 @@ def log_run(
         skipped -- mlflow rejects NaN since 3.x).
       * Artifacts: every path in ``artifacts`` (file or directory).
     """
-    mlflow = _import_mlflow()
+    try:
+        import mlflow
+    except ImportError as e:
+        raise ImportError(
+            "riskforge.mlops.log_run requires the `mlops` extra "
+            "(`uv sync --extra mlops`); mlflow could not be imported."
+        ) from e
 
     if tracking_uri is not None:
         mlflow.set_tracking_uri(tracking_uri)

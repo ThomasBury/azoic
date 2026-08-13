@@ -35,3 +35,10 @@ docs/_build/
 # Logs
 *.log
 mlruns/
+
+# Executable tutorial outputs
+examples/fremtpl2.html
+examples/fremtpl2_files/
+examples/.quarto/
+examples/_freeze/
+examples/_artifacts/

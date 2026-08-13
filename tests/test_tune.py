@@ -12,17 +12,22 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import pytest
 
 optuna = pytest.importorskip("optuna")  # skip the whole module if tune extra absent
 
 from riskforge.tune import (  # noqa: E402
-    MissingTuneExtra,
     TuneResult,
     _objective_value,
     tune_experiment,
 )
-from riskforge.workflow import ExperimentConfig, ModelSpec, run_experiment  # noqa: E402
+from riskforge.workflow import (  # noqa: E402
+    ExperimentConfig,
+    ModelSpec,
+    _split_indices,
+    run_experiment,
+)
 from tests.conftest import make_synthetic_portfolio  # noqa: E402
 
 
@@ -184,18 +189,14 @@ def test_tune_experiment_rejects_frequency_severity(tmp_path: Path) -> None:
         tune_experiment(cfg, n_trials=1)
 
 
-def test_tune_experiment_best_value_is_a_real_objective(tmp_path: Path) -> None:
-    """The best value should match the same objective evaluated on the final
-    run's metrics (deviance + penalty * |1 - op|)."""
+def test_tune_experiment_best_value_is_a_finite_inner_objective(tmp_path: Path) -> None:
     cfg = _config(tmp_path, models={"glm-tweedie": _glm()})
     result = tune_experiment(cfg, n_trials=3, calibration_penalty=1.0)
-    m = result.run.models["glm-tweedie"].metrics
-    expected = float(m["deviance_test"]) + 1.0 * abs(1.0 - float(m["op_ratio_test"]))
-    assert result.best_values["glm-tweedie"] == pytest.approx(expected, rel=1e-6)
+    assert np.isfinite(result.best_values["glm-tweedie"])
 
 
 # ---------------------------------------------------------------------------
-# MissingTuneExtra error path (lazy import)
+# Missing tune extra error path (lazy import)
 # ---------------------------------------------------------------------------
 
 
@@ -208,49 +209,53 @@ def test_tune_experiment_missing_optuna_raises_helpful_error(
 
     monkeypatch.setitem(sys.modules, "optuna", None)
     cfg = _config(tmp_path, models={"glm-tweedie": _glm()})
-    with pytest.raises(MissingTuneExtra, match="tune"):
+    with pytest.raises(ImportError, match="tune"):
         tune_experiment(cfg, n_trials=1)
 
 
 # ---------------------------------------------------------------------------
-# M7 acceptance: tuned run is a canonical, apples-to-apples Run
-# ---------------------------------------------------------------------------
+
+
+def test_tuning_does_not_inspect_outer_test_outcomes(tmp_path: Path) -> None:
+    config = _config(tmp_path, models={"glm-tweedie": _glm()})
+    df = pd.read_parquet(config.data_path)
+    _, outer_test_idx = _split_indices(config, df)
+    changed = df.copy()
+    target_pos = changed.columns.get_loc("claim_amount")
+    changed.iloc[outer_test_idx, target_pos] *= 10.0
+    changed_path = tmp_path / "changed-outer.parquet"
+    changed.to_parquet(changed_path)
+    changed_config = config.model_copy(update={"data_path": str(changed_path)})
+
+    original = tune_experiment(config, n_trials=3, random_state=7)
+    modified = tune_experiment(changed_config, n_trials=3, random_state=7)
+
+    assert original.best_params == modified.best_params
+    assert original.best_values == pytest.approx(modified.best_values, rel=1e-12)
+    assert (
+        original.run.models["glm-tweedie"].metrics["deviance_test"]
+        != modified.run.models["glm-tweedie"].metrics["deviance_test"]
+    )
 
 
 def test_m7_acceptance_tuned_run_apples_to_apples(tmp_path: Path) -> None:
-    cfg = _config(
+    config = _config(
         tmp_path,
         models={"glm-tweedie": _glm(), "gbm-tweedie": _gbm()},
         name="m7-acceptance",
     )
-    result = tune_experiment(cfg, n_trials=3, calibration_penalty=1.0)
+    result = tune_experiment(config, n_trials=3, calibration_penalty=1.0)
+    baseline = run_experiment(config)
 
-    # 1. TuneResult shape.
     assert set(result.best_params) == {"glm-tweedie", "gbm-tweedie"}
     assert result.n_trials == 3
-
-    # 2. The final run is a canonical run_experiment output: apples-to-apples
-    #    comparability with the un-tuned reference.
-    baseline = run_experiment(cfg)
     assert set(result.run.models) == set(baseline.models)
     assert result.run.feature_names == baseline.feature_names
     assert result.run.n_rows == baseline.n_rows
     assert result.run.n_train == baseline.n_train
     assert result.run.n_test == baseline.n_test
-
-    # 3. Both tuned models carry finite primary diagnostics + a 10-row
-    #    calibration table.
-    for name in ("glm-tweedie", "gbm-tweedie"):
-        m = result.run.models[name].metrics
-        assert np.isfinite(m["gini_test"])
-        assert np.isfinite(m["op_ratio_test"])
-        assert np.isfinite(m["deviance_test"])
-        cal = result.run.models[name].calibration_table
-        assert len(cal) >= 2
-        assert {
-            "exposure",
-            "claim_amount",
-            "observed_pure_premium",
-            "predicted_pure_premium",
-            "o_p_ratio",
-        }.issubset(cal.columns)
+    for model_result in result.run.models.values():
+        assert np.isfinite(model_result.metrics["gini_test"])
+        assert np.isfinite(model_result.metrics["op_ratio_test"])
+        assert np.isfinite(model_result.metrics["deviance_test"])
+        assert len(model_result.calibration_table) >= 2

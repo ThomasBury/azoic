@@ -70,10 +70,10 @@ def test_extract_tariff_structure_numeric_and_categorical() -> None:
         assert t["categorical"][feat][ref] == pytest.approx(1.0)
 
 
-def test_extract_tariff_default_reference_is_first_sorted_level() -> None:
+def test_extract_tariff_default_reference_is_first_fitted_level() -> None:
     glm, _ = _fit_glm()
     t = extract_tariff(glm)
-    assert t["reference"]["region"] == "rural"  # sorted(["rural","suburban","urban"])[0]
+    assert t["reference"]["region"] == "rural"
     assert t["reference"]["vehicle_brand"] == "A"
 
 
@@ -96,9 +96,7 @@ def test_extract_tariff_mapping_frame_lists_features_and_roles() -> None:
     glm, _ = _fit_glm()
     t = extract_tariff(glm)
     m = t["mapping"]
-    assert list(m.columns) == [
-        "feature", "role", "dtype", "levels", "n_levels", "reference_level"
-    ]
+    assert list(m.columns) == ["feature", "role", "dtype", "levels", "n_levels", "reference_level"]
     # Each input feature appears exactly once (deduplicated across levels).
     assert sorted(m["feature"]) == ["driver_age", "region", "vehicle_age", "vehicle_brand"]
     roles = dict(zip(m["feature"], m["role"], strict=True))
@@ -125,6 +123,39 @@ def test_apply_tariff_roundtrips_to_glm_predict() -> None:
     assert np.allclose(applied, predicted, rtol=1e-6, atol=1e-3)
 
 
+def test_extract_tariff_preserves_typed_ordered_levels() -> None:
+    rng = np.random.default_rng(42)
+    intervals = [pd.Interval(0, 1), pd.Interval(1, 2)]
+    X = pd.DataFrame(
+        {
+            "ordered_int": pd.Categorical(
+                rng.choice([2, 1, 3], 300), categories=[2, 1, 3], ordered=True
+            ),
+            "flag": pd.Categorical(
+                rng.choice([True, False], 300), categories=[True, False], ordered=True
+            ),
+            "band": pd.Categorical(rng.choice(intervals, 300), categories=intervals, ordered=True),
+            "x": rng.normal(size=300),
+        }
+    )
+    y = np.exp(0.1 + 0.2 * X["x"].to_numpy() + rng.normal(scale=0.1, size=len(X)))
+    glm = RiskGLM(family="gamma", link="log", alpha=0.1).fit(X, y)
+
+    tariff = extract_tariff(glm, reference={"ordered_int": 1})
+
+    assert list(tariff["categorical"]["ordered_int"]) == [2, 1, 3]
+    assert list(tariff["categorical"]["flag"]) == [True, False]
+    assert list(tariff["categorical"]["band"]) == intervals
+    assert {type(level) for level in tariff["categorical"]["ordered_int"]} == {int}
+    assert {type(level) for level in tariff["categorical"]["flag"]} == {bool}
+    assert {type(level) for level in tariff["categorical"]["band"]} == {pd.Interval}
+    assert tariff["reference"] == {"ordered_int": 1, "flag": True, "band": intervals[0]}
+    assert tariff["categorical"]["ordered_int"][1] == pytest.approx(1.0)
+    assert np.allclose(apply_tariff(tariff, X), glm.predict(X))
+    with pytest.raises(ValueError, match="not in feature"):
+        extract_tariff(glm, reference={"flag": 1})
+
+
 def test_apply_tariff_requires_dataframe() -> None:
     glm, _ = _fit_glm()
     t = extract_tariff(glm)
@@ -148,20 +179,13 @@ def test_apply_tariff_missing_categorical_column_raises() -> None:
         apply_tariff(t, X[["driver_age", "vehicle_age", "vehicle_brand"]])
 
 
-def test_apply_tariff_unknown_categorical_level_gets_factor_one() -> None:
-    """An unknown level (not seen in fit) is not in ``categorical[feat]`` so
-    no row matches it -- factor defaults to 1.0, mirroring glum's
-    ``cat_missing_method="fail"`` guard failing at *predict* time. The
-    structural tariff treats missing as the reference; actuary's call to
-    override that goes through ``reference=``."""
+def test_apply_tariff_unknown_categorical_level_raises() -> None:
     glm, df = _fit_glm()
-    t = extract_tariff(glm)
+    tariff = extract_tariff(glm)
     X = df.head(3).copy()
-    X.loc[:, "region"] = "atlantis"  # unseen level
-    out = apply_tariff(t, X)
-    # factor for the unknown level == 1.0 (no row matched), i.e. region
-    # contributes nothing beyond the base's folded reference coefficient.
-    assert np.all(out > 0)
+    X.loc[:, "region"] = "atlantis"
+    with pytest.raises(ValueError, match="unknown levels"):
+        apply_tariff(tariff, X)
 
 
 # ---------------------------------------------------------------------------
@@ -210,7 +234,8 @@ def test_export_tariff_writes_three_sheets(tmp_path: Path) -> None:
     glm, df = _fit_glm()
     out = tmp_path / "tariff.xlsx"
     p = export_tariff(
-        glm, out,
+        glm,
+        out,
         X=df[["driver_age", "vehicle_age", "region", "vehicle_brand", "exposure"]],
         y=df["claim_amount"],
         exposure_col="exposure",
@@ -224,7 +249,8 @@ def test_export_tariff_recalibrated_reproduces_portfolio_total(tmp_path: Path) -
     glm, df = _fit_glm()
     out = tmp_path / "tariff.xlsx"
     export_tariff(
-        glm, out,
+        glm,
+        out,
         X=df[["driver_age", "vehicle_age", "region", "vehicle_brand", "exposure"]],
         y=df["claim_amount"],
         exposure_col="exposure",
@@ -247,8 +273,7 @@ def test_export_tariff_recalibrated_reproduces_portfolio_total(tmp_path: Path) -
     tariff = {
         "base_rate": base,
         "reference": {
-            f: next(lvl for lvl, fac in fs.items() if fac == 1.0)
-            for f, fs in categorical.items()
+            f: next(lvl for lvl, fac in fs.items() if fac == 1.0) for f, fs in categorical.items()
         },
         "numeric": numeric,
         "categorical": categorical,
@@ -264,7 +289,8 @@ def test_export_tariff_no_recalibrate_stays_structural(tmp_path: Path) -> None:
     glm, df = _fit_glm()
     out = tmp_path / "tariff.xlsx"
     export_tariff(
-        glm, out,
+        glm,
+        out,
         X=df[["driver_age", "vehicle_age", "region", "vehicle_brand", "exposure"]],
         y=df["claim_amount"],
         exposure_col="exposure",
@@ -288,7 +314,8 @@ def test_export_tariff_custom_reference_applied(tmp_path: Path) -> None:
     glm, df = _fit_glm()
     out = tmp_path / "tariff.xlsx"
     export_tariff(
-        glm, out,
+        glm,
+        out,
         X=df[["driver_age", "vehicle_age", "region", "vehicle_brand", "exposure"]],
         y=df["claim_amount"],
         exposure_col="exposure",
@@ -307,8 +334,15 @@ def test_export_tariff_custom_reference_applied(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# M6 acceptance: portfolio total reproduction
-# ---------------------------------------------------------------------------
+
+
+def test_apply_tariff_rejects_nonfinite_numeric_input() -> None:
+    glm, df = _fit_glm()
+    tariff = extract_tariff(glm)
+    X = df.head(3).copy()
+    X.loc[X.index[0], "driver_age"] = np.nan
+    with pytest.raises(ValueError, match="finite"):
+        apply_tariff(tariff, X)
 
 
 def test_export_tariff_unwraps_preprocessing_pipeline(tmp_path: Path) -> None:
@@ -351,6 +385,8 @@ def test_export_tariff_unwraps_preprocessing_pipeline(tmp_path: Path) -> None:
 
     mappings = pd.read_excel(out, sheet_name="mappings")
     assert {"binned", "grouped"}.issubset(set(mappings["role"]))
+    assert "Missing" in mappings.loc[mappings["feature"] == "driver_age", "levels"].iloc[0]
+    assert "Other" in mappings.loc[mappings["feature"] == "region", "levels"].iloc[0]
 
     transformed = X
     for _, step in pipeline.steps[:-1]:
@@ -362,27 +398,31 @@ def test_export_tariff_unwraps_preprocessing_pipeline(tmp_path: Path) -> None:
 
 
 def test_m6_acceptance_tariff_reproduces_portfolio_total(tmp_path: Path) -> None:
-    """M6 done-when: the recalibrated xlsx tariff, reapplied to the portfolio,
-    reproduces the total observed claim amount within tight tolerance."""
     glm, df = _fit_glm(n=4000)
     out = tmp_path / "m6.xlsx"
     export_tariff(
-        glm, out,
+        glm,
+        out,
         X=df[["driver_age", "vehicle_age", "region", "vehicle_brand", "exposure"]],
         y=df["claim_amount"],
         exposure_col="exposure",
         recalibrate=True,
     )
-    xl = pd.read_excel(out, sheet_name=None)
-    # The base sheet's recalibrated flag is on.
-    assert bool(xl["base_rate"].iloc[0]["recalibrated"]) is True
-    # The factors sheet covers every numeric + every categorical level.
-    f = xl["factors"]
-    assert set(f["feature"]) == {"driver_age", "vehicle_age", "region", "vehicle_brand"}
-    assert (f["level"] == "_per_unit").sum() == 2  # two numeric features
-    cat_rows = f[f["level"] != "_per_unit"]
-    assert len(cat_rows) == 7  # 3 region + 4 vehicle_brand levels
-    # The mappings sheet exposes every feature + the chosen reference.
-    m = xl["mappings"]
-    assert sorted(m["feature"]) == ["driver_age", "region", "vehicle_age", "vehicle_brand"]
-    assert "reference_level" in m.columns
+    sheets = pd.read_excel(out, sheet_name=None)
+    assert bool(sheets["base_rate"].iloc[0]["recalibrated"]) is True
+    factors = sheets["factors"]
+    assert set(factors["feature"]) == {
+        "driver_age",
+        "vehicle_age",
+        "region",
+        "vehicle_brand",
+    }
+    assert (factors["level"] == "_per_unit").sum() == 2
+    assert len(factors[factors["level"] != "_per_unit"]) == 7
+    mappings = sheets["mappings"]
+    assert sorted(mappings["feature"]) == [
+        "driver_age",
+        "region",
+        "vehicle_age",
+        "vehicle_brand",
+    ]

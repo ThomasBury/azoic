@@ -16,13 +16,16 @@ policy admin, Guidewire integration.
 
 ## Setup commands
 
-- Install everything: `uv sync --all-extras`
-- Install core modelling stack: `uv sync`
+- Install runtime only: `uv sync --no-dev`
+- Install default development environment: `uv sync`
+- Install everything: `uv sync --all-extras --all-groups`
+- Install tutorial stack: `uv sync --group demo --extra mlops --extra plot`
 - Run tests (fail fast): `uv run pytest -x`
 - Run all tests: `uv run pytest`
 - Lint: `uv run ruff check .`
 - Format: `uv run ruff format .`
 - Combined check: `just check`
+- Render freMTPL2 tutorial: `just demo` (external Quarto prerequisite)
 - CLI smoke: `uv run riskforge --help` (after M5)
 
 ## Repo layout
@@ -43,9 +46,10 @@ src/riskforge/
   tune.py           # tune_experiment (optuna, lazy import) -- v0.2 part 1 / M7
   cli.py            # Typer entry point
 tests/              # pytest; synthetic portfolio fixture in conftest.py
+examples/fremtpl2.qmd # source-only executable freMTPL2 tutorial
 ```
 
-14 flat modules. No `utils`. No subpackages. Don't create either without
+13 flat modules. No `utils`. No subpackages. Don't create either without
 checking `PRD.md` sections 3 and 9.
 
 ## Code style
@@ -56,8 +60,8 @@ checking `PRD.md` sections 3 and 9.
 - **No `utils.py` / dead scaffolding** — write code when it's used, not "for
   later".
 - **pandas in/out at module boundaries; numpy inside**; never polars in v1.
-- **New deps** go to a pyproject extra (`aws`, `mlops`, `tune`, `plot`) with a
-  one-line justification in the PR; never silently widen core.
+- **New deps** go to a pyproject extra or dependency group (`demo`, `dev`) with
+  a one-line justification in the PR; never silently widen core.
 - **Deliberate shortcuts** tagged `# ponytail: <known ceiling>, upgrade when
   <trigger>`.
 - **No comments unless they encode a non-obvious rule** (e.g. the actuarial
@@ -69,19 +73,24 @@ checking `PRD.md` sections 3 and 9.
 1. Exposure is a **weight** for pure premium: `y = claim_amount/exposure`,
    `sample_weight=exposure`. Use `offset=log(exposure)` ONLY when
    `y = claim_amount` (aggregate). Never mix.
-2. Frequency: `y = claim_count`, `sample_weight=exposure`, Poisson.
+2. Frequency: `y = claim_count / exposure`, `sample_weight=exposure`, Poisson.
 3. Severity: fit on `claim_count > 0` only (Gamma needs `y > 0`). The filter
    lives INSIDE `FrequencySeverityModel.fit`.
 4. LightGBM `tweedie_variance_power`: `1.0 <= p < 2.0` — validate in
    `__init__`.
 5. **Don't reimplement deviances** — `sklearn.metrics.mean_{tweedie,poisson,gamma}_deviance`
-   accept `sample_weight`. Re-export/wrap only.
-6. Gini = ranking only. Never claim calibration from it; always pair with
+   accept `sample_weight`. Re-export/wrap only. `deviance_test` is exposure-
+   weighted mean Tweedie deviance with fixed `power=1.5`.
+6. Gini = concentration ranking only; aggregate tied prediction scores before
+   integration. Never claim calibration from it; always pair with
    `calibration_table` + O/P ratio.
 7. Primary diagnostics: `gini`, `lorenz`, `calibration_table`, O/P ratio,
    lift. RMSE/MAE/R^2/MAPE are secondary — warn when surfacing.
 8. **Special columns travel inside X** (`exposure_col` etc.) — never as
    `fit(X, y, exposure=...)` kwargs; that breaks `GridSearchCV`.
+9. Temporal splits reject missing times and keep equal timestamps on one side.
+10. Tune on an inner split of outer training data; evaluate outer test once.
+11. Tariff application rejects unseen categories and non-finite numerics.
 
 ## Testing
 
@@ -89,9 +98,12 @@ checking `PRD.md` sections 3 and 9.
   (`make_synthetic_portfolio(seed=42)`).
 - Every estimator/transformer passes
   `sklearn.utils.estimator_checks.parametrize_with_checks`.
-- No network, no S3, no real data in tests.
+- No network, no S3, no real data in automated tests. Real-data fetching is
+  permitted only during manual rendering of `examples/fremtpl2.qmd`.
 - New module -> new `tests/test_<module>.py` with at least one runnable
   check.
+- Keep tutorial HTML, Quarto caches/support files, fetched data, workbooks,
+  reports, and MLflow state ignored; only the `.qmd` is source-controlled.
 - Run `just check` (or `uv run ruff check . && uv run pytest`) before
   finishing any task.
 

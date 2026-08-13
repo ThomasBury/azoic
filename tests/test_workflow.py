@@ -14,6 +14,7 @@ from riskforge.workflow import (
     ModelSpec,
     Run,
     _data_fingerprint,
+    _deviance_test,
     run_experiment,
 )
 from tests.conftest import make_synthetic_portfolio
@@ -162,7 +163,6 @@ def test_run_experiment_basic_returns_run_with_results(tmp_path: Path) -> None:
         assert "observed_pure_premium" in res.calibration_table.columns
         assert "o_p_ratio" in res.calibration_table.columns
     # __getitem__ access.
-    assert run["glm-tweedie"].name == "glm-tweedie"
 
 
 def test_data_fingerprint_covers_values_columns_dtypes_and_index() -> None:
@@ -233,11 +233,20 @@ models:
     assert set(run.models) == {"direct", "freq-sev"}
     assert all(isinstance(estimator, Pipeline) for estimator in estimators.values())
     assert isinstance(estimators["direct"].named_steps["model"], RiskGLM)
-    assert isinstance(
-        estimators["freq-sev"].named_steps["model"], FrequencySeverityModel
-    )
+    assert isinstance(estimators["freq-sev"].named_steps["model"], FrequencySeverityModel)
     assert estimators["direct"].named_steps["model"].exposure_col == "exposure"
-    assert np.isfinite(run["freq-sev"].metrics["deviance_test"])
+    assert np.isfinite(run.models["freq-sev"].metrics["deviance_test"])
+
+    outcome_columns = ["claim_amount", "claim_count"]
+    labeled = pd.read_parquet(data)[[*run.feature_names, "exposure", *outcome_columns]]
+    unlabeled = labeled.drop(columns=outcome_columns)
+    for estimator in estimators.values():
+        expected = estimator.predict(labeled)
+        actual = estimator.predict(unlabeled)
+        np.testing.assert_allclose(actual, expected)
+        assert len(actual) == len(unlabeled)
+        assert np.isfinite(actual).all()
+        assert (actual >= 0).all()
 
 
 def test_run_experiment_temporal_split_requires_time_col(tmp_path: Path) -> None:
@@ -256,8 +265,7 @@ def test_run_experiment_temporal_split_with_time_col(tmp_path: Path) -> None:
     # Temporal split sorts ascending; use a cutoff at the 80th percentile of days.
     p = tmp_path / "portfolio.parquet"
     df.to_parquet(p)
-    body = (
-        f"""name: smoke
+    body = f"""name: smoke
 data_path: {p}
 spec:
   target: claim_amount
@@ -281,12 +289,11 @@ models:
       exposure_col: exposure
       tweedie_power: 1.5
 """
-    )
     yaml_path = _write_yaml(tmp_path, body)
     cfg = ExperimentConfig.from_yaml(yaml_path)
     run = run_experiment(cfg)
-    assert run.n_test == int(round(2000 * 0.2))
-    assert run.n_train == 2000 - run.n_test
+    assert run.n_test >= int(round(2000 * 0.2))
+    assert run.n_train + run.n_test == 2000
     assert run.models["glm-tweedie"].metrics["gini_test"] >= 0.0
 
 
@@ -297,7 +304,7 @@ def test_run_experiment_pure_premium_op_ratio_near_one(tmp_path: Path) -> None:
     yaml_path = _write_yaml(tmp_path, _basic_yaml(str(data)))
     cfg = ExperimentConfig.from_yaml(yaml_path)
     run = run_experiment(cfg)
-    op = run["glm-tweedie"].metrics["op_ratio_test"]
+    op = run.models["glm-tweedie"].metrics["op_ratio_test"]
     # Tw1 tolerance matches the M3 acceptance test -- portfolio adequacy held.
     assert 0.85 <= op <= 1.15, f"op_ratio_test drift: {op:.4f}"
 
@@ -322,26 +329,107 @@ def test_run_experiment_empty_dataset_raises(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# M5 acceptance: end-to-end on synthetic data
-# ---------------------------------------------------------------------------
+
+
+def test_deviance_test_is_exposure_weighted_tweedie_power_1_5() -> None:
+    from sklearn.metrics import mean_tweedie_deviance
+
+    observed = np.array([0.0, 1.0, 4.0])
+    predicted = np.array([0.5, 1.5, 3.0])
+    exposure = np.array([1.0, 2.0, 5.0])
+    actual = _deviance_test(
+        obs_rate=observed,
+        pred_rate=predicted,
+        exposure=exposure,
+    )
+    expected = mean_tweedie_deviance(
+        observed,
+        predicted,
+        sample_weight=exposure,
+        power=1.5,
+    )
+    squared_error = mean_tweedie_deviance(
+        observed,
+        predicted,
+        sample_weight=exposure,
+        power=0,
+    )
+    assert actual == pytest.approx(expected)
+    assert actual != pytest.approx(squared_error)
+
+
+def test_experiment_config_rejects_empty_models_duplicate_and_special_features() -> None:
+    base = {
+        "data_path": "ignored",
+        "spec": {"target": "claim_amount", "exposure": "exposure"},
+    }
+    with pytest.raises(ValueError, match="models"):
+        ExperimentConfig(**base, models={})
+    with pytest.raises(ValueError, match="unique"):
+        ExperimentConfig(
+            **base,
+            features=["driver_age", "driver_age"],
+            models={"glm": ModelSpec()},
+        )
+    with pytest.raises(ValueError, match="special"):
+        ExperimentConfig(
+            **base,
+            features=["driver_age", "exposure"],
+            models={"glm": ModelSpec()},
+        )
+
+
+@pytest.mark.parametrize(
+    ("column", "value", "message"),
+    [
+        ("exposure", 0.0, "positive finite"),
+        ("exposure", np.inf, "positive finite"),
+        ("claim_amount", -1.0, "non-negative finite"),
+        ("claim_amount", np.inf, "non-negative finite"),
+        ("claim_count", -1.0, "non-negative finite"),
+        ("claim_count", np.inf, "non-negative finite"),
+    ],
+)
+def test_run_experiment_rejects_invalid_portfolio_values(
+    tmp_path: Path,
+    column: str,
+    value: float,
+    message: str,
+) -> None:
+    df = make_synthetic_portfolio(n=100, seed=42)
+    if column == "claim_count":
+        df[column] = df[column].astype(float)
+    df.loc[df.index[0], column] = value
+    data = tmp_path / "invalid.parquet"
+    df.to_parquet(data)
+    config = ExperimentConfig.from_yaml(_write_yaml(tmp_path, _basic_yaml(str(data))))
+    with pytest.raises(ValueError, match=message):
+        run_experiment(config)
+
+
+def test_run_experiment_rejects_inconsistent_claim_rows(tmp_path: Path) -> None:
+    df = make_synthetic_portfolio(n=100, seed=42)
+    df.loc[df.index[0], ["claim_count", "claim_amount"]] = [0, 1.0]
+    data = tmp_path / "inconsistent.parquet"
+    df.to_parquet(data)
+    config = ExperimentConfig.from_yaml(_write_yaml(tmp_path, _basic_yaml(str(data))))
+    with pytest.raises(ValueError, match="zero or positive together"):
+        run_experiment(config)
 
 
 def test_m5_acceptance_example_config_runs_end_to_end(tmp_path: Path) -> None:
-    """M5 done-when: an example YAML config runs end-to-end on the synthetic
-    portfolio -- both models fit, predict, score, and the model card / Run are
-    populated."""
     data = _write_portfolio(tmp_path, n=4000)
-    yaml_path = _write_yaml(tmp_path, _basic_yaml(str(data)))
-    cfg = ExperimentConfig.from_yaml(yaml_path)
-    run = run_experiment(cfg)
+    config = ExperimentConfig.from_yaml(_write_yaml(tmp_path, _basic_yaml(str(data))))
+    run = run_experiment(config)
 
-    # Both estimators produce a non-trivial ranking on the test set.
-    for name in run.models:
-        assert run[name].metrics["gini_test"] > 0.0, f"{name} gini_test not positive"
-        op = run[name].metrics["op_ratio_test"]
-        assert 0.5 <= op <= 1.5, f"{name} op_ratio_test drift: {op:.3f}"
-        # Calibration table is non-empty and has all expected columns.
-        tbl = run[name].calibration_table
-        assert len(tbl) >= 2
-        assert {"exposure", "claim_amount", "observed_pure_premium",
-                "predicted_pure_premium", "o_p_ratio"}.issubset(tbl.columns)
+    for name, result in run.models.items():
+        assert result.metrics["gini_test"] > 0.0, name
+        assert 0.5 <= result.metrics["op_ratio_test"] <= 1.5
+        assert len(result.calibration_table) >= 2
+        assert {
+            "exposure",
+            "claim_amount",
+            "observed_pure_premium",
+            "predicted_pure_premium",
+            "o_p_ratio",
+        }.issubset(result.calibration_table.columns)

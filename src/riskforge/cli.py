@@ -23,8 +23,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import typer
-from rich.console import Console
-from rich.table import Table
 
 from riskforge.data import DatasetSpec, load_data
 from riskforge.profile import profile_features, screen_features
@@ -37,30 +35,6 @@ app = typer.Typer(
     add_completion=False,
     help="RiskForge: non-life technical tariff (pure premium) modelling.",
 )
-
-
-def _console() -> Console:
-    """Fresh console per call so ``typer.testing.CliRunner`` (which patches
-    ``sys.stdout`` during ``invoke``) captures rich output.
-
-    ponytail: no module-level Console -- its captured ``file`` would outlive a
-    test patch and silently bypass the runner.
-    """
-    return Console()
-
-
-def _register_run_row(
-    table: Table, run_name: str, model_name: str, kind: str, metrics: dict[str, float]
-) -> None:
-    table.add_row(
-        run_name,
-        model_name,
-        kind,
-        f"{metrics.get('gini_train', float('nan')):.4f}",
-        f"{metrics.get('gini_test', float('nan')):.4f}",
-        f"{metrics.get('op_ratio_test', float('nan')):.4f}",
-        f"{metrics.get('deviance_test', float('nan')):.4f}",
-    )
 
 
 @app.command()
@@ -89,15 +63,10 @@ def profile(
 
     if out is not None:
         screened.to_csv(out, index=False)
-        _console().print(f"[green]Wrote[/green] {len(screened)} rows to {out}")
+        typer.echo(f"Wrote {len(screened)} rows to {out}")
         return
 
-    table = Table(title=f"RiskForge profile -- {data}")
-    for c in screened.columns:
-        table.add_column(str(c))
-    for _, row in screened.iterrows():
-        table.add_row(*[str(v) for v in row.to_list()])
-    _console().print(table)
+    typer.echo(screened.to_string(index=False))
 
 
 @app.command()
@@ -112,15 +81,13 @@ def fit(
     run = run_experiment(cfg)
     md = model_card(run, fmt="md")
 
-    cons = _console()
     if out is not None:
         out.write_text(md, encoding="utf-8")
-        cons.print(f"[green]Wrote[/green] markdown card to {out}")
+        typer.echo(f"Wrote markdown card to {out}")
     if out_html is not None:
         out_html.write_text(model_card(run, fmt="html"), encoding="utf-8")
-        cons.print(f"[green]Wrote[/green] HTML card to {out_html}")
+        typer.echo(f"Wrote HTML card to {out_html}")
     if not quiet:
-        # typer.echo: plain text, no rich markup parsing on the caller's md.
         typer.echo(md)
 
 
@@ -137,35 +104,19 @@ def compare(
     ),
 ) -> None:
     """Run multiple configs and print a side-by-side per-model metric table."""
-    runs = [
-        run_experiment(ExperimentConfig.from_yaml(cfg_path))
-        for cfg_path in configs
-    ]
+    runs = [run_experiment(ExperimentConfig.from_yaml(cfg_path)) for cfg_path in configs]
     rows = comparison_table(runs)
 
     if out is not None:
         rows.to_csv(out, index=False)
-        _console().print(f"[green]Wrote[/green] {len(rows)} rows to {out}")
+        typer.echo(f"Wrote {len(rows)} rows to {out}")
     if out_html is not None:
         out_html.write_text(comparison_dashboard(runs), encoding="utf-8")
-        _console().print(f"[green]Wrote[/green] dashboard to {out_html}")
+        typer.echo(f"Wrote dashboard to {out_html}")
     if out is not None or out_html is not None:
         return
 
-    table = Table(title="RiskForge compare")
-    for c in (
-        "config",
-        "model",
-        "kind",
-        "gini_train",
-        "gini_test",
-        "op_ratio_test",
-        "deviance_test",
-    ):
-        table.add_column(c)
-    for r in rows.to_dict("records"):
-        _register_run_row(table, r["config"], r["model"], r["kind"], r)
-    _console().print(table)
+    typer.echo(f"RiskForge compare\n{rows.to_string(index=False)}")
 
 
 @app.command("export-tariff")
@@ -208,8 +159,7 @@ def export_tariff(
         exposure_col=cfg.spec.exposure,
         recalibrate=recalibrate,
     )
-    cons = _console()
-    cons.print(f"[green]Wrote[/green] tariff for `{model}` to {out}")
+    typer.echo(f"Wrote tariff for {model} to {out}")
 
 
 @app.command()
@@ -234,17 +184,14 @@ def tune(
     result = tune_experiment(cfg, n_trials=trials, calibration_penalty=calibration_penalty)
     md = model_card(result.run, fmt="md")
 
-    cons = _console()
     for name, params in result.best_params.items():
-        cons.print(
-            f"[cyan]tuned[/cyan] {name}: " + ", ".join(f"{k}={v:.4g}" for k, v in params.items())
-        )
+        typer.echo(f"tuned {name}: " + ", ".join(f"{k}={v:.4g}" for k, v in params.items()))
     if out is not None:
         out.write_text(md, encoding="utf-8")
-        cons.print(f"[green]Wrote[/green] markdown card to {out}")
+        typer.echo(f"Wrote markdown card to {out}")
     if out_html is not None:
         out_html.write_text(model_card(result.run, fmt="html"), encoding="utf-8")
-        cons.print(f"[green]Wrote[/green] HTML card to {out_html}")
+        typer.echo(f"Wrote HTML card to {out_html}")
     if not quiet:
         typer.echo(md)
 

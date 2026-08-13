@@ -55,11 +55,11 @@ src/riskforge/
   reporting.py     model_card, comparison_table, comparison_dashboard
   mlops.py         log_run (thin mlflow; mlflow in [mlops] extra)
   tune.py          tune_experiment (optuna in [tune] extra)
-  cli.py           Typer: profile / fit / compare / export-tariff
+  cli.py           Typer: profile / fit / compare / export-tariff / tune
 ```
 
 13 flat modules. Stable interfaces (sklearn estimator protocol; calibration
-table = DataFrame; run = dict of metrics + artifacts) mean stopping after any
+table = DataFrame; run = frozen pydantic result) mean stopping after any
 milestone never forces a refactor.
 
 ## 4. Model API conventions
@@ -84,16 +84,18 @@ declares each used param explicitly.
    Pure premium GLM: `y = claim_amount / exposure`, `sample_weight=exposure`.
    Use log-link with `offset=log(exposure)` ONLY when `y = claim_amount`
    (aggregate form). Never mix.
-2. **Frequency**: `y = claim_count`, `sample_weight=exposure`, Poisson deviance.
+2. **Frequency**: `y = claim_count / exposure`, `sample_weight=exposure`, Poisson.
 3. **Severity**: fit on `claim_count > 0` only (Gamma requires `y > 0`). The
    filter lives INSIDE `FrequencySeverityModel.fit`, never in user code.
 4. **LightGBM `tweedie_variance_power`**: `1.0 <= p < 2.0` (validate in
    `__init__`).
 5. **Don't reimplement deviances** — `sklearn.metrics.mean_tweedie_deviance` /
    `mean_poisson_deviance` / `mean_gamma_deviance` all accept `sample_weight`.
-   Re-export and wrap, never rewrite.
-6. **Gini measures ranking only** — never infer calibration from it. Always
-   pair Gini with `calibration_table` + O/P ratio.
+   Re-export and wrap, never rewrite. The public `deviance_test` metric is
+   exposure-weighted mean Tweedie deviance with fixed `power=1.5`.
+6. **Concentration Gini measures ranking only** — equal prediction scores are
+   aggregated before integration. Never infer calibration from Gini; always pair
+   it with `calibration_table` + O/P ratio.
 7. **Primary diagnostics**: `gini`, `lorenz`, `calibration_table`, O/P ratio,
    lift by decile. `RMSE`/`MAE`/`R^2`/`MAPE` are secondary and accompanied by a
    warning when surfaced.
@@ -110,35 +112,56 @@ Each is independently shippable. Done-when = acceptance check.
   seeded synthetic portfolio.*
 - **M2 — preprocessing**: `AutoBinner` (tree/quantile, min_exposure/min_claims),
   `AutoGrouper` (rare-level + similarity), `profile_features`,
-  `screen_features`. *Done when sklearn `parametrize_with_checks` passes;
+  `screen_features`. Supervised grouping uses `sum(claim_amount) / sum(exposure)`;
+  credibility floors use aggregate exposure and claim count. *Done when sklearn
+  `parametrize_with_checks` passes;
   `mapping_` round-trips via `set_mapping`.*
 - **M3 — models**: `RiskGLM`, `RiskGBM`, `FrequencySeverityModel`. *Done when
   fit/predict/score work with exposure_col; freq x sev approximates direct
   Tweedie within tolerance on synthetic data.*
 - **M4 — validation + plots**: `make_strata`, `temporal_split`,
-  lorenz/lift/calibration figures (matplotlib). *Done when figures render
-  headless to PNG.*
+  lorenz/lift/calibration figures (matplotlib). Timestamp ties stay on one side
+  of temporal holdouts. *Done when figures render headless to PNG.*
 - **M5 — workflow + CLI**: YAML -> `ExperimentConfig`, `run_experiment()`,
-  model card md/html, `riskforge profile/fit/compare`. *Done when an example
+  model card md/html, and CLI commands `profile`, `fit`, `compare`,
+  `export-tariff`, and `tune`. *Done when an example
   config runs end-to-end on synthetic data.*
 - **M6 — tariff + mlops**: `export_tariff` -> xlsx (base/factors/mappings
-  sheets), `log_run` with mlflow. *Done when GLM export reproduces portfolio
-  total; mlflow run shows params/metrics/artifacts.*
+  sheets), `log_run` with mlflow. Tariff application rejects unknown categories
+  and non-finite numerics. *Done when GLM export reproduces portfolio total;
+  mlflow run shows params/metrics/artifacts.*
 - **M7 — optuna tune objective (v0.2 part 1)**: `tune_experiment` runs one
   optuna study per named model with actuarial-aware objective
   (`deviance_test + calibration_penalty * |1 - op_ratio_test|` -- the numeric
-  penalty that replaces the cut TariffOptimizer constraint DSL); per-model
-  best params then drive a canonical `run_experiment`. `riskforge tune` CLI.
+  penalty that replaces the cut TariffOptimizer constraint DSL). Trials use an
+  inner split of outer training data; best params are refit on outer training
+  data and evaluated once on untouched outer test. `riskforge tune` CLI.
   *Done when the tuned `Run` carries finite Gini / O-P ratio / deviance + a
   populated calibration table, and best params preserve YAML identity params
   (rules 1, 4 intact under search).*
+- **M8 — executable freMTPL2 tutorial**: one source-controlled
+  `examples/fremtpl2.qmd` demonstrates the complete technical-tariff workflow
+  on pinned OpenML datasets 41214 and 41215: deterministic cleaning and
+  sampling, profiling/screening, learned preprocessing, direct Tweedie GLM and
+  GBM, Poisson/Gamma frequency-severity, held-out actuarial diagnostics,
+  outcome-free scoring, tariff export, reporting, and local MLflow tracking.
+  freMTPL2 is used instead of the narrower Swedish motorcycle data because one
+  portfolio supports every workflow stage. Jupyter lives in the `demo`
+  dependency group; the existing `mlops` and `plot` extras are reused, and
+  Quarto remains an external prerequisite. Only the `.qmd` is source: fetched
+  data, caches, HTML, workbooks, reports, and MLflow files stay under ignored
+  `examples/_artifacts/fremtpl2/` or other ignored Quarto outputs. *Done when
+  outcome-free pipeline predictions match labeled predictions, unit checks are
+  green, and `just demo` renders one self-contained HTML tutorial from a clean
+  generated-artifact state without making generated files visible to Git.*
 
 ## 7. Later iterations (optional, none blocking)
 
 - **v0.2** — optuna objective (`deviance + calibration penalty`) **(M7 -- done)**,
   monotonic binning + LGBM monotone_constraints and comparison dashboard **done**;
   plotly plot backend and polars ingest extra remain. OOT is an opt-in use of
-  `temporal_split` when the dataset has any sortable period column; without one,
+  `temporal_split` when the dataset has any sortable period column; equal periods
+  remain on one side and missing periods are rejected. Without an ordered period,
   only non-temporal validation is possible.
 - **v0.3** — GBM->tariff distillation, adjacency-aware geo grouping,
   SageMaker/remote-mlflow examples, docs site (Zensical), shap extra, Textual
@@ -147,16 +170,18 @@ Each is independently shippable. Done-when = acceptance check.
 ## 8. Dependencies
 
 **Core (installed by `uv sync`):** numpy, pandas, scikit-learn, glum,
-lightgbm, pyarrow, pydantic, pyyaml, typer, rich, matplotlib, openpyxl.
+lightgbm, pyarrow, pydantic, pyyaml, typer, matplotlib, openpyxl.
 
 **Extras:**
 - `aws` — s3fs
 - `mlops` — mlflow
 - `tune` — optuna
 - `plot` — plotly (comparison dashboard only; lazy import)
+- `demo` (dependency-group) — jupyter kernel for the executable tutorial
 - `dev` (dependency-group) — pytest, ruff, pre-commit
 
-`uv sync --all-extras` for everything; `uv sync` for the core modelling stack.
+`uv sync --no-dev` for runtime only; `uv sync` for the default development
+environment; `uv sync --all-extras --all-groups` for everything.
 
 ## 9. Deferred / cut (do NOT reintroduce without checking PROGRESS.md)
 
@@ -180,7 +205,7 @@ is over-engineering unless a concrete need appears.
 | Hydra | one config, no composition yet | YAML + pydantic + Typer overrides |
 | polars + duckdb in core | pandas is canonical | polars in v0.2 ingest extra; duckdb = notebook habit |
 | plotly dual backend v1 | doubles test surface | matplotlib only v1; plotly v0.2 |
-| Textual, PowerPoint, ALE, geopandas, docs site | YAGNI for v1 | cut, or v0.3 if demanded |
+| Textual, PowerPoint, ALE, geopandas, multi-page docs site | YAGNI for v1 | cut, or v0.3 if demanded; M8 remains one `.qmd` |
 | `pydantic AND dataclasses` | overlap | pydantic only |
 | `ModelCard.to_pdf` | windows weasyprint pain | md + html only |
 
@@ -197,3 +222,5 @@ is over-engineering unless a concrete need appears.
 | mlflow in `mlops` extra (not core) | heavy; only needed at M6; `log_run` imports lazily |
 | No additional OOT workflow helpers | `time_col` is optional and already accepts any sortable period (including year-month); a dataset without an ordered period cannot support OOT validation |
 | Commit `uv.lock` + `.python-version` | reproducibility principle |
+| freMTPL2 rather than Swedish motorcycle for M8 | one portfolio covers direct Tweedie, frequency-severity, preprocessing, evaluation, and tariff export |
+| Commit only the M8 `.qmd` source | executable prose is durable; data, caches, and rendered outputs are reproducible artifacts |

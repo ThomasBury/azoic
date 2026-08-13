@@ -27,7 +27,7 @@ Three sheets per the PRD section 3 ``base / factors / mappings`` contract:
 
 from __future__ import annotations
 
-import re
+from collections.abc import Hashable
 from pathlib import Path
 
 import numpy as np
@@ -38,19 +38,6 @@ from riskforge.models import RiskGLM
 from riskforge.preprocessing import AutoBinner, AutoGrouper
 
 __all__ = ["export_tariff", "extract_tariff", "apply_tariff", "recalibrate_for_total"]
-
-
-# glum encodes categorical columns as ``feature[level]``; numeric columns keep
-# their plain name. The regex splits an encoded column name into
-# (original_feature, level).
-_ENCODED = re.compile(r"^(.+?)\[(.+)\]$")
-
-
-def _split_encoded(name: str) -> tuple[str, str | None]:
-    m = _ENCODED.match(name)
-    if not m:
-        return name, None
-    return m.group(1), m.group(2)
 
 
 def _require_log_link(backend) -> None:
@@ -69,9 +56,7 @@ def _require_log_link(backend) -> None:
     )
 
 
-def extract_tariff(
-    glm: RiskGLM, *, reference: dict[str, str] | None = None
-) -> dict:
+def extract_tariff(glm: RiskGLM, *, reference: dict[str, Hashable] | None = None) -> dict:
     """Decompose a fitted ``RiskGLM`` into a multiplicative tariff structure.
 
     Returns a dict with keys:
@@ -94,91 +79,100 @@ def extract_tariff(
     backend = glm.backend_
     _require_log_link(backend)
 
-    feature_names = list(backend.feature_names_)
     coefs = np.asarray(backend.coef_, dtype=float)
     intercept = float(backend.intercept_)
-    cat_levels: dict = dict(getattr(backend, "categorical_levels_", {}) or {})
+    term_names = list(getattr(backend, "term_names_", []) or [])
+    cat_levels: dict[str, list[Hashable]] = dict(
+        getattr(backend, "categorical_levels_", {}) or {}
+    )
+    if len(term_names) != len(coefs):
+        raise ValueError(
+            "extract_tariff: glum metadata mismatch: "
+            f"term_names_ has {len(term_names)} entries but coef_ has {len(coefs)}."
+        )
+    for feat, levels in cat_levels.items():
+        if not levels:
+            raise ValueError(
+                "extract_tariff: glum metadata mismatch for categorical feature "
+                f"{feat!r}: categorical_levels_ is empty."
+            )
+        count = term_names.count(feat)
+        if count != len(levels):
+            raise ValueError(
+                "extract_tariff: glum metadata mismatch for categorical feature "
+                f"{feat!r}: term_names_ has {count} entries but categorical_levels_ has "
+                f"{len(levels)}."
+            )
 
     numeric: dict[str, float] = {}
-    raw_cat: dict[str, dict[str, float]] = {}
-    for name, c in zip(feature_names, coefs, strict=True):
-        feat, level = _split_encoded(name)
-        if level is None:
-            numeric[feat] = float(c)
-        else:
-            raw_cat.setdefault(feat, {})[level] = float(c)
+    raw_cat: dict[str, dict[Hashable, float]] = {feat: {} for feat in cat_levels}
+    positions = dict.fromkeys(cat_levels, 0)
+    for term, coef in zip(term_names, coefs, strict=True):
+        if term not in cat_levels:
+            if term in numeric:
+                raise ValueError(
+                    f"extract_tariff: glum metadata mismatch: duplicate numeric term {term!r}."
+                )
+            numeric[term] = float(coef)
+            continue
+        position = positions[term]
+        raw_cat[term][cat_levels[term][position]] = float(coef)
+        positions[term] += 1
 
-    chosen_ref: dict[str, str] = {}
+    chosen_ref: dict[str, Hashable] = {}
     reference = dict(reference or {})
-    for feat, lvls in cat_levels.items():
+    for feat, levels in cat_levels.items():
         if feat in reference:
             ref = reference[feat]
-            if ref not in lvls:
+            if not any(type(ref) is type(level) and ref == level for level in levels):
                 raise ValueError(
-                    f"reference level {ref!r} not in feature {feat!r} "
-                    f"levels {list(lvls)}"
+                    f"reference level {ref!r} not in feature {feat!r} levels {list(levels)}"
                 )
             chosen_ref[feat] = ref
         else:
-            # Default reference = first-sorted level (deterministic, no data peek).
-            chosen_ref[feat] = sorted(lvls, key=str)[0]
+            chosen_ref[feat] = levels[0]
 
-    # base = exp(intercept) * Π_cat exp(coef[ref_level])
     base_rate = float(np.exp(intercept))
     for feat, ref in chosen_ref.items():
-        base_rate *= float(np.exp(raw_cat.get(feat, {}).get(ref, 0.0)))
+        base_rate *= float(np.exp(raw_cat[feat][ref]))
 
-    # Categorical factors relative to the reference; reference -> 1.0.
-    categorical: dict[str, dict[str, float]] = {}
-    for feat, lvl_coefs in raw_cat.items():
-        ref = chosen_ref[feat]
-        c_ref = lvl_coefs.get(ref, 0.0)
+    categorical: dict[str, dict[Hashable, float]] = {}
+    for feat, levels in cat_levels.items():
+        level_coefs = raw_cat[feat]
+        ref_coef = level_coefs[chosen_ref[feat]]
         categorical[feat] = {
-            lvl: float(np.exp(c - c_ref)) for lvl, c in lvl_coefs.items()
+            level: float(np.exp(level_coefs[level] - ref_coef)) for level in levels
         }
 
-    mapping = _mapping_frame(
-        backend,
-        cat_levels=cat_levels,
-        reference=chosen_ref,
-    )
     return {
         "base_rate": base_rate,
         "reference": chosen_ref,
         "numeric": numeric,
         "categorical": categorical,
-        "mapping": mapping,
+        "mapping": _mapping_frame(backend, cat_levels=cat_levels, reference=chosen_ref),
     }
+
 
 
 def _mapping_frame(backend, *, cat_levels, reference) -> pd.DataFrame:
     term_names = list(getattr(backend, "term_names_", []) or [])
-    encoded_names = list(backend.feature_names_)
-    # glum deprecated `feature_dtypes_` in favour of `categorical_levels_`; the
-    # post-fit dtype of numeric columns is no longer exposed, so the `dtype` column
-    # records only the categorical features' kind ("category"). ponytail: the
-    # dtype column is self-documenting metadata -- drop it entirely if a future
-    # caller needs the real numeric dtype.
-    cat_set = set(cat_levels.keys())
-
+    cat_set = set(cat_levels)
     rows: list[dict] = []
     seen: set[str] = set()
-    for term, enc in zip(term_names, encoded_names, strict=True):
-        _, level = _split_encoded(enc)
-        is_categorical = level is not None
+    for term in term_names:
         if term in seen:
             continue
         seen.add(term)
-        if is_categorical:
-            lvls = list(cat_levels.get(term, []))
+        if term in cat_set:
+            levels = list(cat_levels[term])
             rows.append(
                 {
                     "feature": term,
                     "role": "categorical",
-                    "dtype": "category" if term in cat_set else "",
-                    "levels": ", ".join(str(lvl) for lvl in lvls),
-                    "n_levels": len(lvls),
-                    "reference_level": str(reference.get(term, "")),
+                    "dtype": "category",
+                    "levels": ", ".join(map(str, levels)),
+                    "n_levels": len(levels),
+                    "reference_level": str(reference[term]),
                 }
             )
         else:
@@ -194,15 +188,9 @@ def _mapping_frame(backend, *, cat_levels, reference) -> pd.DataFrame:
             )
     return pd.DataFrame(
         rows,
-        columns=[
-            "feature",
-            "role",
-            "dtype",
-            "levels",
-            "n_levels",
-            "reference_level",
-        ],
+        columns=["feature", "role", "dtype", "levels", "n_levels", "reference_level"],
     )
+
 
 
 def _factors_frame(tariff: dict) -> pd.DataFrame:
@@ -238,8 +226,8 @@ def apply_tariff(tariff: dict, X: pd.DataFrame) -> np.ndarray:
     """Per-row pure-premium rate under the multiplicative tariff on ``X``.
 
     Equivalent to ``RiskGLM.predict(X)`` when ``tariff`` has not been
-    recalibrated (the multiplicative decomposition reconstructs the log-link
-    GLM prediction up to float-rounding in the exponent order).
+    recalibrated. Numeric inputs must be finite and categorical levels must
+    have been seen when the tariff was extracted.
     """
     if not isinstance(X, pd.DataFrame):
         raise TypeError("apply_tariff requires a pandas DataFrame X.")
@@ -248,16 +236,21 @@ def apply_tariff(tariff: dict, X: pd.DataFrame) -> np.ndarray:
     for feat, coef in tariff["numeric"].items():
         if feat not in X.columns:
             raise KeyError(f"apply_tariff: numeric feature {feat!r} not in X.columns")
-        rate = rate * np.power(np.exp(coef), X[feat].to_numpy(dtype=float))
+        values = X[feat].to_numpy(dtype=float)
+        if not np.isfinite(values).all():
+            raise ValueError(f"apply_tariff: numeric feature {feat!r} must be finite")
+        rate = rate * np.power(np.exp(coef), values)
 
     for feat, lvl_factors in tariff["categorical"].items():
         if feat not in X.columns:
             raise KeyError(f"apply_tariff: categorical feature {feat!r} not in X.columns")
-        vals = X[feat].to_numpy()
-        lvl_arr = np.ones(len(vals), dtype=float)
-        for lvl, factor in lvl_factors.items():
-            lvl_arr = np.where(vals == lvl, float(factor), lvl_arr)
-        rate = rate * lvl_arr
+        factors = X[feat].map(lvl_factors)
+        if factors.isna().any():
+            unknown = X.loc[factors.isna(), feat].drop_duplicates().tolist()
+            raise ValueError(
+                f"apply_tariff: categorical feature {feat!r} has unknown levels: {unknown}"
+            )
+        rate = rate * factors.to_numpy(dtype=float)
 
     return rate
 
@@ -290,21 +283,21 @@ def _pipeline_parts(estimator, X):
     for _, step in estimator.steps[:-1]:
         if isinstance(step, AutoBinner):
             for feature, edges in step.mapping_.items():
-                labels = step._labels(np.arange(len(edges) + 2), edges)
+                levels = list(step.category_dtypes_[feature].categories)
                 rows.append(
                     {
                         "feature": feature,
                         "role": "binned",
                         "dtype": "category",
-                        "levels": ", ".join(labels),
-                        "n_levels": len(labels),
+                        "levels": ", ".join(map(str, levels)),
+                        "n_levels": len(levels),
                         "reference_level": "",
                         "mapping": ", ".join(map(str, edges)),
                     }
                 )
         elif isinstance(step, AutoGrouper):
             for feature, mapping in step.mapping_.items():
-                levels = sorted(set(mapping.values()), key=str)
+                levels = list(step.category_dtypes_[feature].categories)
                 rows.append(
                     {
                         "feature": feature,
@@ -334,7 +327,7 @@ def export_tariff(
     X: pd.DataFrame | None = None,
     y: pd.Series | np.ndarray | None = None,
     exposure_col: str | None = None,
-    reference: dict[str, str] | None = None,
+    reference: dict[str, Hashable] | None = None,
     recalibrate: bool = True,
 ) -> Path:
     """Write a multiplicative-tariff xlsx from a fitted ``RiskGLM`` or pipeline.

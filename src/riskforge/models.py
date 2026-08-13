@@ -16,6 +16,8 @@ FrequencySeverityModel.fit applies the actuarial severity filter (claim_count
 
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 import pandas as pd
 from glum import GeneralizedLinearRegressor
@@ -223,12 +225,11 @@ class RiskGBM(RegressorMixin, BaseEstimator):
         (PRD rule 4) when ``objective == "tweedie"``.
     monotone_constraints : dict[str, int] | sequence[int] | None
         Per-feature monotonicity for LightGBM's tree splits. ``dict`` keys are
-        feature names (resolved against ``X.columns`` at fit time, missing
-        keys default to 0); ``sequence`` is interpreted in the order LightGBM
-        sees the features. Values must be in ``{-1, 0, 1}`` (``1`` = increasing,
-        ``-1`` = decreasing, ``0`` = unconstrained). ``None`` = no constraints.
-        Dict shape is validated in ``__init__``; list shape and unknown dict
-        keys are validated at fit time.
+        post-exposure feature names (missing keys default to 0); ``sequence``
+        must be one-dimensional with exactly that post-exposure feature count.
+        Values must be in ``{-1, 0, 1}`` (``1`` = increasing, ``-1`` =
+        decreasing, ``0`` = unconstrained). Nonzero constraints on categorical
+        columns are rejected before LightGBM is invoked. ``None`` = no constraints.
     num_leaves, max_depth, learning_rate, n_estimators, min_child_samples,
     subsample, subsample_freq, colsample_bytree, reg_alpha, reg_lambda,
     random_state, n_jobs, verbose
@@ -276,9 +277,7 @@ class RiskGBM(RegressorMixin, BaseEstimator):
                 f"tweedie_variance_power must be in [1.0, 2.0); got {tweedie_variance_power}"
             )
         if isinstance(monotone_constraints, dict):
-            bad = {
-                k: v for k, v in monotone_constraints.items() if v not in (-1, 0, 1)
-            }
+            bad = {k: v for k, v in monotone_constraints.items() if v not in (-1, 0, 1)}
             if bad:
                 raise ValueError(
                     f"monotone_constraints dict values must be in {{-1, 0, 1}}; got {bad}"
@@ -309,7 +308,7 @@ class RiskGBM(RegressorMixin, BaseEstimator):
             tags.regressor_tags.poor_score = True
         return tags
 
-    def _make_backend(self, *, pre_pop_names=None, post_pop_names=None):
+    def _make_backend(self, *, feature_names=None, categorical_names=(), n_features=None):
         if self.objective == "tweedie" and not (1.0 <= self.tweedie_variance_power < 2.0):
             raise ValueError(
                 f"tweedie_variance_power must be in [1.0, 2.0); got {self.tweedie_variance_power}"
@@ -328,59 +327,77 @@ class RiskGBM(RegressorMixin, BaseEstimator):
             reg_alpha=self.reg_alpha,
             reg_lambda=self.reg_lambda,
             monotone_constraints=self._resolve_monotone_constraints(
-                pre_pop_names=pre_pop_names, post_pop_names=post_pop_names
+                feature_names=feature_names,
+                categorical_names=categorical_names,
+                n_features=n_features,
             ),
             random_state=self.random_state,
             n_jobs=self.n_jobs,
             verbose=self.verbose,
         )
 
-    def _resolve_monotone_constraints(self, *, pre_pop_names, post_pop_names):
-        """Translate ``monotone_constraints`` into a list aligned with the
-        feature matrix LightGBM sees (``post_pop_names`` -- ``exposure_col``
-        is popped and routed as ``sample_weight`` before the backend fits).
-        """
+    def _resolve_monotone_constraints(self, *, feature_names, categorical_names, n_features):
         mc = self.monotone_constraints
         if mc is None:
             return None
         if isinstance(mc, dict):
-            if pre_pop_names is None:
+            if feature_names is None:
                 raise ValueError(
                     "monotone_constraints as a dict requires a DataFrame X with column names."
                 )
-            unknown = sorted(set(mc.keys()) - set(pre_pop_names))
+            unknown = sorted(set(mc) - set(feature_names))
             if unknown:
-                raise ValueError(
-                    f"monotone_constraints references unknown columns: {unknown}"
-                )
-            return [int(mc.get(name, 0)) for name in post_pop_names]
-        try:
-            arr = np.asarray(mc, dtype=int)
-        except (TypeError, ValueError) as e:
+                raise ValueError(f"monotone_constraints references unknown columns: {unknown}")
+            arr = np.asarray([mc.get(name, 0) for name in feature_names])
+        else:
+            arr = np.asarray(mc)
+        expected = len(feature_names) if feature_names is not None else n_features
+        if arr.ndim != 1 or len(arr) != expected:
             raise ValueError(
-                "monotone_constraints must be a dict or a sequence of int in "
-                f"{{-1, 0, 1}}; got {mc!r}"
-            ) from e
+                "monotone_constraints must be one-dimensional with exactly "
+                f"{expected} values in post-exposure feature order; got shape {arr.shape}"
+            )
         if not np.all(np.isin(arr, [-1, 0, 1])):
             raise ValueError(
                 f"monotone_constraints values must be in {{-1, 0, 1}}; got {arr.tolist()}"
             )
-        if pre_pop_names is not None and self.exposure_col in pre_pop_names:
-            arr = np.delete(arr, pre_pop_names.index(self.exposure_col))
-        return arr.tolist()
+        constrained_categoricals = (
+            [
+                name
+                for name, value in zip(feature_names, arr, strict=True)
+                if value != 0 and name in categorical_names
+            ]
+            if feature_names is not None
+            else []
+        )
+        if constrained_categoricals:
+            raise ValueError(
+                "monotone_constraints cannot constrain categorical columns: "
+                f"{constrained_categoricals}"
+            )
+        return arr.astype(int).tolist()
 
     def fit(self, X, y, sample_weight=None):
         _store_fit_meta(self, X)
         X_features, w = _pop_weight(X, self.exposure_col, sample_weight)
         _check_all_zero_weight(w)
-        pre_pop_names = list(X.columns) if isinstance(X, pd.DataFrame) else None
-        post_pop_names = (
-            list(X_features.columns) if isinstance(X_features, pd.DataFrame) else None
+        X_backend = _categorize_strings(X_features)
+        feature_names = list(X_backend.columns) if isinstance(X_backend, pd.DataFrame) else None
+        categorical_names = (
+            {
+                name
+                for name in feature_names
+                if isinstance(X_backend[name].dtype, pd.CategoricalDtype)
+            }
+            if feature_names is not None
+            else set()
         )
         backend = self._make_backend(
-            pre_pop_names=pre_pop_names, post_pop_names=post_pop_names
+            feature_names=feature_names,
+            categorical_names=categorical_names,
+            n_features=(len(feature_names) if feature_names is not None else self.n_features_in_),
         )
-        backend.fit(_categorize_strings(X_features), np.asarray(y, dtype=float), sample_weight=w)
+        backend.fit(X_backend, np.asarray(y, dtype=float), sample_weight=w)
         self.backend_ = backend
         self.n_iter_ = self.n_estimators
         return self
@@ -429,6 +446,12 @@ class FrequencySeverityModel(RegressorMixin, BaseEstimator):
     ----------
     freq_, sev_ : fitted sub-estimators (clones of ``freq`` / ``sev``)
     n_features_in_, feature_names_in_
+
+    Warns
+    -----
+    UserWarning
+        If a categorical level observed in the full training data has no
+        positive-claim row available to fit severity.
     """
 
     def __init__(
@@ -480,34 +503,56 @@ class FrequencySeverityModel(RegressorMixin, BaseEstimator):
         exposure = X[self.exposure_col].to_numpy(dtype=float)
         cc = X[self.claim_count_col].to_numpy(dtype=float)
         ca = X[self.claim_amount_col].to_numpy(dtype=float)
-        X_features = self._strip_specials(X)
+        X_features = _categorize_strings(self._strip_specials(X))
 
         with np.errstate(divide="ignore", invalid="ignore"):
             y_freq = np.where(exposure > 0, cc / exposure, 0.0)
 
         pos = cc > 0
-        y_sev = ca[pos] / cc[pos] if pos.any() else np.zeros(0)
+        if not pos.any():
+            raise ValueError(
+                "FrequencySeverityModel requires at least one valid severity observation"
+            )
+        y_sev = ca[pos] / cc[pos]
+
+        missing_levels = []
+        for column, values in X_features.items():
+            if not isinstance(values.dtype, pd.CategoricalDtype):
+                continue
+            observed = set(values.dropna())
+            severity_observed = set(values.loc[pos].dropna())
+            levels = [
+                level
+                for level in values.cat.categories
+                if level in observed and level not in severity_observed
+            ]
+            if levels:
+                missing_levels.append(f"{column}={levels}")
+        if missing_levels:
+            warnings.warn(
+                "FrequencySeverityModel severity data has no positive-claim rows for observed "
+                f"levels: {', '.join(missing_levels)}",
+                UserWarning,
+                stacklevel=2,
+            )
 
         self.freq_ = clone(self.freq)
         self.freq_.fit(X_features, y_freq, sample_weight=exposure)
 
         self.sev_ = clone(self.sev)
         self.sev_positive_rows_ = int(pos.sum())
-        if self.sev_positive_rows_ > 0:
-            self.sev_.fit(X_features[pos], y_sev, sample_weight=cc[pos])
+        self.sev_.fit(X_features.loc[pos], y_sev, sample_weight=cc[pos])
         return self
 
     def predict(self, X):
         check_is_fitted(self, "freq_")
         X_features = self._strip_specials(X) if isinstance(X, pd.DataFrame) else X
         freq_pred = np.maximum(self.freq_.predict(X_features), 0.0)
-        if self.sev_positive_rows_ > 0:
-            sev_pred = np.maximum(self.sev_.predict(X_features), 0.0)
-            return freq_pred * sev_pred
-        return np.zeros_like(freq_pred)
+        sev_pred = np.maximum(self.sev_.predict(X_features), 0.0)
+        return freq_pred * sev_pred
 
     def score(self, X, y, sample_weight=None):
-        """D^2 (Tweedie, p=1.5) of predicted claim_amount vs observed.
+        """D^2 (Tweedie, p=1.5) on pure-premium rates, weighted by exposure.
 
         ``y`` is claim_amount (aggregate per row); exposition from PRD section 5.
         """
@@ -518,5 +563,10 @@ class FrequencySeverityModel(RegressorMixin, BaseEstimator):
         y = np.asarray(y, dtype=float)
         if sample_weight is None:
             sample_weight = exposure
-        y_pred = self.predict(X) * exposure
-        return d2_tweedie_score(y, y_pred, power=1.5, sample_weight=sample_weight)
+        observed_rate = y / exposure
+        return d2_tweedie_score(
+            observed_rate,
+            self.predict(X),
+            power=1.5,
+            sample_weight=sample_weight,
+        )

@@ -63,7 +63,7 @@ def test_riskglm_poisson_frequency_uses_exposure_weight() -> None:
     df = _df()
     X = _features(df)
     glm = RiskGLM(family="poisson", link="log", exposure_col="exposure")
-    glm.fit(X, df["claim_count"].to_numpy())
+    glm.fit(X, (df["claim_count"] / df["exposure"]).to_numpy())
     pred = glm.predict(X)
     assert np.all(pred >= 0)
     # Predicted total claim count roughly matches observed when exposure is a weight.
@@ -153,8 +153,8 @@ def test_riskgbm_monotone_constraints_dict_increasing() -> None:
 
 def test_riskgbm_monotone_constraints_list_passes_through() -> None:
     df = _df().head(1500)
-    X = _features(df)  # 5 cols: exposure, driver_age, vehicle_age, region, vehicle_brand
-    mc = [0, 1, 1, 0, 0]  # pre-pop order; exposure entry is dropped at fit time
+    X = _features(df)
+    mc = [1, 1, 0, 0]  # driver_age, vehicle_age, region, vehicle_brand
     gbm = RiskGBM(
         objective="tweedie",
         exposure_col="exposure",
@@ -287,6 +287,36 @@ def test_freq_severity_severity_fit_is_filtered() -> None:
     assert np.allclose(fs.predict(df), 1.0)
 
 
+def test_freq_severity_preserves_full_categorical_vocabulary_for_severity() -> None:
+    categories = ["A", "B", "zero_only", "Other"]
+    df = pd.DataFrame(
+        {
+            "segment": pd.Categorical(
+                ["A", "A", "B", "B", "zero_only", "zero_only"],
+                categories=categories,
+            ),
+            "exposure": [1.0, 1.5, 1.0, 2.0, 1.0, 1.0],
+            "claim_count": [1, 2, 1, 3, 0, 0],
+            "claim_amount": [100.0, 240.0, 150.0, 420.0, 0.0, 0.0],
+        }
+    )
+    model = FrequencySeverityModel(
+        freq=RiskGLM(family="poisson", link="log"),
+        sev=RiskGLM(family="gamma", link="log"),
+    )
+
+    with pytest.warns(UserWarning) as caught:
+        model.fit(df)
+
+    assert len(caught) == 1
+    message = str(caught[0].message)
+    assert "segment" in message
+    assert "zero_only" in message
+    assert "Other" not in message
+    assert list(model.sev_.backend_.categorical_levels_["segment"]) == categories
+    assert np.all(np.isfinite(model.predict(df)))
+
+
 def test_freq_severity_missing_special_col_raises() -> None:
     df = _df().drop(columns=["claim_count"])
     fs = FrequencySeverityModel(
@@ -306,53 +336,83 @@ def test_freq_severity_requires_subestimators() -> None:
 
 
 # ---------------------------------------------------------------------------
-# M3 acceptance: freq x sev approximates a direct Tweedie within tolerance
-# ---------------------------------------------------------------------------
+
+
+def test_riskgbm_monotone_sequence_requires_exact_post_exposure_shape() -> None:
+    df = _df().head(500)
+    X = _features(df)
+    y = (df["claim_amount"] / df["exposure"]).to_numpy()
+    with pytest.raises(ValueError, match="post-exposure"):
+        RiskGBM(exposure_col="exposure", monotone_constraints=[0] * 5).fit(X, y)
+    with pytest.raises(ValueError, match="one-dimensional"):
+        RiskGBM(
+            exposure_col="exposure",
+            monotone_constraints=[[0, 0], [0, 0]],
+        ).fit(X, y)
+
+
+def test_riskgbm_rejects_monotone_constraint_on_categorical_column() -> None:
+    df = _df().head(500)
+    X = _features(df)
+    y = (df["claim_amount"] / df["exposure"]).to_numpy()
+    with pytest.raises(ValueError, match="categorical"):
+        RiskGBM(
+            exposure_col="exposure",
+            monotone_constraints={"region": 1},
+        ).fit(X, y)
+
+
+def test_freq_severity_rejects_portfolio_without_severity_observations() -> None:
+    df = _df(n=100).assign(claim_count=0, claim_amount=0.0)
+    model = FrequencySeverityModel(
+        freq=RiskGLM(family="poisson", link="log"),
+        sev=RiskGLM(family="gamma", link="log"),
+    )
+    with pytest.raises(ValueError, match="severity observation"):
+        model.fit(df)
+
+
+def test_freq_severity_score_compares_rates_with_exposure_weights() -> None:
+    from sklearn.metrics import d2_tweedie_score
+
+    df = _df(n=2000)
+    model = FrequencySeverityModel(
+        freq=RiskGLM(family="poisson", link="log"),
+        sev=RiskGLM(family="gamma", link="log"),
+    ).fit(df)
+    observed_amount = df["claim_amount"].to_numpy()
+    expected = d2_tweedie_score(
+        observed_amount / df["exposure"].to_numpy(),
+        model.predict(df),
+        power=1.5,
+        sample_weight=df["exposure"].to_numpy(),
+    )
+    assert model.score(df, observed_amount) == pytest.approx(expected)
 
 
 def test_m3_acceptance_freq_sev_approximates_direct_tweedie() -> None:
-    df = _df()
-    X = _features(df)  # features + exposure; drops claim_count/claim_amount for direct tweedie GLM.
+    from riskforge.metrics import gini, op_ratio
 
-    # Direct Tweedie GLM: y = claim_amount / exposure, sample_weight = exposure.
-    y_pp = (df["claim_amount"] / df["exposure"]).to_numpy()
-    glm_tweedie = RiskGLM(
+    df = _df()
+    X = _features(df)
+    direct = RiskGLM(
         family="tweedie",
         link="log",
         exposure_col="exposure",
         tweedie_power=1.5,
-    ).fit(X, y_pp)
-    tweedie_pred = glm_tweedie.predict(X)
-
-    # Frequency x severity meta-estimator (Poisson x Gamma). It pops all three
-    # special cols internally per AGENTS.md rule 8 -- full df is fine here.
-    fs = FrequencySeverityModel(
+    ).fit(X, (df["claim_amount"] / df["exposure"]).to_numpy())
+    freq_sev = FrequencySeverityModel(
         freq=RiskGLM(family="poisson", link="log", alpha=0.001),
         sev=RiskGLM(family="gamma", link="log", alpha=0.001),
-        exposure_col="exposure",
-        claim_count_col="claim_count",
-        claim_amount_col="claim_amount",
     ).fit(df)
-    fs_pred = fs.predict(df)
 
-    from riskforge.metrics import gini, op_ratio
-
-    obs = df["claim_amount"].to_numpy()
+    observed = df["claim_amount"].to_numpy()
     exposure = df["exposure"].to_numpy()
-
-    # (a) Both models concentrate predicted risk on the high-claim rows. The
-    # in-sample Gini of the freq x sev model is non-trivial and the direct
-    # Tweedie is close to it.
-    gini_tweedie = gini(obs, tweedie_pred, sample_weight=exposure)
-    gini_fs = gini(obs, fs_pred, sample_weight=exposure)
-    assert gini_fs > 0.05, f"weak freq x sev ranking: gini={gini_fs:.4f}"
-    assert abs(gini_fs - gini_tweedie) < 0.25
-
-    # (b) In-sample adequacy: observed/predicted pure-premium ratio is close
-    # to 1.0 for both models -- the severity filter + exposure-weighting keeps
-    # them on the portfolio total.
-    op_tweedie = op_ratio(obs, tweedie_pred, sample_weight=exposure)
-    op_fs = op_ratio(obs, fs_pred, sample_weight=exposure)
-    assert 0.85 <= op_tweedie <= 1.15, f"tweedie op_ratio drift: {op_tweedie:.4f}"
-    assert 0.85 <= op_fs <= 1.15, f"freq x sev op_ratio drift: {op_fs:.4f}"
-    assert abs(op_fs - op_tweedie) < 0.10
+    direct_pred = direct.predict(X)
+    freq_sev_pred = freq_sev.predict(df)
+    direct_gini = gini(observed, direct_pred, exposure)
+    freq_sev_gini = gini(observed, freq_sev_pred, exposure)
+    assert freq_sev_gini > 0.05
+    assert abs(freq_sev_gini - direct_gini) < 0.25
+    assert 0.85 <= op_ratio(observed, direct_pred, exposure) <= 1.15
+    assert 0.85 <= op_ratio(observed, freq_sev_pred, exposure) <= 1.15

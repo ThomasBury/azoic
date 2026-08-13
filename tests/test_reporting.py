@@ -68,7 +68,7 @@ def test_model_card_html_escapes_markdown(tmp_path: Path) -> None:
 def test_model_card_md_includes_metrics_values(tmp_path: Path) -> None:
     run = _run(tmp_path)
     md = model_card(run, fmt="md")
-    res = run["glm-tweedie"]
+    res = run.models["glm-tweedie"]
     # The metric values appear in the card.
     assert f"{res.metrics['gini_test']:.4f}" in md
     assert f"{res.metrics['op_ratio_test']:.4f}" in md

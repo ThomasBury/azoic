@@ -41,26 +41,35 @@ def _as_arrays(y_true, y_pred, sample_weight=None):
     return y_true, y_pred, sample_weight
 
 
+def _concentration_curve(y_true, y_pred, sample_weight):
+    total_w = sample_weight.sum()
+    total_o = y_true.sum()
+    if total_w <= 0 or total_o <= 0:
+        return np.array([0.0, 1.0]), np.array([0.0, 1.0])
+    order = np.argsort(-y_pred, kind="stable")
+    scores = y_pred[order]
+    starts = np.r_[0, np.flatnonzero(scores[1:] != scores[:-1]) + 1]
+    block_w = np.add.reduceat(sample_weight[order], starts)
+    block_o = np.add.reduceat(y_true[order], starts)
+    return (
+        np.r_[0.0, np.cumsum(block_w) / total_w],
+        np.r_[0.0, np.cumsum(block_o) / total_o],
+    )
+
+
 def gini(y_true, y_pred, sample_weight=None) -> float:
-    """Exposure-weighted normalized Gini (concentration index).
+    """Exposure-weighted concentration Gini.
 
     Ranks policies by descending `y_pred` (high predicted risk first) and plots
     cumulative claim share against cumulative exposure share. Actuarial
-    convention: a good model concentrates claims in the high-predicted-risk
-    tail, so the curve rises above the diagonal. `gini = 2*area - 1`:
+    convention: a good model concentrates claims in the high-predicted-risk tail,
+    so the curve rises above the diagonal. Equal prediction scores are aggregated
+    before integration, making ties independent of row order. `gini = 2*area - 1`:
     ~[-1, 1], 0 = random, 1 = perfect, negative = inverse ranking.
     Returns 0 when total claims or total exposure is 0 (no signal).
     """
     y_true, y_pred, w = _as_arrays(y_true, y_pred, sample_weight)
-    total_w = w.sum()
-    total_o = y_true.sum()
-    if total_w <= 0 or total_o <= 0:
-        return 0.0
-    order = np.argsort(-y_pred, kind="stable")
-    w = w[order]
-    o = y_true[order]
-    cum_w = np.concatenate(([0.0], np.cumsum(w) / total_w))
-    cum_o = np.concatenate(([0.0], np.cumsum(o) / total_o))
+    cum_w, cum_o = _concentration_curve(y_true, y_pred, w)
     area = np.trapezoid(cum_o, cum_w)
     return float(2.0 * area - 1.0)
 
@@ -81,15 +90,9 @@ def lorenz(y_true, y_pred, sample_weight=None) -> Lorenz:
     for direct plotting. Sort direction matches `gini` (high y_pred first).
     """
     y_true, y_pred, w = _as_arrays(y_true, y_pred, sample_weight)
-    total_w = w.sum()
-    total_o = y_true.sum()
-    if total_w <= 0 or total_o <= 0:
-        base = np.array([0.0, 1.0])
-        return Lorenz(exposure_pct=base, claims_pct=base, gini=0.0)
-    order = np.argsort(-y_pred, kind="stable")
-    cum_w = np.concatenate(([0.0], np.cumsum(w[order]) / total_w))
-    cum_o = np.concatenate(([0.0], np.cumsum(y_true[order]) / total_o))
-    return Lorenz(exposure_pct=cum_w, claims_pct=cum_o, gini=gini(y_true, y_pred, w))
+    cum_w, cum_o = _concentration_curve(y_true, y_pred, w)
+    area = np.trapezoid(cum_o, cum_w)
+    return Lorenz(exposure_pct=cum_w, claims_pct=cum_o, gini=float(2.0 * area - 1.0))
 
 
 def op_ratio(y_true, y_pred, sample_weight=None) -> float:
@@ -132,9 +135,7 @@ def calibration_table(
         if weighted:
             groups = make_strata(y_pred, w, n_strata=n_bins)
         else:
-            groups = pd.qcut(
-                pd.Series(y_pred), n_bins, labels=False, duplicates="drop"
-            ).to_numpy()
+            groups = pd.qcut(pd.Series(y_pred), n_bins, labels=False, duplicates="drop").to_numpy()
     df = pd.DataFrame(
         {"y_true": y_true, "y_pred": y_pred, "exposure": w, "group": np.asarray(groups)}
     )

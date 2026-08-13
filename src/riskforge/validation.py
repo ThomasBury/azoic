@@ -76,8 +76,8 @@ def temporal_split(
     one of:
 
     ``test_size``
-        Fraction in ``(0, 1)`` -> ``round(len(df) * test_size)`` latest rows go
-        to test; or an int -> that many latest rows go to test.
+        Fraction in ``(0, 1)`` or an int selects the latest rows for test. If the
+        boundary falls inside a timestamp tie, the whole tied block goes to test.
     ``cutoff``
         Timestamp / scalar comparable to ``df[time_col]``. Rows with
         ``time <= cutoff`` go to train; ``time > cutoff`` go to test.
@@ -95,12 +95,13 @@ def temporal_split(
     if time_col not in df.columns:
         raise ValueError(f"`time_col` {time_col!r} not in df.columns")
     values = df[time_col].to_numpy()
+    if pd.isna(values).any():
+        raise ValueError(f"`time_col` {time_col!r} contains missing values")
     order = np.argsort(values, kind="stable")
+    times = values[order]
 
     if cutoff is not None:
-        times = values[order]
         cut_pos = int(np.searchsorted(times, cutoff, side="right"))
-        train, test = order[:cut_pos], order[cut_pos:]
     else:
         n = len(df)
         if isinstance(test_size, float):
@@ -111,6 +112,10 @@ def temporal_split(
             n_test = int(test_size)
         if not 0 < n_test < n:
             raise ValueError(f"`test_size` resolves to {n_test} rows; must be 1..{n - 1}")
-        train, test = order[: n - n_test], order[n - n_test :]
+        boundary = times[n - n_test]
+        cut_pos = int(np.searchsorted(times, boundary, side="left"))
 
+    train, test = order[:cut_pos], order[cut_pos:]
+    if len(train) == 0 or len(test) == 0:
+        raise ValueError("temporal split produces an empty train or test partition")
     return train, test

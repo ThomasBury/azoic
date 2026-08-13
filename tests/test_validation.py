@@ -108,8 +108,8 @@ def _temporal_frame(n: int = 2000, seed: int = 5) -> pd.DataFrame:
 def test_temporal_split_test_size_float_sum_and_order() -> None:
     df = _temporal_frame()
     train, test = temporal_split(df, "day", test_size=0.25)
-    assert len(train) == 1500
-    assert len(test) == 500
+    assert len(test) >= 500
+    assert len(train) + len(test) == len(df)
     assert set(train).isdisjoint(set(test))
     assert set(train) | set(test) == set(range(len(df)))
     train_days = df["day"].to_numpy()[train]
@@ -120,8 +120,8 @@ def test_temporal_split_test_size_float_sum_and_order() -> None:
 def test_temporal_split_test_size_int_count() -> None:
     df = _temporal_frame()
     train, test = temporal_split(df, "day", test_size=300)
-    assert len(test) == 300
-    assert len(train) == len(df) - 300
+    assert len(test) >= 300
+    assert len(train) + len(test) == len(df)
     train_days = df["day"].to_numpy()[train]
     test_days = df["day"].to_numpy()[test]
     assert train_days.max() <= test_days.min()
@@ -176,3 +176,21 @@ def test_temporal_split_missing_time_col_raises() -> None:
     df = _temporal_frame()
     with pytest.raises(ValueError, match="`time_col`"):
         temporal_split(df, "missing_col", test_size=0.2)
+
+
+def test_temporal_split_keeps_equal_timestamps_on_one_side() -> None:
+    df = pd.DataFrame({"time": [1, 2, 2, 2, 3], "value": range(5)})
+    train, test = temporal_split(df, "time", test_size=2)
+    assert df.iloc[train]["time"].tolist() == [1]
+    assert df.iloc[test]["time"].tolist() == [2, 2, 2, 3]
+
+
+def test_temporal_split_rejects_missing_times_and_empty_cutoff_partitions() -> None:
+    with pytest.raises(ValueError, match="missing"):
+        temporal_split(pd.DataFrame({"time": [1.0, np.nan, 2.0]}), "time", test_size=1)
+
+    df = pd.DataFrame({"time": [1, 2, 3]})
+    with pytest.raises(ValueError, match="empty"):
+        temporal_split(df, "time", cutoff=0)
+    with pytest.raises(ValueError, match="empty"):
+        temporal_split(df, "time", cutoff=3)
