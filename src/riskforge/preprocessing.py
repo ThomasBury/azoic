@@ -272,7 +272,7 @@ class AutoBinner(TransformerMixin, BaseEstimator):
     @staticmethod
     def _codes(values, edges):
         codes = np.searchsorted(edges, values, side="right")
-        codes = np.where(np.isnan(values), len(edges), codes)
+        codes = np.where(np.isnan(values), len(edges) + 1, codes)
         return codes.astype(int)
 
     @staticmethod
@@ -280,7 +280,9 @@ class AutoBinner(TransformerMixin, BaseEstimator):
         n = len(edges)
         labels = np.empty(len(codes), dtype=object)
         for i, c in enumerate(codes):
-            if n == 0:
+            if c > n:
+                labels[i] = "Missing"
+            elif n == 0:
                 labels[i] = "(-inf, inf)"
             elif c == 0:
                 labels[i] = f"(-inf, {edges[0]:.4g}]"

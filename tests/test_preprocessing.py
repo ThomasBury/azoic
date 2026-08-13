@@ -106,7 +106,9 @@ def test_autobinner_handles_nan() -> None:
     df.loc[df.index[:50], "driver_age"] = np.nan
     binner = AutoBinner(cols=["driver_age"], max_bins=5).fit(df)
     out = binner.transform(df)
-    assert out["driver_age"].isna().sum() == 0  # NaN -> last bin label
+    assert out["driver_age"].isna().sum() == 0
+    assert set(out.loc[df["driver_age"].isna(), "driver_age"]) == {"Missing"}
+    assert "Missing" not in set(out.loc[df["driver_age"].notna(), "driver_age"])
 
 
 def _weighted_bin_means(df: pd.DataFrame, col: str, edges: np.ndarray) -> np.ndarray:

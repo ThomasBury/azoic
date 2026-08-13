@@ -94,6 +94,16 @@ def test_calibration_table_totals_match_portfolio() -> None:
     assert "claim_count" in tbl.columns
 
 
+def test_calibration_table_weighted_bins_balance_exposure() -> None:
+    y_pred = np.arange(1.0, 101.0)
+    exposure = np.linspace(1.0, 4.0, len(y_pred))
+    tbl = calibration_table(y_pred * exposure, y_pred, exposure, n_bins=5)
+
+    target = exposure.sum() / 5
+    assert len(tbl) == 5
+    assert np.all(np.abs(tbl["exposure"] - target) <= exposure.max())
+
+
 def test_calibration_table_custom_groups() -> None:
     df = make_synthetic_portfolio(n=2000, seed=8)
     tbl = calibration_table(

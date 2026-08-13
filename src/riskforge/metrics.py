@@ -17,6 +17,8 @@ import numpy as np
 import pandas as pd
 from sklearn.metrics import mean_gamma_deviance, mean_poisson_deviance, mean_tweedie_deviance
 
+from riskforge.validation import make_strata
+
 __all__ = [
     "gini",
     "lorenz",
@@ -119,17 +121,20 @@ def calibration_table(
     """Per-segment observed vs predicted pure premium, exposure, and O/P ratio.
 
     `y_true` = claim_amount, `y_pred` = predicted pure premium, `sample_weight` =
-    exposure. When `groups` is None, segments are deciles of predicted risk
-    (unweighted). Columns: group, exposure, claim_amount, predicted_claim_amount,
-    observed_pure_premium, predicted_pure_premium, o_p_ratio; plus `claim_count`
-    when provided.
-
-    ponytail: deciles use unweighted quantiles of y_pred; use weighted qcut if
-      weights skew decile widths materially.
+    exposure. When `groups` is None, segments are deciles of predicted risk,
+    exposure-weighted when `sample_weight` is supplied. Columns: group, exposure,
+    claim_amount, predicted_claim_amount, observed_pure_premium,
+    predicted_pure_premium, o_p_ratio; plus `claim_count` when provided.
     """
+    weighted = sample_weight is not None
     y_true, y_pred, w = _as_arrays(y_true, y_pred, sample_weight)
     if groups is None:
-        groups = pd.qcut(pd.Series(y_pred), n_bins, labels=False, duplicates="drop").to_numpy()
+        if weighted:
+            groups = make_strata(y_pred, w, n_strata=n_bins)
+        else:
+            groups = pd.qcut(
+                pd.Series(y_pred), n_bins, labels=False, duplicates="drop"
+            ).to_numpy()
     df = pd.DataFrame(
         {"y_true": y_true, "y_pred": y_pred, "exposure": w, "group": np.asarray(groups)}
     )
