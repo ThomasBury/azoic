@@ -31,7 +31,7 @@ constraints).
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
@@ -123,10 +123,6 @@ def tune_experiment(
     *,
     n_trials: int = 20,
     calibration_penalty: float = 1.0,
-    direction: Literal["minimize", "maximize"] = "minimize",
-    sampler=None,
-    pruner=None,
-    study_name: str | None = None,
     random_state: int = 42,
     return_estimators: bool = False,
 ) -> TuneResult | tuple[TuneResult, dict[str, Any]]:
@@ -150,12 +146,8 @@ def tune_experiment(
     best_params: dict[str, dict[str, Any]] = {}
     best_values: dict[str, float] = {}
     for i, (name, spec) in enumerate(config.models.items()):
-        # Per-study seeded sampler so each model searches independently yet
-        # reproducibly; a caller-supplied sampler takes over and owns its own
-        # reseeding policy.
-        s = optuna.samplers.TPESampler(seed=random_state + i) if sampler is None else sampler
         study = optuna.create_study(
-            direction=direction, sampler=s, pruner=pruner, study_name=study_name
+            direction="minimize", sampler=optuna.samplers.TPESampler(seed=random_state + i)
         )
         study.optimize(_make_objective(config, name, spec, calibration_penalty), n_trials=n_trials)
         best_params[name] = dict(study.best_trial.params)

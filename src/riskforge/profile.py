@@ -15,19 +15,11 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from riskforge.data import DatasetSpec
-
 __all__ = ["profile_features", "screen_features"]
 
 
-def profile_features(df: pd.DataFrame, spec: DatasetSpec | None = None) -> pd.DataFrame:
-    """One row per column with screening-relevant stats.
-
-    ``spec`` is accepted for forward-compatibility (actuarial columns) but
-    column-level stats here don't need exposure/claims; per-level actuarial
-    stats come from AutoBinner/AutoGrouper mapping_.
-    """
-    del spec  # reserved; per-column stats don't require it
+def profile_features(df: pd.DataFrame) -> pd.DataFrame:
+    """One row per column with screening-relevant stats."""
     n = len(df)
     rows = []
     for col in df.columns:

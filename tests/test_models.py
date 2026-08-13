@@ -356,24 +356,3 @@ def test_m3_acceptance_freq_sev_approximates_direct_tweedie() -> None:
     assert 0.85 <= op_tweedie <= 1.15, f"tweedie op_ratio drift: {op_tweedie:.4f}"
     assert 0.85 <= op_fs <= 1.15, f"freq x sev op_ratio drift: {op_fs:.4f}"
     assert abs(op_fs - op_tweedie) < 0.10
-
-
-# ---------------------------------------------------------------------------
-# make_tariff_pipeline (thin skeleton for M5)
-# ---------------------------------------------------------------------------
-
-
-def test_make_tariff_pipeline_smoke() -> None:
-    from sklearn.preprocessing import StandardScaler
-
-    from riskforge.models import make_tariff_pipeline
-
-    df = _df().head(1000)
-    y = (df["claim_amount"] / df["exposure"]).to_numpy()
-    pipe = make_tariff_pipeline(
-        StandardScaler(),
-        RiskGLM(family="normal", link="identity", exposure_col=None),
-    )
-    Xnum = df[["driver_age", "vehicle_age", "exposure"]]
-    pipe.fit(Xnum, y)
-    assert pipe.predict(Xnum).shape == (1000,)

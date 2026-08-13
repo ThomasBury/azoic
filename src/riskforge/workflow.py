@@ -46,7 +46,6 @@ __all__ = [
     "ModelResult",
     "Run",
     "run_experiment",
-    "load_yaml",
 ]
 
 
@@ -91,7 +90,8 @@ class ExperimentConfig(BaseModel):
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> ExperimentConfig:
-        return cls.model_validate(load_yaml(path))
+        with open(path, "rb") as fh:
+            return cls.model_validate(yaml.safe_load(fh))
 
     def feature_columns(self, df: pd.DataFrame) -> list[str]:
         """Resolve the feature-column list: explicit ``features`` if given,
@@ -135,12 +135,6 @@ class Run(BaseModel):
 
     def __getitem__(self, name: str) -> ModelResult:
         return self.models[name]
-
-
-def load_yaml(path: str | Path) -> dict[str, Any]:
-    """Read a YAML file into a dict (used by ``ExperimentConfig.from_yaml``)."""
-    with open(path, "rb") as fh:
-        return yaml.safe_load(fh)
 
 
 def _split_indices(

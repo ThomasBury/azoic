@@ -5,7 +5,6 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from riskforge.data import DatasetSpec
 from riskforge.profile import profile_features, screen_features
 from tests.conftest import make_synthetic_portfolio
 
@@ -76,8 +75,7 @@ def test_screen_features_actions() -> None:
 
 def test_screen_features_with_synthetic_portfolio() -> None:
     df = make_synthetic_portfolio(n=2000, seed=1)
-    spec = DatasetSpec(target="claim_amount", exposure="exposure", claim_count="claim_count")
-    prof = profile_features(df, spec)
+    prof = profile_features(df)
     screen = screen_features(prof)
     # driver_age + vehicle_age are numeric & high-cardinality -> bin
     assert screen.set_index("column").loc["driver_age", "action"] == "bin"

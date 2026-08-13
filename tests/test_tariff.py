@@ -306,44 +306,6 @@ def test_export_tariff_custom_reference_applied(tmp_path: Path) -> None:
     assert float(brandD["multiplicative_factor"]) == pytest.approx(1.0)
 
 
-def test_export_tariff_appends_extra_mappings(tmp_path: Path) -> None:
-    glm, df = _fit_glm()
-    out = tmp_path / "tariff.xlsx"
-    extra = pd.DataFrame(
-        [
-            {"feature": "region", "role": "binned", "dtype": "category",
-             "levels": "rural, suburban, urban", "n_levels": 3, "reference_level": "rural"},
-        ]
-    )
-    export_tariff(
-        glm, out,
-        X=df[["driver_age", "vehicle_age", "region", "vehicle_brand", "exposure"]],
-        y=df["claim_amount"],
-        exposure_col="exposure",
-        mappings=extra,
-    )
-    m = pd.read_excel(out, sheet_name="mappings")
-    # Both the GLM-extracted row and the extra row appear.
-    assert (m["feature"] == "region").sum() == 2
-    assert "binned" in set(m["role"])
-
-
-def test_export_tariff_appends_dict_of_mappings(tmp_path: Path) -> None:
-    glm, df = _fit_glm()
-    out = tmp_path / "tariff.xlsx"
-    autobinner_map = pd.DataFrame([{"feature": "driver_age", "role": "binned"}])
-    autogrouper_map = pd.DataFrame([{"feature": "region", "role": "grouped"}])
-    export_tariff(
-        glm, out,
-        X=df[["driver_age", "vehicle_age", "region", "vehicle_brand", "exposure"]],
-        y=df["claim_amount"],
-        exposure_col="exposure",
-        mappings={"autobinner": autobinner_map, "autogrouper": autogrouper_map},
-    )
-    m = pd.read_excel(out, sheet_name="mappings")
-    assert "binned" in set(m["role"]) and "grouped" in set(m["role"])
-
-
 # ---------------------------------------------------------------------------
 # M6 acceptance: portfolio total reproduction
 # ---------------------------------------------------------------------------

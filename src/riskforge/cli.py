@@ -50,18 +50,6 @@ def _console() -> Console:
     return Console()
 
 
-def _spec(
-    target: str, exposure: str, claim_count: str | None, time_col: str | None, id_col: str | None
-) -> DatasetSpec:
-    return DatasetSpec(
-        target=target,
-        exposure=exposure,
-        claim_count=claim_count,
-        time_col=time_col,
-        id_col=id_col,
-    )
-
-
 def _register_run_row(
     table: Table, run_name: str, model_name: str, kind: str, metrics: dict[str, float]
 ) -> None:
@@ -89,9 +77,15 @@ def profile(
     ),
 ) -> None:
     """Profile features in a portfolio and screen them for keep / bin / group / drop."""
-    spec = _spec(target, exposure, claim_count, time_col, id_col)
+    spec = DatasetSpec(
+        target=target,
+        exposure=exposure,
+        claim_count=claim_count,
+        time_col=time_col,
+        id_col=id_col,
+    )
     df = load_data(data, spec=spec)
-    prof = profile_features(df, spec=spec)
+    prof = profile_features(df)
     screened = screen_features(prof)
 
     if out is not None:

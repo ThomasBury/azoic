@@ -22,14 +22,7 @@ Three sheets per the PRD section 3 ``base / factors / mappings`` contract:
       categorical features carry one row per level (apply as the matching
       factor, reference level = ``1.0``).
     * ``mappings``         -- self-documenting feature encoding the GLM saw
-      (feature / dtype / role / levels / reference_level). Caller-supplied
-      mappings (e.g. an ``AutoBinner.mapping_`` / ``AutoGrouper.mapping_``)
-      are concatenated when supplied via the ``mappings`` kwarg.
-
-ponytail: ceiling -- the upstream binning / grouping mapping lives in
-``AutoBinner`` / ``AutoGrouper`` of ``preprocessing.py``; v1 ``workflow.run_experiment``
-feeds raw features straight to the GLM so the CLI ships no upstream mapping.
-Wire the ``mappings`` arg through once a real pipeline wants it.
+      (feature / dtype / role / levels / reference_level).
 """
 
 from __future__ import annotations
@@ -295,7 +288,6 @@ def export_tariff(
     exposure_col: str | None = None,
     reference: dict[str, str] | None = None,
     recalibrate: bool = True,
-    mappings: pd.DataFrame | dict[str, pd.DataFrame] | None = None,
 ) -> Path:
     """Write a multiplicative-tariff xlsx from a fitted ``RiskGLM``.
 
@@ -339,13 +331,6 @@ def export_tariff(
 
     factors_sheet = _factors_frame(tariff)
     mapping_sheet = tariff["mapping"]
-    if mappings is not None:
-        if isinstance(mappings, dict):
-            extras = list(mappings.values())
-            extra = pd.concat(extras, ignore_index=False) if len(extras) > 1 else extras[0]
-        else:
-            extra = mappings
-        mapping_sheet = pd.concat([mapping_sheet, extra], ignore_index=False)
 
     p = Path(path)
     with pd.ExcelWriter(p, engine="openpyxl") as writer:

@@ -46,7 +46,7 @@ src/riskforge/
   data.py          DatasetSpec (pydantic), load_data (pandas+pyarrow; s3 via fsspec)
   profile.py       profile_features() -> DataFrame; screen_features() -> keep/drop/review
   preprocessing.py AutoBinner, AutoGrouper (sklearn transformers; mapping_, set_mapping)
-  models.py        RiskGLM, RiskGBM, FrequencySeverityModel, make_tariff_pipeline
+  models.py        RiskGLM, RiskGBM, FrequencySeverityModel
   metrics.py       gini, lorenz, calibration_table; re-exports sklearn deviances
   validation.py    make_strata, temporal_split
   plots.py         plot_lorenz, plot_lift, plot_calibration (matplotlib)
@@ -135,8 +135,10 @@ Each is independently shippable. Done-when = acceptance check.
 ## 7. Later iterations (optional, none blocking)
 
 - **v0.2** — optuna objective (`deviance + calibration penalty`) **(M7 -- done)**,
-  plotly backend, monotonic binning + LGBM monotone_constraints, OOT workflow
-  helpers, comparison dashboard, polars ingest extra.
+  plotly backend, monotonic binning + LGBM monotone_constraints, comparison
+  dashboard, polars ingest extra. OOT remains an opt-in use of the existing
+  `temporal_split` when the dataset has any sortable period column; without one,
+  only non-temporal validation is possible.
 - **v0.3** — GBM->tariff distillation, adjacency-aware geo grouping,
   SageMaker/remote-mlflow examples, docs site (Zensical), shap extra, Textual
   TUI (only if demanded).
@@ -150,9 +152,7 @@ lightgbm, pyarrow, pydantic, pyyaml, typer, rich, matplotlib, openpyxl.
 - `aws` — s3fs
 - `mlops` — mlflow
 - `tune` — optuna
-- `plot` — plotly
-- `explain` — shap
-- `dev` (dependency-group) — pytest, ruff, pre-commit, pytest-cov
+- `dev` (dependency-group) — pytest, ruff, pre-commit
 
 `uv sync --all-extras` for everything; `uv sync` for the core modelling stack.
 
@@ -166,7 +166,7 @@ is over-engineering unless a concrete need appears.
 | 5 GLM estimator classes | class explosion | one `RiskGLM(family, link, exposure_col)` |
 | 4 GBM estimator classes | class explosion | one `RiskGBM(objective, exposure_col)` |
 | separate FreqSev wrappers per backend | needless duplication | one `FrequencySeverityModel(freq, sev)` (duck-typed) |
-| `AutoTariffGLM` class | it's a Pipeline | `make_tariff_pipeline()` factory |
+| `AutoTariffGLM` class | it's a Pipeline | construct `sklearn.pipeline.Pipeline` directly |
 | 6 splitter classes | sklearn has it | `make_strata()` helper + sklearn splits; `temporal_split()` |
 | custom deviance module | stdlib has it | re-export `sklearn.metrics.mean_*_deviance` |
 | 5 clusterer classes | clustering = grouping | `AutoGrouper(strategy=...)`; geo adjacency -> v0.3 |
@@ -193,4 +193,5 @@ is over-engineering unless a concrete need appears.
 | Zensical docs site at v0.3 | internal tool; docs not on critical path |
 | glum + lightgbm in core (not extras) | GLM/GBM is the package's point; avoid ImportError-on-import wart |
 | mlflow in `mlops` extra (not core) | heavy; only needed at M6; `log_run` imports lazily |
+| No additional OOT workflow helpers | `time_col` is optional and already accepts any sortable period (including year-month); a dataset without an ordered period cannot support OOT validation |
 | Commit `uv.lock` + `.python-version` | reproducibility principle |

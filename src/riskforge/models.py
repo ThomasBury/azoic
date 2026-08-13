@@ -25,7 +25,7 @@ from sklearn.base import BaseEstimator, RegressorMixin, clone
 from sklearn.metrics import d2_tweedie_score
 from sklearn.utils.validation import check_is_fitted, validate_data
 
-__all__ = ["RiskGLM", "RiskGBM", "FrequencySeverityModel", "make_tariff_pipeline"]
+__all__ = ["RiskGLM", "RiskGBM", "FrequencySeverityModel"]
 
 
 _GLM_POSITIVE_FAMILIES = {"poisson", "gamma", "tweedie"}
@@ -520,14 +520,3 @@ class FrequencySeverityModel(RegressorMixin, BaseEstimator):
             sample_weight = exposure
         y_pred = self.predict(X) * exposure
         return d2_tweedie_score(y, y_pred, power=1.5, sample_weight=sample_weight)
-
-
-def make_tariff_pipeline(pre, estimator, *, memory=None):
-    """Tiny sklearn Pipeline factory linking a preprocessor and a model.
-
-    ponytail: lives here so callers don't have to import sklearn Pipeline by
-    hand; add bespoke step wiring when M5 needs tariff-aware steps.
-    """
-    from sklearn.pipeline import Pipeline
-
-    return Pipeline([("pre", pre), ("model", estimator)], memory=memory)

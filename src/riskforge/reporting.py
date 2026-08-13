@@ -13,14 +13,13 @@ from __future__ import annotations
 
 import html
 import textwrap
-from pathlib import Path
 from typing import Literal
 
 import pandas as pd
 
 from riskforge.workflow import Run
 
-__all__ = ["model_card", "write_model_card"]
+__all__ = ["model_card"]
 
 
 def _fmt(x, dp: int = 4) -> str:
@@ -125,12 +124,3 @@ def model_card(run: Run, *, fmt: Literal["md", "html"] = "md") -> str:
     if fmt == "html":
         return _wrap_html(md, title=run.config.name)
     raise ValueError(f"unknown fmt {fmt!r}; expected 'md' or 'html'")
-
-
-def write_model_card(
-    run: Run, path: str | Path, *, fmt: Literal["md", "html"] = "md"
-) -> Path:
-    """Write the model card for ``run`` to ``path``; returns the path."""
-    p = Path(path)
-    p.write_text(model_card(run, fmt=fmt), encoding="utf-8")
-    return p

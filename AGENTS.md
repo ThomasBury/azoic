@@ -32,7 +32,7 @@ src/riskforge/
   data.py           # DatasetSpec, load_data
   profile.py        # profile_features, screen_features
   preprocessing.py  # AutoBinner, AutoGrouper
-  models.py         # RiskGLM, RiskGBM, FrequencySeverityModel, make_tariff_pipeline
+  models.py         # RiskGLM, RiskGBM, FrequencySeverityModel
   metrics.py        # gini, lorenz, calibration_table; sklearn deviances re-exported
   validation.py     # make_strata, temporal_split
   plots.py          # plot_lorenz, plot_lift, plot_calibration (matplotlib)

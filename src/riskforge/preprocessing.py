@@ -15,44 +15,13 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-from scipy.sparse import issparse
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.isotonic import isotonic_regression
 from sklearn.tree import DecisionTreeRegressor
+from sklearn.utils.validation import validate_data
 
 __all__ = ["AutoBinner", "AutoGrouper"]
 
-
-def _check_input(X, *, fitting, n_features_in=None, estimator_name="estimator"):
-    """Validate transformer input and raise the errors sklearn checks expect.
-
-    Rejects sparse/complex/1-D/3+-D/0-feature/0-sample arrays and enforces that
-    transform sees the same feature count as fit. Messages follow sklearn's
-    ``validate_data`` wording so estimator checks ``match`` cleanly.
-    """
-    if issparse(X):
-        raise ValueError(
-            "riskforge transformers do not accept sparse input; convert to a dense array."
-        )
-    arr = np.asarray(X)
-    if arr.ndim == 1:
-        raise ValueError(
-            "Expected 2D array, got 1D array instead. Reshape your data using "
-            "array.reshape(-1, 1) if it has a single feature."
-        )
-    if arr.ndim != 2:
-        raise ValueError(f"Expected 2D array, got {arr.ndim}D array instead.")
-    if arr.shape[1] == 0:
-        raise ValueError(f"0 feature(s) (shape={arr.shape}) while a minimum of 1 is required.")
-    if np.iscomplexobj(arr):
-        raise ValueError("Complex data not supported.")
-    if fitting and arr.shape[0] == 0:
-        raise ValueError("Found array with 0 sample(s) while a minimum of 1 is required.")
-    if n_features_in is not None and arr.shape[1] != n_features_in:
-        raise ValueError(
-            f"X has {arr.shape[1]} features, but {estimator_name} is expecting "
-            f"{n_features_in} features as input."
-        )
 
 
 def _to_frame(X):
@@ -174,10 +143,8 @@ class AutoBinner(TransformerMixin, BaseEstimator):
         return None
 
     def fit(self, X, y=None):
-        _check_input(X, fitting=True, estimator_name=type(self).__name__)
-        X_df, was_df = _to_frame(X)
-        self.n_features_in_ = X_df.shape[1]
-        self.feature_names_in_ = list(X_df.columns) if was_df else None
+        validate_data(self, X, y=y, dtype=None, ensure_all_finite=False)
+        X_df, _ = _to_frame(X)
         cols = self._select_cols(X_df)
         exp = self._array(X_df, self.exposure_col)
         cc = self._array(X_df, self.claim_count_col)
@@ -289,14 +256,11 @@ class AutoBinner(TransformerMixin, BaseEstimator):
         return edges
 
     def transform(self, X):
-        _check_input(
-            X, fitting=False, n_features_in=self.n_features_in_, estimator_name=type(self).__name__
-        )
+        validate_data(self, X, reset=False, dtype=None, ensure_all_finite=False)
         X_df, was_df = _to_frame(X)
-        if self.feature_names_in_ is not None and all(
-            c in X_df.columns for c in self.feature_names_in_
-        ):
-            X_df = X_df[self.feature_names_in_]
+        feature_names = getattr(self, "feature_names_in_", None)
+        if feature_names is not None and all(c in X_df.columns for c in feature_names):
+            X_df = X_df[feature_names]
         out = X_df.copy()
         for col, edges in self.mapping_.items():
             if col not in out.columns:
@@ -329,17 +293,14 @@ class AutoBinner(TransformerMixin, BaseEstimator):
     def get_feature_names_out(self, input_features=None):
         if input_features is not None:
             return np.asarray(input_features)
-        if self.feature_names_in_ is not None:
-            return np.asarray(self.feature_names_in_)
+        if hasattr(self, "feature_names_in_"):
+            return self.feature_names_in_
         return np.asarray([f"x{i}" for i in range(self.n_features_in_)])
 
     def set_mapping(self, mapping):
         """Override fitted bin edges: ``{col: array_of_edges}``."""
         self.mapping_ = {c: np.asarray(e, dtype=float) for c, e in mapping.items()}
         self.bin_cols_ = list(mapping.keys())
-
-    def get_mapping(self):
-        return {c: np.asarray(e) for c, e in self.mapping_.items()}
 
 
 class AutoGrouper(TransformerMixin, BaseEstimator):
@@ -393,10 +354,8 @@ class AutoGrouper(TransformerMixin, BaseEstimator):
         return None
 
     def fit(self, X, y=None):
-        _check_input(X, fitting=True, estimator_name=type(self).__name__)
-        X_df, was_df = _to_frame(X)
-        self.n_features_in_ = X_df.shape[1]
-        self.feature_names_in_ = list(X_df.columns) if was_df else None
+        validate_data(self, X, y=y, dtype=None, ensure_all_finite=False)
+        X_df, _ = _to_frame(X)
         cols = self._select_cols(X_df)
         exp = self._array(X_df, self.exposure_col)
         cc = self._array(X_df, self.claim_count_col)
@@ -481,14 +440,11 @@ class AutoGrouper(TransformerMixin, BaseEstimator):
         return mp
 
     def transform(self, X):
-        _check_input(
-            X, fitting=False, n_features_in=self.n_features_in_, estimator_name=type(self).__name__
-        )
+        validate_data(self, X, reset=False, dtype=None, ensure_all_finite=False)
         X_df, was_df = _to_frame(X)
-        if self.feature_names_in_ is not None and all(
-            c in X_df.columns for c in self.feature_names_in_
-        ):
-            X_df = X_df[self.feature_names_in_]
+        feature_names = getattr(self, "feature_names_in_", None)
+        if feature_names is not None and all(c in X_df.columns for c in feature_names):
+            X_df = X_df[feature_names]
         out = X_df.copy()
         for col, mp in self.mapping_.items():
             if col not in out.columns:
@@ -499,14 +455,11 @@ class AutoGrouper(TransformerMixin, BaseEstimator):
     def get_feature_names_out(self, input_features=None):
         if input_features is not None:
             return np.asarray(input_features)
-        if self.feature_names_in_ is not None:
-            return np.asarray(self.feature_names_in_)
+        if hasattr(self, "feature_names_in_"):
+            return self.feature_names_in_
         return np.asarray([f"x{i}" for i in range(self.n_features_in_)])
 
     def set_mapping(self, mapping):
         """Override fitted level groups: ``{col: {level: group_label}}``."""
         self.mapping_ = {c: dict(m) for c, m in mapping.items()}
         self.group_cols_ = list(mapping.keys())
-
-    def get_mapping(self):
-        return {c: dict(m) for c, m in self.mapping_.items()}

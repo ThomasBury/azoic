@@ -1,4 +1,4 @@
-"""Tests for riskforge.reporting: model_card (md + html) and write_model_card."""
+"""Tests for riskforge.reporting.model_card (markdown and HTML)."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from riskforge.reporting import model_card, write_model_card
+from riskforge.reporting import model_card
 from riskforge.workflow import ExperimentConfig, ModelSpec, run_experiment
 from tests.conftest import make_synthetic_portfolio
 
@@ -92,22 +92,6 @@ def test_model_card_known_layout_for_multiple_models(tmp_path: Path) -> None:
     assert "Model: `gbm` (gbm)" in md
     # Two model headers present.
     assert md.count("### Model:") == 2
-
-
-def test_write_model_card_creates_md_file(tmp_path: Path) -> None:
-    run = _run(tmp_path)
-    out = write_model_card(run, tmp_path / "card.md", fmt="md")
-    assert out.exists()
-    assert "RiskForge model card -- smoke" in out.read_text(encoding="utf-8")
-
-
-def test_write_model_card_creates_html_file(tmp_path: Path) -> None:
-    run = _run(tmp_path)
-    out = write_model_card(run, tmp_path / "card.html", fmt="html")
-    assert out.exists()
-    body = out.read_text(encoding="utf-8")
-    assert "<!doctype html>" in body
-    assert "<pre>" in body
 
 
 def test_model_card_unknown_fmt_raises(tmp_path: Path) -> None:
