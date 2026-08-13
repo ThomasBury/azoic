@@ -153,12 +153,24 @@ def test_cli_fit_missing_config_path_fails(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_cli_compare_two_configs_writes_csv(tmp_path: Path) -> None:
+def test_cli_compare_two_configs_writes_csv_and_dashboard(tmp_path: Path) -> None:
     data = _write_portfolio(tmp_path)
     cfg_a = _write_yaml(tmp_path, _yaml(str(data), name="cfg-a", gbm_estimators=20), name="a.yaml")
     cfg_b = _write_yaml(tmp_path, _yaml(str(data), name="cfg-b", gbm_estimators=40), name="b.yaml")
     out = tmp_path / "compare.csv"
-    result = runner.invoke(app, ["compare", str(cfg_a), str(cfg_b), "--out", str(out)])
+    out_html = tmp_path / "compare.html"
+    result = runner.invoke(
+        app,
+        [
+            "compare",
+            str(cfg_a),
+            str(cfg_b),
+            "--out",
+            str(out),
+            "--out-html",
+            str(out_html),
+        ],
+    )
     assert result.exit_code == 0, result.output
     assert out.exists()
     table = pd.read_csv(out)
@@ -168,6 +180,10 @@ def test_cli_compare_two_configs_writes_csv(tmp_path: Path) -> None:
     assert len(table) == 4
     assert "gini_test" in table.columns
     assert "op_ratio_test" in table.columns
+    html = out_html.read_text(encoding="utf-8")
+    assert "cfg-a" in html and "cfg-b" in html
+    assert html.count("plotly-graph-div") == 1
+    assert html.count("window.PlotlyConfig") == 1
 
 
 # ---------------------------------------------------------------------------

@@ -19,7 +19,7 @@ import pandas as pd
 
 from riskforge.workflow import Run
 
-__all__ = ["model_card"]
+__all__ = ["model_card", "comparison_table", "comparison_dashboard"]
 
 
 def _fmt(x, dp: int = 4) -> str:
@@ -125,3 +125,62 @@ def model_card(run: Run, *, fmt: Literal["md", "html"] = "md") -> str:
     if fmt == "html":
         return _wrap_html(md, title=run.config.name)
     raise ValueError(f"unknown fmt {fmt!r}; expected 'md' or 'html'")
+
+
+def comparison_table(runs) -> pd.DataFrame:
+    rows = [
+        {"config": run.config.name, "model": name, "kind": result.kind, **result.metrics}
+        for run in runs
+        for name, result in run.models.items()
+    ]
+    columns = [
+        "config",
+        "model",
+        "kind",
+        "gini_train",
+        "gini_test",
+        "op_ratio_test",
+        "deviance_test",
+    ]
+    return pd.DataFrame(rows) if rows else pd.DataFrame(columns=columns)
+
+
+def comparison_dashboard(runs) -> str:
+    try:
+        import plotly.graph_objects as go
+        from plotly.subplots import make_subplots
+    except ImportError as error:
+        raise ImportError(
+            "comparison_dashboard requires the `plot` extra (`uv sync --extra plot`)"
+        ) from error
+
+    table = comparison_table(runs)
+    labels = table["config"].astype(str) + " / " + table["model"].astype(str)
+    figure = make_subplots(
+        rows=2,
+        cols=3,
+        specs=[[{"type": "table", "colspan": 3}, None, None], [{}, {}, {}]],
+        subplot_titles=("Metrics", "", "", "Gini (test)", "O/P ratio", "Deviance"),
+        row_heights=[0.45, 0.55],
+        vertical_spacing=0.12,
+    )
+    figure.add_trace(
+        go.Table(
+            header={"values": list(table.columns)},
+            cells={"values": [table[column].tolist() for column in table.columns]},
+        ),
+        row=1,
+        col=1,
+    )
+    for column, title, col in (
+        ("gini_test", "Gini (test)", 1),
+        ("op_ratio_test", "O/P ratio", 2),
+        ("deviance_test", "Deviance", 3),
+    ):
+        figure.add_trace(
+            go.Bar(x=labels, y=table[column], name=title, showlegend=False),
+            row=2,
+            col=col,
+        )
+    figure.update_layout(height=800, title="RiskForge model comparison")
+    return figure.to_html(full_html=True, include_plotlyjs=True)

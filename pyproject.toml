@@ -25,6 +25,7 @@ dependencies = [
 aws = ["s3fs>=2024.6"]
 mlops = ["mlflow>=2.14"]
 tune = ["optuna>=3.6"]
+plot = ["plotly>=6.9.0"]
 
 [project.scripts]
 riskforge = "riskforge.cli:app"

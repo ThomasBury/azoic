@@ -22,14 +22,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pandas as pd
 import typer
 from rich.console import Console
 from rich.table import Table
 
 from riskforge.data import DatasetSpec, load_data
 from riskforge.profile import profile_features, screen_features
-from riskforge.reporting import model_card
+from riskforge.reporting import comparison_dashboard, comparison_table, model_card
 from riskforge.tariff import export_tariff as _export_tariff
 from riskforge.workflow import ExperimentConfig, run_experiment
 
@@ -133,25 +132,24 @@ def compare(
     out: Path | None = typer.Option(
         None, "--out", help="Write the comparison table to CSV (default: print to stdout)."
     ),
+    out_html: Path | None = typer.Option(
+        None, "--out-html", help="Write a standalone comparison dashboard."
+    ),
 ) -> None:
     """Run multiple configs and print a side-by-side per-model metric table."""
-    rows = []
-    for cfg_path in configs:
-        cfg = ExperimentConfig.from_yaml(cfg_path)
-        run = run_experiment(cfg)
-        for name, res in run.models.items():
-            rows.append(
-                {
-                    "config": cfg.name,
-                    "model": name,
-                    "kind": res.kind,
-                    **res.metrics,
-                }
-            )
+    runs = [
+        run_experiment(ExperimentConfig.from_yaml(cfg_path))
+        for cfg_path in configs
+    ]
+    rows = comparison_table(runs)
 
     if out is not None:
-        pd.DataFrame(rows).to_csv(out, index=False)
+        rows.to_csv(out, index=False)
         _console().print(f"[green]Wrote[/green] {len(rows)} rows to {out}")
+    if out_html is not None:
+        out_html.write_text(comparison_dashboard(runs), encoding="utf-8")
+        _console().print(f"[green]Wrote[/green] dashboard to {out_html}")
+    if out is not None or out_html is not None:
         return
 
     table = Table(title="RiskForge compare")
@@ -165,7 +163,7 @@ def compare(
         "deviance_test",
     ):
         table.add_column(c)
-    for r in rows:
+    for r in rows.to_dict("records"):
         _register_run_row(table, r["config"], r["model"], r["kind"], r)
     _console().print(table)
 

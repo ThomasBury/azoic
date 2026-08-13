@@ -6,7 +6,11 @@ from pathlib import Path
 
 import pytest
 
-from riskforge.reporting import model_card
+from riskforge.reporting import (
+    comparison_dashboard,
+    comparison_table,
+    model_card,
+)
 from riskforge.workflow import ExperimentConfig, ModelSpec, run_experiment
 from tests.conftest import make_synthetic_portfolio
 
@@ -115,3 +119,18 @@ def test_model_card_features_line_lists_all_features(tmp_path: Path) -> None:
         assert f"`{c}`" in md
     # Sanity: exact feature count is mentioned in the header.
     assert f"features ({len(run.feature_names)})" in md
+
+
+def test_comparison_table_and_dashboard_include_all_models_and_metrics(tmp_path: Path) -> None:
+    run = _run(tmp_path)
+    table = comparison_table([run])
+
+    assert list(table["model"]) == ["glm-tweedie"]
+    for metric in ("gini_train", "gini_test", "op_ratio_test", "deviance_test"):
+        assert metric in table.columns
+
+    html = comparison_dashboard([run])
+    assert "glm-tweedie" in html
+    assert html.count("plotly-graph-div") == 1
+    assert html.count("window.PlotlyConfig") == 1
+    assert 'src="https://cdn.plot.ly' not in html
