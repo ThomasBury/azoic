@@ -36,9 +36,9 @@ src/riskforge/
   metrics.py        # gini, lorenz, calibration_table; sklearn deviances re-exported
   validation.py     # make_strata, temporal_split
   plots.py          # plot_lorenz, plot_lift, plot_calibration (matplotlib)
-  tariff.py         # export_tariff(glm, path)
-  workflow.py       # ExperimentConfig, run_experiment
-  reporting.py      # model_card(run)
+  tariff.py         # export_tariff(glm_or_pipeline, path)
+  workflow.py       # ExperimentConfig, preprocessing/freq-sev YAML, run_experiment
+  reporting.py      # model_card, comparison_table/dashboard
   mlops.py          # log_run (mlflow, lazy import)
   tune.py           # tune_experiment (optuna, lazy import) -- v0.2 part 1 / M7
   cli.py            # Typer entry point
@@ -56,9 +56,8 @@ checking `PRD.md` sections 3 and 9.
 - **No `utils.py` / dead scaffolding** — write code when it's used, not "for
   later".
 - **pandas in/out at module boundaries; numpy inside**; never polars in v1.
-- **New deps** go to a pyproject extra (`aws`, `mlops`, `tune`, `plot`,
-  `explain`) with a one-line justification in the PR; never silently widen
-  core.
+- **New deps** go to a pyproject extra (`aws`, `mlops`, `tune`, `plot`) with a
+  one-line justification in the PR; never silently widen core.
 - **Deliberate shortcuts** tagged `# ponytail: <known ceiling>, upgrade when
   <trigger>`.
 - **No comments unless they encode a non-obvious rule** (e.g. the actuarial

@@ -36,8 +36,8 @@ integration engine.
    warned.
 3. **Transparent** — every grouping/binning emits a `mapping_` you can inspect,
    override (`set_mapping`), and export; no silent collapse; actuary in the loop.
-4. **Reproducible** — config (YAML + pydantic), `uv.lock`, dataset fingerprint
-   (shape + hash), `log_run()` mlflow helper.
+4. **Reproducible** — config (YAML + pydantic), `uv.lock`, canonical-frame
+   fingerprint (shape, columns, dtypes, index, values), `log_run()` mlflow helper.
 
 ## 3. Module architecture (flat, no subpackages, no utils)
 
@@ -50,10 +50,11 @@ src/riskforge/
   metrics.py       gini, lorenz, calibration_table; re-exports sklearn deviances
   validation.py    make_strata, temporal_split
   plots.py         plot_lorenz, plot_lift, plot_calibration (matplotlib)
-  tariff.py        export_tariff(glm, path) -> xlsx
-  workflow.py      ExperimentConfig (pydantic), run_experiment
-  reporting.py     model_card(run) -> md/html
+  tariff.py        export_tariff(glm_or_pipeline, path) -> xlsx
+  workflow.py      ExperimentConfig (preprocessing + freq-sev), run_experiment
+  reporting.py     model_card, comparison_table, comparison_dashboard
   mlops.py         log_run (thin mlflow; mlflow in [mlops] extra)
+  tune.py          tune_experiment (optuna in [tune] extra)
   cli.py           Typer: profile / fit / compare / export-tariff
 ```
 
@@ -135,8 +136,8 @@ Each is independently shippable. Done-when = acceptance check.
 ## 7. Later iterations (optional, none blocking)
 
 - **v0.2** — optuna objective (`deviance + calibration penalty`) **(M7 -- done)**,
-  plotly backend, monotonic binning + LGBM monotone_constraints, comparison
-  dashboard, polars ingest extra. OOT remains an opt-in use of the existing
+  monotonic binning + LGBM monotone_constraints and comparison dashboard **done**;
+  plotly plot backend and polars ingest extra remain. OOT is an opt-in use of
   `temporal_split` when the dataset has any sortable period column; without one,
   only non-temporal validation is possible.
 - **v0.3** — GBM->tariff distillation, adjacency-aware geo grouping,
@@ -152,6 +153,7 @@ lightgbm, pyarrow, pydantic, pyyaml, typer, rich, matplotlib, openpyxl.
 - `aws` — s3fs
 - `mlops` — mlflow
 - `tune` — optuna
+- `plot` — plotly (comparison dashboard only; lazy import)
 - `dev` (dependency-group) — pytest, ruff, pre-commit
 
 `uv sync --all-extras` for everything; `uv sync` for the core modelling stack.

@@ -22,11 +22,16 @@ Legend: ☐ pending · ◐ in progress · ☑ done
 - ☑ **M7 — optuna tune (v0.2 part 1)** — `tune_experiment`, per-model optuna
   study, actuarial-aware numeric-penalty objective (`deviance_test +
   calibration_penalty * |1 - op_ratio_test|`), `riskforge tune` CLI.
+- ☑ **v0.2 part 2** — canonical dataset fingerprints; exposure-weighted
+  calibration bins; distinct numeric missing bins; YAML preprocessing and
+  frequency-severity pipelines; pipeline-aware tariff export; standalone
+  comparison dashboard; one-million-row bin merge reduced from 3.12s to 0.066s.
 
 ## Current focus
 
-v0.2 part 2 in progress: monotonic binning + LightGBM `monotone_constraints`
-shipped (actuarial monotonic-relativity guarantee end-to-end -- bin means and
-GBM splits cannot contradict each other). Next: plotly backend, comparison
-dashboard, polars ingest extra (per `PRD.md` section 7). OOT uses the existing
-optional temporal split only when the data has a sortable period column.
+v0.2 part 2 is complete: monotonic binning and LightGBM constraints, workflow
+preprocessing/frequency-severity, reproducibility and diagnostics fixes, static
+comparison reporting, and the measured bin-merge optimization are shipped.
+Next optional work: Plotly backend for the existing plot functions and polars
+ingest extra (per `PRD.md` section 7). OOT uses the existing optional temporal
+split only when the data has a sortable period column.
