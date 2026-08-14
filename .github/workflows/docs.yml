@@ -1,0 +1,31 @@
+name: Documentation
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v7
+      - uses: quarto-dev/quarto-actions/setup@v2
+      - run: uv sync --all-extras --all-groups
+      - run: uv run quarto render examples/fremtpl2.qmd --to html
+      - run: uv run zensical build --strict
+      - run: mkdir -p site/tutorial && cp examples/fremtpl2.html site/tutorial/fremtpl2.html
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+      - uses: actions/deploy-pages@v5

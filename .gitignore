@@ -30,7 +30,7 @@ Thumbs.db
 .ipynb_checkpoints/
 
 # Docs build
-docs/_build/
+site/
 
 # Logs
 *.log

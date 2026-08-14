@@ -1,0 +1,28 @@
+[project]
+site_name = "Azoic"
+site_url = "https://thomasbury.github.io/azoic/"
+nav = [
+    {"Home" = "index.md"},
+    {"Get started" = [
+        {"Installation" = "getting-started/installation.md"},
+        {"First model" = "getting-started/first-model.md"},
+    ]},
+    {"Guide" = [
+        {"Model choice" = "guide/model-choice.md"},
+        {"Actuarial workflow" = "guide/actuarial-workflow.md"},
+        {"freMTPL2 tutorial" = "guide/fremtpl2.md"},
+    ]},
+    {"Reference" = [
+        {"Configuration and CLI" = "reference/configuration-cli.md"},
+        {"Data and preparation" = "reference/data-preparation.md"},
+        {"Models and evaluation" = "reference/models-evaluation.md"},
+        {"Workflow and operations" = "reference/workflow-operations.md"},
+    ]},
+    {"Migration to 0.4" = "migration.md"},
+]
+
+[project.plugins.mkdocstrings.handlers.python]
+paths = ["src"]
+
+[project.plugins.mkdocstrings.handlers.python.options]
+show_source = false
