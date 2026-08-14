@@ -276,6 +276,36 @@ def test_cli_export_tariff_gbm_model_rejected(tmp_path: Path) -> None:
     assert "RiskGLM" in result.output or "GLM" in result.output
 
 
+def test_cli_export_tariff_distills_gbm_with_provenance(tmp_path: Path) -> None:
+    data = _write_portfolio(tmp_path, n=2000)
+    cfg = _write_yaml(tmp_path, _yaml(str(data)))
+    out = tmp_path / "distilled.xlsx"
+    result = runner.invoke(
+        app,
+        [
+            "export-tariff",
+            "--config",
+            str(cfg),
+            "--model",
+            "gbm-tweedie",
+            "--distill",
+            "--no-recalibrate",
+            "--out",
+            str(out),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Distillation fidelity" in result.output
+    sheets = pd.read_excel(out, sheet_name=None)
+    assert list(sheets) == ["base_rate", "factors", "mappings"]
+    base = sheets["base_rate"].iloc[0]
+    assert base["distilled_from"] == "RiskGBM"
+    assert base["teacher_objective"] == "tweedie"
+    assert float(base["teacher_student_deviance"]) >= 0
+    assert float(base["student_teacher_total_ratio"]) == pytest.approx(1.0, rel=0.05)
+
+
 # tune (M7 / v0.2 part 1)
 # ---------------------------------------------------------------------------
 

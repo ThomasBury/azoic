@@ -103,6 +103,8 @@ def temporal_split(
     if cutoff is not None:
         cut_pos = int(np.searchsorted(times, cutoff, side="right"))
     else:
+        if test_size is None:
+            raise ValueError("pass exactly one of `test_size` or `cutoff`")
         n = len(df)
         if isinstance(test_size, float):
             if not 0.0 < test_size < 1.0:

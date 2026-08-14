@@ -34,7 +34,7 @@ def _to_frame(X):
         return X, True
     arr = np.asarray(X)
     n = arr.shape[1]
-    return pd.DataFrame(arr, columns=[f"x{i}" for i in range(n)]), False
+    return pd.DataFrame(arr, columns=pd.Index([f"x{i}" for i in range(n)])), False
 
 
 def _column_array(X, name):
@@ -324,7 +324,10 @@ class AutoBinner(TransformerMixin, BaseEstimator):
             return np.asarray(input_features)
         if hasattr(self, "feature_names_in_"):
             return self.feature_names_in_
-        return np.asarray([f"x{i}" for i in range(self.n_features_in_)])
+        n_features = getattr(self, "n_features_in_", None)
+        if n_features is None:
+            raise ValueError("AutoBinner must be fitted before getting feature names")
+        return np.asarray([f"x{i}" for i in range(n_features)])
 
     def set_mapping(self, mapping):
         """Override fitted bin edges: ``{col: array_of_edges}``."""
@@ -582,7 +585,10 @@ class AutoGrouper(TransformerMixin, BaseEstimator):
             return np.asarray(input_features)
         if hasattr(self, "feature_names_in_"):
             return self.feature_names_in_
-        return np.asarray([f"x{i}" for i in range(self.n_features_in_)])
+        n_features = getattr(self, "n_features_in_", None)
+        if n_features is None:
+            raise ValueError("AutoGrouper must be fitted before getting feature names")
+        return np.asarray([f"x{i}" for i in range(n_features)])
 
     def set_mapping(self, mapping):
         """Override fitted level groups: ``{col: {level: group_label}}``."""

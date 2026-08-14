@@ -32,9 +32,9 @@ lint:
 format:
     uv run ruff format .
 
-# Lint + tests (run before committing).
+# Lint + source types + tests (run before committing).
 check:
-    uv run ruff check . && uv run pytest
+    uv run ruff check . && uv run ty check && uv run pytest
 
 # Render the executable freMTPL2 tutorial (Quarto must be on PATH).
 demo:

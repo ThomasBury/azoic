@@ -36,11 +36,12 @@ Legend: ☐ pending · ◐ in progress · ☑ done
   - [x] unit checks green
   - [x] clean-environment Quarto render verified
   - [x] living documentation finalized
+- ☑ **v0.3 — exportable GBM distillation** — positive Tweedie/Poisson/Gamma
+  GBMs distil to log-link GLM students on the existing train/test boundary;
+  held-out fidelity and provenance travel in the three-sheet tariff workbook.
 
 ## Current focus
 
-Correctness repair and M8 are complete. `uv run ruff check .` and the full suite
-are green, the CLI smoke commands pass, and `just demo` successfully rerendered
-one standalone `examples/fremtpl2.html` plus the tariff, reporting, and MLflow
-artifacts under `examples/_artifacts/fremtpl2/`. All generated files remain
-ignored.
+v0.3 GBM-to-tariff distillation is implemented. Adjacency-aware grouping, remote
+MLflow guidance, Zensical, SHAP, and SageMaker remain demand-gated. Generated
+tutorial files and artifacts stay ignored.

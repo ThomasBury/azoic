@@ -105,7 +105,12 @@ class ModelSpec(BaseModel):
     def build(self, dataset_spec: DatasetSpec | None = None):
         """Construct the (unfitted) estimator from this spec."""
         if self.kind == "frequency_severity":
-            if dataset_spec is None or dataset_spec.claim_count is None:
+            if (
+                dataset_spec is None
+                or dataset_spec.claim_count is None
+                or self.frequency is None
+                or self.severity is None
+            ):
                 raise ValueError("frequency_severity requires spec.claim_count")
             return FrequencySeverityModel(
                 freq=self.frequency.build(),
@@ -334,6 +339,8 @@ def _evaluate_split(
         cal = calibration_table(obs_test_agg, pred_test, exp_test, n_bins=10)
         params = dict(spec.params)
         if spec.kind == "frequency_severity":
+            if spec.frequency is None or spec.severity is None:
+                raise ValueError("frequency_severity requires frequency and severity specs")
             params["frequency"] = spec.frequency.model_dump(exclude_none=True)
             params["severity"] = spec.severity.model_dump(exclude_none=True)
         results[name] = ModelResult(

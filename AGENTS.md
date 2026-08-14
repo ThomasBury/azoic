@@ -23,6 +23,7 @@ policy admin, Guidewire integration.
 - Run tests (fail fast): `uv run pytest -x`
 - Run all tests: `uv run pytest`
 - Lint: `uv run ruff check .`
+- Type-check production code: `uv run ty check`
 - Format: `uv run ruff format .`
 - Combined check: `just check`
 - Render freMTPL2 tutorial: `just demo` (external Quarto prerequisite)
@@ -39,7 +40,7 @@ src/riskforge/
   metrics.py        # gini, lorenz, calibration_table; sklearn deviances re-exported
   validation.py     # make_strata, temporal_split
   plots.py          # plot_lorenz, plot_lift, plot_calibration (matplotlib)
-  tariff.py         # export_tariff(glm_or_pipeline, path)
+  tariff.py         # distill_gbm; export_tariff(glm_or_pipeline, path)
   workflow.py       # ExperimentConfig, preprocessing/freq-sev YAML, run_experiment
   reporting.py      # model_card, comparison_table/dashboard
   mlops.py          # log_run (mlflow, lazy import)
@@ -59,7 +60,8 @@ checking `PRD.md` sections 3 and 9.
   break `get_params`).
 - **No `utils.py` / dead scaffolding** — write code when it's used, not "for
   later".
-- **pandas in/out at module boundaries; numpy inside**; never polars in v1.
+- **pandas in/out at module boundaries; numpy inside**; add a Polars ingest extra
+  only for a measured load-time or RAM bottleneck, and convert at the boundary.
 - **New deps** go to a pyproject extra or dependency group (`demo`, `dev`) with
   a one-line justification in the PR; never silently widen core.
 - **Deliberate shortcuts** tagged `# ponytail: <known ceiling>, upgrade when
@@ -104,7 +106,7 @@ checking `PRD.md` sections 3 and 9.
   check.
 - Keep tutorial HTML, Quarto caches/support files, fetched data, workbooks,
   reports, and MLflow state ignored; only the `.qmd` is source-controlled.
-- Run `just check` (or `uv run ruff check . && uv run pytest`) before
+- Run `just check` (or `uv run ruff check . && uv run ty check && uv run pytest`) before
   finishing any task.
 
 ## PR / commits

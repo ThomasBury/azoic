@@ -59,7 +59,7 @@ from riskforge.data import DatasetSpec
 from riskforge.mlops import log_run
 from riskforge.profile import profile_features, screen_features
 from riskforge.reporting import comparison_dashboard, comparison_table, model_card
-from riskforge.tariff import apply_tariff, export_tariff
+from riskforge.tariff import apply_tariff, distill_gbm, export_tariff
 from riskforge.workflow import (
     ExperimentConfig,
     ModelSpec,
@@ -420,33 +420,44 @@ for model_name, estimator in estimators.items():
 display(scored.describe().T)
 ```
 
-## Export and verify the direct GLM tariff
+## Distil the GBM into an executable tariff
 
-Only the direct log-link GLM is exported as a multiplicative tariff. The
-workbook contains `base_rate`, `factors`, and `mappings` sheets. Recalibration
-changes the base so applying the workbook tariff over this portfolio reproduces
-the observed aggregate claim amount. Application is strict: unseen categorical
-levels and non-finite numeric inputs are rejected rather than assigned a neutral
-factor.
+A tree model is not itself a multiplicative tariff. `distill_gbm` fits a
+log-link GLM student to the GBM teacher's predictions on the experiment's
+training rows, then measures fidelity on the untouched test rows. It copies the
+already-fitted preprocessing, so bins and group mappings are not relearned from
+the holdout.
+
+The workbook contains the same `base_rate`, `factors`, and `mappings` sheets as
+a direct GLM export. Here `recalibrate=False` is deliberate: applying the
+workbook reproduces the student exactly. The student approximates the GBM
+teacher; the workbook does not reproduce the teacher exactly.
 
 ```{python}
-tariff_path = ARTIFACT_DIR / "direct_tweedie_tariff.xlsx"
+tariff_path = ARTIFACT_DIR / "distilled_tweedie_tariff.xlsx"
 tariff_X = portfolio[
     [*features, "exposure", "claim_amount", "claim_count"]
 ]
-direct_pipeline = estimators["direct-tweedie-glm"]
+teacher_pipeline = estimators["tweedie-lightgbm"]
+split_order = np.random.default_rng(config.random_state).permutation(len(portfolio))
+validation_idx = split_order[: run.n_test]
+fit_idx = split_order[run.n_test :]
+distilled_pipeline = distill_gbm(
+    teacher_pipeline,
+    tariff_X.iloc[fit_idx],
+    tariff_X.iloc[validation_idx],
+)
 
 export_tariff(
-    direct_pipeline,
+    distilled_pipeline,
     tariff_path,
     X=tariff_X,
-    y=portfolio["claim_amount"],
-    exposure_col="exposure",
-    recalibrate=True,
+    recalibrate=False,
 )
 
 sheets = pd.read_excel(tariff_path, sheet_name=None)
 assert list(sheets) == ["base_rate", "factors", "mappings"]
+assert sheets["base_rate"].iloc[0]["distilled_from"] == "RiskGBM"
 display(sheets["base_rate"])
 display(sheets["factors"].head(20))
 display(sheets["mappings"].head(20))
@@ -469,19 +480,22 @@ workbook_tariff = {
     "numeric": numeric_factors,
     "categorical": categorical_factors,
 }
-transformed_rating_frame = direct_pipeline[:-1].transform(tariff_X)
-tariff_rate = apply_tariff(workbook_tariff, transformed_rating_frame)
-tariff_total = float((tariff_rate * portfolio["exposure"].to_numpy()).sum())
-observed_total = float(portfolio["claim_amount"].sum())
+validation_X = tariff_X.iloc[validation_idx]
+transformed_validation = distilled_pipeline[:-1].transform(validation_X)
+teacher_rate = np.asarray(teacher_pipeline.predict(validation_X), dtype=float)
+student_rate = np.asarray(distilled_pipeline.predict(validation_X), dtype=float)
+workbook_rate = apply_tariff(workbook_tariff, transformed_validation)
 
-assert np.isclose(tariff_total, observed_total, rtol=1e-6)
-pd.DataFrame(
+assert np.allclose(workbook_rate, student_rate, rtol=1e-6, atol=1e-8)
+rate_comparison = pd.DataFrame(
     {
-        "observed_total": [observed_total],
-        "recalibrated_tariff_total": [tariff_total],
-        "ratio": [tariff_total / observed_total],
+        "gbm_teacher": teacher_rate,
+        "distilled_glm_student": student_rate,
+        "applied_workbook": workbook_rate,
     }
 )
+display(rate_comparison.head())
+display(rate_comparison.describe().T)
 ```
 
 ## Reports and local MLflow tracking

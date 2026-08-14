@@ -142,7 +142,7 @@ def comparison_table(runs) -> pd.DataFrame:
         "op_ratio_test",
         "deviance_test",
     ]
-    return pd.DataFrame(rows) if rows else pd.DataFrame(columns=columns)
+    return pd.DataFrame(rows) if rows else pd.DataFrame(columns=pd.Index(columns))
 
 
 def comparison_dashboard(runs) -> str:

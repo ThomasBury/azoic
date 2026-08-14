@@ -1,6 +1,6 @@
 [project]
 name = "riskforge"
-version = "0.1.0"
+version = "0.3.0"
 description = "scikit-learn-compatible toolkit for non-life technical tariff (pure premium) modelling"
 readme = "README.md"
 authors = [{ name = "thomas-bury", email = "thomas.bury@yuzzu.be" }]
@@ -39,6 +39,7 @@ dev = [
     "pytest>=8.0",
     "ruff>=0.5",
     "pre-commit>=3.7",
+    "ty>=0.0.71",
 ]
 
 [tool.ruff]
@@ -55,6 +56,9 @@ select = ["E", "F", "W", "I", "B", "UP", "C4", "SIM"]
 
 [tool.ruff.format]
 quote-style = "double"
+
+[tool.ty.src]
+include = ["src"]
 
 [tool.pytest.ini_options]
 minversion = "8.0"

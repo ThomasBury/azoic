@@ -8,9 +8,8 @@ Wraps the M5 + M6 + M7 pieces end-to-end:
     it, prints a model card to stdout (and/or writes md + html).
   * ``riskforge compare`` -- runs one or more configs and prints a side-by-side
     per-model metrics table.
-  * ``riskforge export-tariff`` -- runs a config, picks a named GLM, writes a
-    multiplicative-tariff xlsx whose base reproduces the portfolio observed
-    total pure premium (M6).
+  * ``riskforge export-tariff`` -- runs a config, exports a named GLM or, with
+    ``--distill``, an exportable GLM student of a positive-objective GBM.
   * ``riskforge tune`` -- optuna hyperparameter search per model
     (``tune`` extra, M7 / v0.2 part 1) then a model card of the best fit.
 
@@ -27,8 +26,9 @@ import typer
 from riskforge.data import DatasetSpec, load_data
 from riskforge.profile import profile_features, screen_features
 from riskforge.reporting import comparison_dashboard, comparison_table, model_card
+from riskforge.tariff import distill_gbm as _distill_gbm
 from riskforge.tariff import export_tariff as _export_tariff
-from riskforge.workflow import ExperimentConfig, run_experiment
+from riskforge.workflow import ExperimentConfig, _split_indices, run_experiment
 
 app = typer.Typer(
     no_args_is_help=True,
@@ -122,8 +122,13 @@ def compare(
 @app.command("export-tariff")
 def export_tariff(
     config: Path = typer.Option(..., "--config", help="ExperimentConfig YAML."),
-    model: str = typer.Option(..., "--model", help="Name of the (GLM) model to export."),
+    model: str = typer.Option(..., "--model", help="Name of the model to export."),
     out: Path = typer.Option(..., "--out", help="Output xlsx path."),
+    distill: bool = typer.Option(
+        False,
+        "--distill",
+        help="Distill a positive-objective GBM to an exportable GLM on the existing split.",
+    ),
     recalibrate: bool = typer.Option(
         True,
         "--recalibrate/--no-recalibrate",
@@ -131,18 +136,24 @@ def export_tariff(
         "total claim amount (default: on).",
     ),
 ) -> None:
-    """Run an ``ExperimentConfig``, pick the named GLM, write a multiplicative-tariff xlsx."""
-    from riskforge.models import RiskGLM
+    """Run a config and export a GLM or an explicitly distilled GBM tariff."""
+    from riskforge.models import RiskGBM, RiskGLM
 
     cfg = ExperimentConfig.from_yaml(config)
-    run, ests = run_experiment(cfg, return_estimators=True)
+    _, ests = run_experiment(cfg, return_estimators=True)
     if model not in ests:
         raise typer.BadParameter(
             f"model {model!r} not in config models {list(ests)}; check the YAML `models:` keys."
         )
     est = ests[model]
     final_est = est.steps[-1][1] if hasattr(est, "steps") else est
-    if not isinstance(final_est, RiskGLM):
+    if isinstance(final_est, RiskGBM) and not distill:
+        raise typer.BadParameter(
+            f"model {model!r} ends in RiskGBM; pass --distill to export a GLM student."
+        )
+    if isinstance(final_est, RiskGLM) and distill:
+        raise typer.BadParameter("--distill is only valid for a RiskGBM model")
+    if not isinstance(final_est, (RiskGLM, RiskGBM)):
         raise typer.BadParameter(
             f"model {model!r} ends in {type(final_est).__name__}; export-tariff requires a RiskGLM."
         )
@@ -150,6 +161,15 @@ def export_tariff(
     df = load_data(cfg.data_path, spec=cfg.spec)
     X = df[list(est.feature_names_in_)]
     y = df[cfg.spec.target]
+    if isinstance(final_est, RiskGBM):
+        train_idx, test_idx = _split_indices(cfg, df)
+        est = _distill_gbm(est, X.iloc[train_idx], X.iloc[test_idx])
+        metrics = vars(est)["distillation_metrics_"]
+        typer.echo(
+            "Distillation fidelity: "
+            f"teacher_student_deviance={metrics['teacher_student_deviance']:.6g}, "
+            f"student_teacher_total_ratio={metrics['student_teacher_total_ratio']:.6g}"
+        )
 
     _export_tariff(
         est,

@@ -28,16 +28,111 @@ Three sheets per the PRD section 3 ``base / factors / mappings`` contract:
 from __future__ import annotations
 
 from collections.abc import Hashable
+from copy import deepcopy
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 from sklearn.pipeline import Pipeline
 
-from riskforge.models import RiskGLM
+from riskforge.metrics import mean_tweedie_deviance
+from riskforge.models import RiskGBM, RiskGLM
 from riskforge.preprocessing import AutoBinner, AutoGrouper
 
-__all__ = ["export_tariff", "extract_tariff", "apply_tariff", "recalibrate_for_total"]
+__all__ = [
+    "distill_gbm",
+    "export_tariff",
+    "extract_tariff",
+    "apply_tariff",
+    "recalibrate_for_total",
+]
+
+
+def distill_gbm(
+    teacher: RiskGBM | Pipeline,
+    X_fit: pd.DataFrame,
+    X_validation: pd.DataFrame,
+) -> RiskGLM | Pipeline:
+    """Fit an exportable log-link GLM to a fitted positive-objective GBM.
+
+    The fit frame teaches the student; the separate validation frame supplies
+    only held-out fidelity metrics. Both use the teacher's exposure column as
+    sample weight. A pipeline result contains copied, already-fitted upstream
+    preprocessing and exposes the metrics in ``distillation_metrics_``.
+    """
+    if not isinstance(X_fit, pd.DataFrame) or not isinstance(X_validation, pd.DataFrame):
+        raise TypeError("distill_gbm requires pandas DataFrame fit and validation frames")
+    if X_fit.empty or X_validation.empty or X_fit is X_validation:
+        raise ValueError("distill_gbm requires non-empty, separate fit and validation frames")
+
+    gbm = teacher.steps[-1][1] if isinstance(teacher, Pipeline) else teacher
+    if not isinstance(gbm, RiskGBM):
+        raise ValueError("distill_gbm requires a RiskGBM or a pipeline ending in RiskGBM")
+    if not hasattr(gbm, "backend_"):
+        raise ValueError("distill_gbm requires a fitted RiskGBM teacher")
+    if gbm.objective not in {"tweedie", "poisson", "gamma"}:
+        raise ValueError(
+            "distill_gbm supports only tweedie, poisson, and gamma objectives; "
+            f"got {gbm.objective!r}"
+        )
+    if gbm.exposure_col is None:
+        raise ValueError("distill_gbm requires the teacher to define exposure_col")
+
+    for name, frame in (("fit", X_fit), ("validation", X_validation)):
+        if gbm.exposure_col not in frame:
+            raise ValueError(f"distill_gbm {name} frame is missing {gbm.exposure_col!r}")
+        exposure = frame[gbm.exposure_col].to_numpy(dtype=float)
+        if not np.isfinite(exposure).all() or np.any(exposure <= 0):
+            raise ValueError(f"distill_gbm {name} exposure must be positive and finite")
+
+    _, fit_frame, _ = _pipeline_parts(teacher, X_fit)
+    _, validation_frame, _ = _pipeline_parts(teacher, X_validation)
+    teacher_fit = np.asarray(gbm.predict(fit_frame), dtype=float)
+    teacher_validation = np.asarray(gbm.predict(validation_frame), dtype=float)
+    for name, prediction in (("fit", teacher_fit), ("validation", teacher_validation)):
+        if not np.isfinite(prediction).all() or np.any(prediction <= 0):
+            raise ValueError(f"distill_gbm teacher {name} predictions must be positive and finite")
+
+    student = RiskGLM(
+        family=gbm.objective,
+        link="log",
+        exposure_col=gbm.exposure_col,
+        tweedie_power=(gbm.tweedie_variance_power if gbm.objective == "tweedie" else None),
+    ).fit(fit_frame, teacher_fit)
+    student_validation = np.asarray(student.predict(validation_frame), dtype=float)
+    if not np.isfinite(student_validation).all() or np.any(student_validation <= 0):
+        raise ValueError("distill_gbm student validation predictions must be positive and finite")
+
+    exposure_validation = X_validation[gbm.exposure_col].to_numpy(dtype=float)
+    power = {
+        "poisson": 1.0,
+        "gamma": 2.0,
+        "tweedie": gbm.tweedie_variance_power,
+    }[gbm.objective]
+    metrics = {
+        "teacher_student_deviance": float(
+            mean_tweedie_deviance(
+                teacher_validation,
+                student_validation,
+                sample_weight=exposure_validation,
+                power=power,
+            )
+        ),
+        "student_teacher_total_ratio": float(
+            np.dot(student_validation, exposure_validation)
+            / np.dot(teacher_validation, exposure_validation)
+        ),
+    }
+    student.distillation_metrics_ = metrics
+    if not isinstance(teacher, Pipeline):
+        return student
+    distilled = Pipeline(
+        [*deepcopy(teacher.steps[:-1]), (teacher.steps[-1][0], student)],
+        memory=teacher.memory,
+        verbose=teacher.verbose,
+    )
+    vars(distilled)["distillation_metrics_"] = metrics
+    return distilled
 
 
 def _require_log_link(backend) -> None:
@@ -82,9 +177,7 @@ def extract_tariff(glm: RiskGLM, *, reference: dict[str, Hashable] | None = None
     coefs = np.asarray(backend.coef_, dtype=float)
     intercept = float(backend.intercept_)
     term_names = list(getattr(backend, "term_names_", []) or [])
-    cat_levels: dict[str, list[Hashable]] = dict(
-        getattr(backend, "categorical_levels_", {}) or {}
-    )
+    cat_levels: dict[str, list[Hashable]] = dict(getattr(backend, "categorical_levels_", {}) or {})
     if len(term_names) != len(coefs):
         raise ValueError(
             "extract_tariff: glum metadata mismatch: "
@@ -153,7 +246,6 @@ def extract_tariff(glm: RiskGLM, *, reference: dict[str, Hashable] | None = None
     }
 
 
-
 def _mapping_frame(backend, *, cat_levels, reference) -> pd.DataFrame:
     term_names = list(getattr(backend, "term_names_", []) or [])
     cat_set = set(cat_levels)
@@ -188,9 +280,8 @@ def _mapping_frame(backend, *, cat_levels, reference) -> pd.DataFrame:
             )
     return pd.DataFrame(
         rows,
-        columns=["feature", "role", "dtype", "levels", "n_levels", "reference_level"],
+        columns=pd.Index(["feature", "role", "dtype", "levels", "n_levels", "reference_level"]),
     )
-
 
 
 def _factors_frame(tariff: dict) -> pd.DataFrame:
@@ -218,7 +309,7 @@ def _factors_frame(tariff: dict) -> pd.DataFrame:
             )
     return pd.DataFrame(
         rows,
-        columns=["feature", "level", "multiplicative_factor", "application"],
+        columns=pd.Index(["feature", "level", "multiplicative_factor", "application"]),
     )
 
 
@@ -344,13 +435,14 @@ def export_tariff(
             "pass recalibrate=False for the structural (model-predictive) tariff."
         )
 
+    distillation_metrics = getattr(glm, "distillation_metrics_", None)
     glm, transformed_X, upstream_mappings = _pipeline_parts(glm, X)
     if not isinstance(glm, RiskGLM):
         raise ValueError("export_tariff requires a RiskGLM or a pipeline ending in RiskGLM")
     tariff = extract_tariff(glm, reference=reference)
 
     recalibrated = False
-    if recalibrate:
+    if recalibrate and X is not None and y is not None and exposure_col is not None:
         exposure = np.asarray(X[exposure_col].to_numpy(), dtype=float)
         y_arr = np.asarray(y, dtype=float)
         pred_total = float((np.asarray(glm.predict(transformed_X), dtype=float) * exposure).sum())
@@ -361,17 +453,22 @@ def export_tariff(
         recalibrated = True
 
     backend = glm.backend_
-    base_sheet = pd.DataFrame(
-        [
+    base_row = {
+        "base_rate": float(tariff["base_rate"]),
+        "family": str(getattr(glm, "family", "")),
+        "link": str(getattr(backend, "link", "")),
+        "intercept_": float(backend.intercept_),
+        "recalibrated": bool(recalibrated),
+    }
+    if distillation_metrics is not None:
+        base_row.update(
             {
-                "base_rate": float(tariff["base_rate"]),
-                "family": str(getattr(glm, "family", "")),
-                "link": str(getattr(backend, "link", "")),
-                "intercept_": float(backend.intercept_),
-                "recalibrated": bool(recalibrated),
+                "distilled_from": "RiskGBM",
+                "teacher_objective": str(getattr(glm, "family", "")),
+                **distillation_metrics,
             }
-        ]
-    )
+        )
+    base_sheet = pd.DataFrame([base_row])
 
     factors_sheet = _factors_frame(tariff)
     mapping_sheet = tariff["mapping"]

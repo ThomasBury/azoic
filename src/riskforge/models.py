@@ -395,7 +395,9 @@ class RiskGBM(RegressorMixin, BaseEstimator):
         backend = self._make_backend(
             feature_names=feature_names,
             categorical_names=categorical_names,
-            n_features=(len(feature_names) if feature_names is not None else self.n_features_in_),
+            n_features=(
+                len(feature_names) if feature_names is not None else np.asarray(X_backend).shape[1]
+            ),
         )
         backend.fit(X_backend, np.asarray(y, dtype=float), sample_weight=w)
         self.backend_ = backend

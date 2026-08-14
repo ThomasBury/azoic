@@ -3,7 +3,7 @@
 A scikit-learn-compatible Python toolkit for non-life technical tariff (pure
 premium) modelling: actuarial preprocessing, GLM (glum) + GBM (LightGBM),
 frequency-severity decomposition, actuarial diagnostics, reproducible runs,
-and multiplicative tariff export.
+GBM-to-GLM distillation, and multiplicative tariff export.
 
 - Full spec and conventions: [`PRD.md`](PRD.md)
 - Agent quick rules: [`AGENTS.md`](AGENTS.md)
@@ -29,6 +29,9 @@ inner split of the outer training partition, then refits on outer training data
 and reports the untouched outer test. Exported tariffs reject unknown categorical
 levels and non-finite numeric inputs.
 
+Positive-objective GBMs can be exported through `riskforge export-tariff
+--distill`; the workbook reproduces the distilled GLM student, not the teacher.
+
 ## Executable freMTPL2 tutorial
 
 [`examples/fremtpl2.qmd`](examples/fremtpl2.qmd) runs the complete technical-
@@ -53,8 +56,9 @@ uv run mlflow ui \
 ## Dev
 
 ```bash
-just check          # ruff + pytest
+just check          # ruff + ty + pytest
 just test           # pytest -x
 just lint
 just format
+uv run ty check     # production source types
 ```

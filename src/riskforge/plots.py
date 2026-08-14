@@ -27,7 +27,10 @@ def _ensure_ax(ax: plt.Axes | None = None, *, figsize=(5, 4)) -> plt.Axes:
 
 def _maybe_save(ax: plt.Axes, path: str | Path | None) -> plt.Axes:
     if path is not None:
-        ax.figure.savefig(str(path), dpi=120, bbox_inches="tight")
+        figure = ax.get_figure(root=True)
+        if figure is None:
+            raise RuntimeError("axis is not attached to a figure")
+        figure.savefig(str(path), dpi=120, bbox_inches="tight")
     return ax
 
 
@@ -111,7 +114,7 @@ def plot_calibration(
     lo = float(min(pred.min(), obs.min()))
     hi = float(max(pred.max(), obs.max()))
     pad = 0.05 * (hi - lo if hi > lo else 1.0)
-    lims = [lo - pad, hi + pad]
+    lims = (lo - pad, hi + pad)
     ax.plot(lims, lims, "--", color="0.5", label="perfect (y=x)")
     ax.set_xlim(lims)
     ax.set_ylim(lims)

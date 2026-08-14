@@ -28,7 +28,7 @@ constraints).
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal, overload
 
 from pydantic import BaseModel, ConfigDict
 
@@ -111,6 +111,28 @@ class TuneResult(BaseModel):
     run: Run
 
 
+@overload
+def tune_experiment(
+    config: ExperimentConfig,
+    *,
+    n_trials: int = 20,
+    calibration_penalty: float = 1.0,
+    random_state: int = 42,
+    return_estimators: Literal[False] = False,
+) -> TuneResult: ...
+
+
+@overload
+def tune_experiment(
+    config: ExperimentConfig,
+    *,
+    n_trials: int = 20,
+    calibration_penalty: float = 1.0,
+    random_state: int = 42,
+    return_estimators: Literal[True],
+) -> tuple[TuneResult, dict[str, Any]]: ...
+
+
 def tune_experiment(
     config: ExperimentConfig,
     *,
@@ -175,8 +197,11 @@ def tune_experiment(
             ),
             n_trials=n_trials,
         )
-        best_params[name] = dict(study.best_trial.params)
-        best_values[name] = float(study.best_trial.value)
+        best_trial = study.best_trial
+        if best_trial.value is None:
+            raise RuntimeError("optuna study completed without a best trial value")
+        best_params[name] = dict(best_trial.params)
+        best_values[name] = float(best_trial.value)
 
     # Re-run with the merged best + identity params -- the canonical fresh Run
     # feeds model_card / export_tariff / log_run unchanged.

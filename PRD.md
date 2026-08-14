@@ -50,7 +50,7 @@ src/riskforge/
   metrics.py       gini, lorenz, calibration_table; re-exports sklearn deviances
   validation.py    make_strata, temporal_split
   plots.py         plot_lorenz, plot_lift, plot_calibration (matplotlib)
-  tariff.py        export_tariff(glm_or_pipeline, path) -> xlsx
+  tariff.py        distill_gbm(); export_tariff(glm_or_pipeline, path) -> xlsx
   workflow.py      ExperimentConfig (preprocessing + freq-sev), run_experiment
   reporting.py     model_card, comparison_table, comparison_dashboard
   mlops.py         log_run (thin mlflow; mlflow in [mlops] extra)
@@ -158,14 +158,23 @@ Each is independently shippable. Done-when = acceptance check.
 ## 7. Later iterations (optional, none blocking)
 
 - **v0.2** — optuna objective (`deviance + calibration penalty`) **(M7 -- done)**,
-  monotonic binning + LGBM monotone_constraints and comparison dashboard **done**;
-  plotly plot backend and polars ingest extra remain. OOT is an opt-in use of
-  `temporal_split` when the dataset has any sortable period column; equal periods
-  remain on one side and missing periods are rejected. Without an ordered period,
-  only non-temporal validation is possible.
-- **v0.3** — GBM->tariff distillation, adjacency-aware geo grouping,
-  SageMaker/remote-mlflow examples, docs site (Zensical), shap extra, Textual
-  TUI (only if demanded).
+  monotonic binning + LGBM monotone_constraints and comparison dashboard **done**.
+  OOT is an opt-in use of `temporal_split` when the dataset has any sortable period
+  column; equal periods remain on one side and missing periods are rejected. Without
+  an ordered period, only non-temporal validation is possible.
+- **Conditional, no version** — add interactive Plotly diagnostic charts only when
+  users have a real business need to explore individual charts; the standalone
+  comparison dashboard already covers interactive model comparison. Add a Polars
+  ingest extra only when a real portfolio demonstrates an unacceptable pandas
+  load-time or RAM bottleneck; keep pandas at RiskForge's module boundaries.
+- **v0.3** — GBM->tariff distillation **done**: positive-objective teachers use
+  the existing experiment holdout for fidelity metrics and export a log-link GLM
+  student through the unchanged three-sheet workbook contract.
+- **Conditional, no version** — adjacency-aware geo grouping waits for a portfolio
+  with real adjacency; remote MLflow waits for an endpoint; Zensical waits for
+  multi-page publishing demand; SHAP waits for interventional explanations or SHAP
+  plots; SageMaker waits for a named target environment. LightGBM native
+  contributions cover basic explanations without another dependency.
 
 ## 8. Dependencies
 
@@ -196,16 +205,16 @@ is over-engineering unless a concrete need appears.
 | `AutoTariffGLM` class | it's a Pipeline | construct `sklearn.pipeline.Pipeline` directly |
 | 6 splitter classes | sklearn has it | `make_strata()` helper + sklearn splits; `temporal_split()` |
 | custom deviance module | stdlib has it | re-export `sklearn.metrics.mean_*_deviance` |
-| 5 clusterer classes | clustering = grouping | `AutoGrouper(strategy=...)`; geo adjacency -> v0.3 |
+| 5 clusterer classes | clustering = grouping | `AutoGrouper(strategy=...)`; geo adjacency only for a real constrained portfolio |
 | 5 mlflow classes | thin shim is enough | `log_run()` function |
 | `TariffOptimizer` constraint DSL strings | parser project | numeric penalties in optuna objective (v0.2) |
 | 5 tariff exporter classes | one xlsx is the format | `export_tariff(glm, path)` |
 | `TariffExperiment` sequencing class | functions compose | `run_experiment(config)` |
 | `selection/` module (5 classes) | flags = profiler columns | `screen_features(profile)` |
 | Hydra | one config, no composition yet | YAML + pydantic + Typer overrides |
-| polars + duckdb in core | pandas is canonical | polars in v0.2 ingest extra; duckdb = notebook habit |
-| plotly dual backend v1 | doubles test surface | matplotlib only v1; plotly v0.2 |
-| Textual, PowerPoint, ALE, geopandas, multi-page docs site | YAGNI for v1 | cut, or v0.3 if demanded; M8 remains one `.qmd` |
+| polars + duckdb in core | pandas is canonical | add Polars only for a measured ingest bottleneck; duckdb = notebook habit |
+| plotly dual diagnostic backend | doubles test surface | existing Plotly comparison dashboard; add diagnostic charts only for a real business need |
+| Textual, PowerPoint, ALE, geopandas, multi-page docs site | YAGNI for v1 | cut until concrete demand; M8 remains one `.qmd` |
 | `pydantic AND dataclasses` | overlap | pydantic only |
 | `ModelCard.to_pdf` | windows weasyprint pain | md + html only |
 
@@ -216,8 +225,8 @@ is over-engineering unless a concrete need appears.
 | Python 3.12 (not 3.14) | glum/lightgbm wheels confirmed for 3.12; 3.14 too new |
 | Preprocessing built fresh (not ported from arfs) | no arfs source located in `~/projects` |
 | Defer Hydra | one config, no composition pain yet; Typer flags suffice |
-| matplotlib only through v1 | headless PNG/PDF free; plotly v0.2 |
-| Zensical docs site at v0.3 | internal tool; docs not on critical path |
+| matplotlib diagnostics by default | headless PNG/PDF free; Plotly remains limited to the comparison dashboard until interactive charts have a business need |
+| Defer Zensical | one executable guide does not need site navigation/search |
 | glum + lightgbm in core (not extras) | GLM/GBM is the package's point; avoid ImportError-on-import wart |
 | mlflow in `mlops` extra (not core) | heavy; only needed at M6; `log_run` imports lazily |
 | No additional OOT workflow helpers | `time_col` is optional and already accepts any sortable period (including year-month); a dataset without an ordered period cannot support OOT validation |
