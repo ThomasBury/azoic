@@ -32,8 +32,8 @@ from typing import Any, Literal, overload
 
 from pydantic import BaseModel, ConfigDict
 
-from riskforge.data import load_data
-from riskforge.workflow import (
+from azoic.data import load_data
+from azoic.workflow import (
     ExperimentConfig,
     ModelSpec,
     Run,
@@ -165,7 +165,7 @@ def tune_experiment(
         import optuna
     except ImportError as e:
         raise ImportError(
-            "riskforge.tune.tune_experiment requires the `tune` extra "
+            "azoic.tune.tune_experiment requires the `tune` extra "
             "(`uv sync --extra tune`); optuna could not be imported."
         ) from e
     optuna.logging.set_verbosity(optuna.logging.WARNING)

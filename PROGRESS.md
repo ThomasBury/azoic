@@ -1,4 +1,4 @@
-# RiskForge — Progress
+# Azoic — Progress
 
 > Living tracker. Mirrors `PRD.md` section 6 milestones. Update after every
 > chunk of work.
@@ -24,7 +24,7 @@ Legend: ☐ pending · ◐ in progress · ☑ done
 - ☑ **M7 — optuna tune (v0.2 part 1)** — `tune_experiment`, per-model optuna
   inner-split study, outer-holdout evaluation, actuarial-aware numeric-penalty
   objective (`deviance_test + calibration_penalty * |1 - op_ratio_test|`),
-  `riskforge tune` CLI.
+  `azoic tune` CLI.
 - ☑ **v0.2 part 2** — canonical dataset fingerprints; exposure-weighted
   calibration bins; distinct numeric missing bins; YAML preprocessing and
   frequency-severity pipelines; pipeline-aware tariff export; standalone
@@ -39,9 +39,10 @@ Legend: ☐ pending · ◐ in progress · ☑ done
 - ☑ **v0.3 — exportable GBM distillation** — positive Tweedie/Poisson/Gamma
   GBMs distil to log-link GLM students on the existing train/test boundary;
   held-out fidelity and provenance travel in the three-sheet tariff workbook.
+- ☑ **v0.4 — Azoic release** — renamed distribution, imports, and CLI; Zensical site and GitHub Pages/PyPI OIDC workflows.
 
 ## Current focus
 
 v0.3 GBM-to-tariff distillation is implemented. Adjacency-aware grouping, remote
-MLflow guidance, Zensical, SHAP, and SageMaker remain demand-gated. Generated
+MLflow guidance, SHAP, and SageMaker remain demand-gated. Azoic 0.4.0 adds the renamed package, documentation site, and release workflows. Generated
 tutorial files and artifacts stay ignored.

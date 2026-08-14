@@ -1,9 +1,9 @@
-# RiskForge — Product Requirements Document
+# Azoic — Product Requirements Document
 
 > Single source of truth for scope, architecture, and conventions.
 > For agent-facing quick rules see `AGENTS.md`. For status see `PROGRESS.md`.
 
-## 1. What RiskForge is
+## 1. What Azoic is
 
 A **scikit-learn-compatible** Python toolkit for **non-life technical tariff
 (pure premium) modelling**, combining:
@@ -42,7 +42,7 @@ integration engine.
 ## 3. Module architecture (flat, no subpackages, no utils)
 
 ```
-src/riskforge/
+src/azoic/
   data.py          DatasetSpec (pydantic), load_data (pandas+pyarrow; s3 via fsspec)
   profile.py       profile_features() -> DataFrame; screen_features() -> keep/drop/review
   preprocessing.py AutoBinner, AutoGrouper (sklearn transformers; mapping_, set_mapping)
@@ -135,7 +135,7 @@ Each is independently shippable. Done-when = acceptance check.
   (`deviance_test + calibration_penalty * |1 - op_ratio_test|` -- the numeric
   penalty that replaces the cut TariffOptimizer constraint DSL). Trials use an
   inner split of outer training data; best params are refit on outer training
-  data and evaluated once on untouched outer test. `riskforge tune` CLI.
+  data and evaluated once on untouched outer test. `azoic tune` CLI.
   *Done when the tuned `Run` carries finite Gini / O-P ratio / deviance + a
   populated calibration table, and best params preserve YAML identity params
   (rules 1, 4 intact under search).*
@@ -166,7 +166,7 @@ Each is independently shippable. Done-when = acceptance check.
   users have a real business need to explore individual charts; the standalone
   comparison dashboard already covers interactive model comparison. Add a Polars
   ingest extra only when a real portfolio demonstrates an unacceptable pandas
-  load-time or RAM bottleneck; keep pandas at RiskForge's module boundaries.
+  load-time or RAM bottleneck; keep pandas at Azoic's module boundaries.
 - **v0.3** — GBM->tariff distillation **done**: positive-objective teachers use
   the existing experiment holdout for fidelity metrics and export a log-link GLM
   student through the unchanged three-sheet workbook contract.
@@ -188,6 +188,8 @@ lightgbm, pyarrow, pydantic, pyyaml, typer, matplotlib, openpyxl.
 - `plot` — plotly (comparison dashboard only; lazy import)
 - `demo` (dependency-group) — jupyter kernel for the executable tutorial
 - `dev` (dependency-group) — pytest, ruff, pre-commit
+- `docs` (dependency-group) — Zensical + mkdocstrings-python, documentation build only
+- `docs` (dependency-group) — Zensical + mkdocstrings-python, documentation build only
 
 `uv sync --no-dev` for runtime only; `uv sync` for the default development
 environment; `uv sync --all-extras --all-groups` for everything.
@@ -214,7 +216,7 @@ is over-engineering unless a concrete need appears.
 | Hydra | one config, no composition yet | YAML + pydantic + Typer overrides |
 | polars + duckdb in core | pandas is canonical | add Polars only for a measured ingest bottleneck; duckdb = notebook habit |
 | plotly dual diagnostic backend | doubles test surface | existing Plotly comparison dashboard; add diagnostic charts only for a real business need |
-| Textual, PowerPoint, ALE, geopandas, multi-page docs site | YAGNI for v1 | cut until concrete demand; M8 remains one `.qmd` |
+| Textual, PowerPoint, ALE, geopandas | YAGNI for v1 | cut until concrete demand; M8 remains one `.qmd`, with Zensical publishing it, with Zensical publishing it |
 | `pydantic AND dataclasses` | overlap | pydantic only |
 | `ModelCard.to_pdf` | windows weasyprint pain | md + html only |
 
@@ -226,7 +228,7 @@ is over-engineering unless a concrete need appears.
 | Preprocessing built fresh (not ported from arfs) | no arfs source located in `~/projects` |
 | Defer Hydra | one config, no composition pain yet; Typer flags suffice |
 | matplotlib diagnostics by default | headless PNG/PDF free; Plotly remains limited to the comparison dashboard until interactive charts have a business need |
-| Defer Zensical | one executable guide does not need site navigation/search |
+| Zensical site | task-first navigation and generated tutorial HTML; no custom theme or JavaScript |
 | glum + lightgbm in core (not extras) | GLM/GBM is the package's point; avoid ImportError-on-import wart |
 | mlflow in `mlops` extra (not core) | heavy; only needed at M6; `log_run` imports lazily |
 | No additional OOT workflow helpers | `time_col` is optional and already accepts any sortable period (including year-month); a dataset without an ordered period cannot support OOT validation |

@@ -17,7 +17,7 @@ import numpy as np
 import pandas as pd
 from sklearn.metrics import mean_gamma_deviance, mean_poisson_deviance, mean_tweedie_deviance
 
-from riskforge.validation import make_strata
+from azoic.validation import make_strata
 
 __all__ = [
     "gini",

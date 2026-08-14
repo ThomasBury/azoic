@@ -1,12 +1,12 @@
 # AGENTS.md
 
-> Quick rules for AI coding agents working on RiskForge.
+> Quick rules for AI coding agents working on Azoic.
 > For full product spec, scope, deferred items, and decisions see `PRD.md`.
 > For milestone status see `PROGRESS.md`.
 
 ## Project overview
 
-RiskForge is a scikit-learn-compatible Python toolkit for non-life technical
+Azoic is a scikit-learn-compatible Python toolkit for non-life technical
 tariff (pure premium) modelling: actuarial preprocessing, GLM (glum) + GBM
 (LightGBM), frequency-severity, ranking/calibration diagnostics, reproducible
 runs, multiplicative tariff xlsx export.
@@ -27,12 +27,13 @@ policy admin, Guidewire integration.
 - Format: `uv run ruff format .`
 - Combined check: `just check`
 - Render freMTPL2 tutorial: `just demo` (external Quarto prerequisite)
-- CLI smoke: `uv run riskforge --help` (after M5)
+- Build documentation: `just docs-build`
+- CLI smoke: `uv run azoic --help` (after M5)
 
 ## Repo layout
 
 ```
-src/riskforge/
+src/azoic/
   data.py           # DatasetSpec, load_data
   profile.py        # profile_features, screen_features
   preprocessing.py  # AutoBinner, AutoGrouper
@@ -62,7 +63,7 @@ checking `PRD.md` sections 3 and 9.
   later".
 - **pandas in/out at module boundaries; numpy inside**; add a Polars ingest extra
   only for a measured load-time or RAM bottleneck, and convert at the boundary.
-- **New deps** go to a pyproject extra or dependency group (`demo`, `dev`) with
+- **New deps** go to a pyproject extra or dependency group (`demo`, `dev`, `docs`) with
   a one-line justification in the PR; never silently widen core.
 - **Deliberate shortcuts** tagged `# ponytail: <known ceiling>, upgrade when
   <trigger>`.

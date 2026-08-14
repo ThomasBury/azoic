@@ -1,10 +1,10 @@
-"""Tests for riskforge.metrics: Gini, Lorenz, calibration table, deviances."""
+"""Tests for azoic.metrics: Gini, Lorenz, calibration table, deviances."""
 
 from __future__ import annotations
 
 import numpy as np
 
-from riskforge.metrics import (
+from azoic.metrics import (
     calibration_table,
     gini,
     lorenz,
@@ -17,7 +17,7 @@ from tests.conftest import make_synthetic_portfolio
 
 
 def _naive_gini(y_true, y_pred, w):
-    """Slow reference, same actuarial convention as riskforge.metrics.gini."""
+    """Slow reference, same actuarial convention as azoic.metrics.gini."""
     total_w = w.sum()
     total_o = y_true.sum()
     order = np.argsort(-y_pred, kind="stable")

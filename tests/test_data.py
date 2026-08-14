@@ -1,4 +1,4 @@
-"""Tests for riskforge.data: DatasetSpec validation and load_data round-trip."""
+"""Tests for azoic.data: DatasetSpec validation and load_data round-trip."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import pandas as pd
 import pydantic
 import pytest
 
-from riskforge.data import DatasetSpec, load_data
+from azoic.data import DatasetSpec, load_data
 from tests.conftest import make_synthetic_portfolio
 
 

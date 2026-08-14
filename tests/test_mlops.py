@@ -1,4 +1,4 @@
-"""Tests for riskforge.mlops.log_run (thin lazy mlflow shim, M6).
+"""Tests for azoic.mlops.log_run (thin lazy mlflow shim, M6).
 
 mlflow is provided by the ``mlops`` extra. These tests point mlflow at a
 sqlite tracking db under ``tmp_path`` so no real mlflow server is needed
@@ -16,8 +16,8 @@ import pytest
 
 mlflow = pytest.importorskip("mlflow")  # skip the whole module if mlops extra absent
 
-from riskforge.mlops import log_run  # noqa: E402
-from riskforge.workflow import ExperimentConfig, ModelSpec, run_experiment  # noqa: E402
+from azoic.mlops import log_run  # noqa: E402
+from azoic.workflow import ExperimentConfig, ModelSpec, run_experiment  # noqa: E402
 from tests.conftest import make_synthetic_portfolio  # noqa: E402
 
 
@@ -82,11 +82,11 @@ def _list_artifacts(run_id: str, path: str | None = None):
 def test_log_run_returns_run_id_and_records_experiment_params(tmp_path: Path) -> None:
     cfg, run = _run(tmp_path)
     uri = _tracking_uri(tmp_path)
-    run_id = log_run(run, tracking_uri=uri, experiment_name="riskforge-tests")
+    run_id = log_run(run, tracking_uri=uri, experiment_name="azoic-tests")
     assert isinstance(run_id, str) and len(run_id) > 0
 
     mlflow.set_tracking_uri(uri)
-    exp = mlflow.get_experiment_by_name("riskforge-tests")
+    exp = mlflow.get_experiment_by_name("azoic-tests")
     assert exp is not None
     data = _data(run_id)
     assert data.params["experiment.name"] == "smoke"
@@ -101,7 +101,7 @@ def test_log_run_returns_run_id_and_records_experiment_params(tmp_path: Path) ->
 def test_log_run_records_per_model_params_and_metrics(tmp_path: Path) -> None:
     cfg, run = _run(tmp_path)
     uri = _tracking_uri(tmp_path)
-    run_id = log_run(run, tracking_uri=uri, experiment_name="riskforge-tests")
+    run_id = log_run(run, tracking_uri=uri, experiment_name="azoic-tests")
     data = _data(run_id)
 
     for name in run.models:
@@ -130,7 +130,7 @@ def test_log_run_logs_artifact_files(tmp_path: Path) -> None:
     run_id = log_run(
         run,
         tracking_uri=uri,
-        experiment_name="riskforge-tests",
+        experiment_name="azoic-tests",
         artifacts=[f1, f2],
     )
 
@@ -150,7 +150,7 @@ def test_log_run_logs_artifact_directory(tmp_path: Path) -> None:
     run_id = log_run(
         run,
         tracking_uri=uri,
-        experiment_name="riskforge-tests",
+        experiment_name="azoic-tests",
         artifacts=[art_dir],
     )
 
@@ -166,7 +166,7 @@ def test_log_run_missing_artifact_raises(tmp_path: Path) -> None:
         log_run(
             run,
             tracking_uri=uri,
-            experiment_name="riskforge-tests",
+            experiment_name="azoic-tests",
             artifacts=[tmp_path / "nope.txt"],
         )
 
@@ -184,7 +184,7 @@ def test_log_run_run_name_overrides_default(tmp_path: Path) -> None:
     run_id = log_run(
         run,
         tracking_uri=uri,
-        experiment_name="riskforge-tests",
+        experiment_name="azoic-tests",
         run_name="custom-name",
     )
     info = mlflow.get_run(run_id).info
@@ -201,7 +201,7 @@ def test_log_run_skips_nonfinite_metrics(tmp_path: Path) -> None:
     run = run.model_copy(update={"models": {**run.models, "glm-tweedie": bad}})
 
     uri = _tracking_uri(tmp_path)
-    run_id = log_run(run, tracking_uri=uri, experiment_name="riskforge-tests")
+    run_id = log_run(run, tracking_uri=uri, experiment_name="azoic-tests")
     data = _data(run_id)
     assert "glm-tweedie.foo_nan" not in data.metrics
     # the finite metrics still went through.
@@ -231,7 +231,7 @@ def test_log_run_missing_mlflow_raises_helpful_error(monkeypatch, tmp_path: Path
 def test_m6_acceptance_mlflow_run_records_params_metrics_artifacts(
     tmp_path: Path,
 ) -> None:
-    from riskforge.reporting import model_card
+    from azoic.reporting import model_card
 
     config, run = _run(
         tmp_path,
@@ -253,7 +253,7 @@ def test_m6_acceptance_mlflow_run_records_params_metrics_artifacts(
     run_id = log_run(
         run,
         tracking_uri=uri,
-        experiment_name="riskforge-m6-acceptance",
+        experiment_name="azoic-m6-acceptance",
         artifacts=[card_path],
     )
     mlflow.set_tracking_uri(uri)

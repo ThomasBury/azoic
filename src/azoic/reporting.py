@@ -1,4 +1,4 @@
-"""Model card rendering for a ``riskforge.workflow.Run``.
+"""Model card rendering for a ``azoic.workflow.Run``.
 
 ``model_card(run, fmt="md")`` returns a markdown (or HTML) summary of the
 experiment: config name, dataset shape + features, and a per-model block with
@@ -17,7 +17,7 @@ from typing import Literal
 
 import pandas as pd
 
-from riskforge.workflow import Run
+from azoic.workflow import Run
 
 __all__ = ["model_card", "comparison_table", "comparison_dashboard"]
 
@@ -70,7 +70,7 @@ def _metrics_block_md(name: str, kind: str, params: dict, metrics: dict) -> str:
 def _render_markdown(run: Run) -> str:
     cfg = run.config
     lines = [
-        f"# RiskForge model card -- {cfg.name}",
+        f"# Azoic model card -- {cfg.name}",
         "",
         "## Experiment",
         f"- name: `{cfg.name}`",
@@ -182,5 +182,5 @@ def comparison_dashboard(runs) -> str:
             row=2,
             col=col,
         )
-    figure.update_layout(height=800, title="RiskForge model comparison")
+    figure.update_layout(height=800, title="Azoic model comparison")
     return figure.to_html(full_html=True, include_plotlyjs=True)

@@ -26,16 +26,16 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import FunctionTransformer
 
-from riskforge.data import DatasetSpec, load_data
-from riskforge.metrics import (
+from azoic.data import DatasetSpec, load_data
+from azoic.metrics import (
     calibration_table,
     gini,
     mean_tweedie_deviance,
     op_ratio,
 )
-from riskforge.models import FrequencySeverityModel, RiskGBM, RiskGLM
-from riskforge.preprocessing import AutoBinner, AutoGrouper
-from riskforge.validation import temporal_split
+from azoic.models import FrequencySeverityModel, RiskGBM, RiskGLM
+from azoic.preprocessing import AutoBinner, AutoGrouper
+from azoic.validation import temporal_split
 
 __all__ = [
     "PreprocessingSpec",
@@ -132,7 +132,7 @@ class ExperimentConfig(BaseModel):
 
     Load with ``ExperimentConfig.from_yaml(path)``. The data path is stored as
     a string so the config round-trips YAML cleanly; ``run_experiment`` resolves
-    it through ``riskforge.data.load_data`` (local + s3 paths via fsspec).
+    it through ``azoic.data.load_data`` (local + s3 paths via fsspec).
     """
 
     model_config = ConfigDict(extra="forbid")

@@ -1,4 +1,4 @@
-"""Tests for riskforge.workflow: ExperimentConfig, run_experiment, Run."""
+"""Tests for azoic.workflow: ExperimentConfig, run_experiment, Run."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from riskforge.workflow import (
+from azoic.workflow import (
     ExperimentConfig,
     ModelResult,
     ModelSpec,
@@ -83,7 +83,7 @@ def _write_yaml(tmp_path: Path, body: str, name: str = "cfg.yaml") -> Path:
 def test_modelspec_build_glm_and_gbm() -> None:
     glm = ModelSpec(kind="glm", params={"family": "tweedie", "link": "log"})
     gbm = ModelSpec(kind="gbm", params={"objective": "tweedie"})
-    from riskforge.models import RiskGBM, RiskGLM
+    from azoic.models import RiskGBM, RiskGLM
 
     assert isinstance(glm.build(), RiskGLM)
     assert isinstance(gbm.build(), RiskGBM)
@@ -228,7 +228,7 @@ models:
 
     from sklearn.pipeline import Pipeline
 
-    from riskforge.models import FrequencySeverityModel, RiskGLM
+    from azoic.models import FrequencySeverityModel, RiskGLM
 
     assert set(run.models) == {"direct", "freq-sev"}
     assert all(isinstance(estimator, Pipeline) for estimator in estimators.values())

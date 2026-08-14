@@ -1,4 +1,4 @@
-"""Tests for riskforge.reporting.model_card (markdown and HTML)."""
+"""Tests for azoic.reporting.model_card (markdown and HTML)."""
 
 from __future__ import annotations
 
@@ -6,12 +6,12 @@ from pathlib import Path
 
 import pytest
 
-from riskforge.reporting import (
+from azoic.reporting import (
     comparison_dashboard,
     comparison_table,
     model_card,
 )
-from riskforge.workflow import ExperimentConfig, ModelSpec, run_experiment
+from azoic.workflow import ExperimentConfig, ModelSpec, run_experiment
 from tests.conftest import make_synthetic_portfolio
 
 
@@ -44,7 +44,7 @@ def _run(tmp_path: Path):
 def test_model_card_md_contains_run_and_model_summary(tmp_path: Path) -> None:
     run = _run(tmp_path)
     md = model_card(run, fmt="md")
-    assert "RiskForge model card -- smoke" in md
+    assert "Azoic model card -- smoke" in md
     assert "Model: `glm-tweedie` (glm)" in md
     assert "gini (test):" in md
     assert "O/P ratio (test):" in md
@@ -61,7 +61,7 @@ def test_model_card_html_escapes_markdown(tmp_path: Path) -> None:
     assert html.startswith("<!doctype html>")
     assert "<pre>" in html and "</pre>" in html
     # The markdown body must be HTML-escaped inside <pre>.
-    assert "RiskForge model card -- smoke" in html
+    assert "Azoic model card -- smoke" in html
     assert "|" in html  # calibration table survives escaping
 
 

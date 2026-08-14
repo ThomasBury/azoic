@@ -1,6 +1,6 @@
 """Actuarial diagnostic plots: Lorenz, lift, calibration.
 
-Three thin functions on top of ``riskforge.metrics`` diagnostics. Pass ``ax=``
+Three thin functions on top of ``azoic.metrics`` diagnostics. Pass ``ax=``
 to embed in your own figure, or ``path=`` to save a PNG. The module never
 forces a backend -- tests / scripts set ``matplotlib.use("Agg")`` before
 importing if headless rendering is needed (no display).
@@ -14,7 +14,7 @@ from typing import Any
 import matplotlib.pyplot as plt
 import numpy as np
 
-from riskforge.metrics import lorenz
+from azoic.metrics import lorenz
 
 __all__ = ["plot_lorenz", "plot_lift", "plot_calibration"]
 
@@ -67,7 +67,7 @@ def plot_lift(
 ) -> plt.Axes:
     """Bar chart of observed pure premium per segment vs portfolio baseline.
 
-    ``table`` is the output of ``riskforge.metrics.calibration_table`` (groups
+    ``table`` is the output of ``azoic.metrics.calibration_table`` (groups
     are predicted-risk deciles by default). Bars above ``1.0`` in the high-
     predicted-risk tail expose model ranking -- paired with the calibration
     plot for level adequacy. ``baseline`` can be ``"observed"`` (default;
@@ -103,7 +103,7 @@ def plot_calibration(
 ) -> plt.Axes:
     """Scatter observed vs predicted pure premium per segment with the y=x line.
 
-    ``table`` is the output of ``riskforge.metrics.calibration_table``. The
+    ``table`` is the output of ``azoic.metrics.calibration_table``. The
     diagonal is the level-adequacy reference; dispersion around it is
     calibration error. Gini/ranking is read from the Lorenz plot, not this one.
     """

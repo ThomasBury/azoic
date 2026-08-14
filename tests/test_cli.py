@@ -1,10 +1,10 @@
-"""Tests for riskforge.cli: profile / fit / compare / export-tariff / tune (Typer).
+"""Tests for azoic.cli: profile / fit / compare / export-tariff / tune (Typer).
 
 Invokes commands via ``typer.testing.CliRunner`` end-to-end on a synthetic
-portfolio written to a tmp parquet file. M5 acceptance: ``riskforge
-fit/compare`` run on an example YAML. M6 acceptance: ``riskforge
+portfolio written to a tmp parquet file. M5 acceptance: ``azoic
+fit/compare`` run on an example YAML. M6 acceptance: ``azoic
 export-tariff`` writes a 3-sheet xlsx from a fitted GLM. M7 acceptance:
-``riskforge tune`` writes a tuned-run model card.
+``azoic tune`` writes a tuned-run model card.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ import pandas as pd
 import pytest
 from typer.testing import CliRunner
 
-from riskforge.cli import app
+from azoic.cli import app
 from tests.conftest import make_synthetic_portfolio
 
 runner = CliRunner()
@@ -157,7 +157,7 @@ def test_cli_fit_writes_md_and_html_cards(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output
     assert out_md.exists() and out_html.exists()
     md = out_md.read_text(encoding="utf-8")
-    assert "RiskForge model card -- smoke" in md
+    assert "Azoic model card -- smoke" in md
     assert "Model: `glm-tweedie` (glm)" in md
     assert "Model: `gbm-tweedie` (gbm)" in md
     html = out_html.read_text(encoding="utf-8")
@@ -322,7 +322,7 @@ def test_cli_tune_writes_card_and_prints_best_params(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output
     assert out_md.exists()
     md = out_md.read_text(encoding="utf-8")
-    assert "RiskForge model card -- smoke" in md
+    assert "Azoic model card -- smoke" in md
     assert "Model: `glm-tweedie` (glm)" in md
     assert "Model: `gbm-tweedie` (gbm)" in md
     # The CLI prints a `tuned <name>` summary line per model.

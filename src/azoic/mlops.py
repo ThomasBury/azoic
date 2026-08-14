@@ -1,4 +1,4 @@
-"""Thin mlflow run logger for a ``riskforge.workflow.Run`` (lazy mlflow import).
+"""Thin mlflow run logger for a ``azoic.workflow.Run`` (lazy mlflow import).
 
 mlflow is a heavy optional dep and lives in the ``mlops`` extra
 (``uv sync --extra mlops``). ``log_run`` imports it lazily and raises with a
@@ -18,7 +18,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from pathlib import Path
 
-from riskforge.workflow import Run
+from azoic.workflow import Run
 
 __all__ = ["log_run"]
 
@@ -59,7 +59,7 @@ def log_run(
         import mlflow
     except ImportError as e:
         raise ImportError(
-            "riskforge.mlops.log_run requires the `mlops` extra "
+            "azoic.mlops.log_run requires the `mlops` extra "
             "(`uv sync --extra mlops`); mlflow could not be imported."
         ) from e
 

@@ -35,9 +35,9 @@ import numpy as np
 import pandas as pd
 from sklearn.pipeline import Pipeline
 
-from riskforge.metrics import mean_tweedie_deviance
-from riskforge.models import RiskGBM, RiskGLM
-from riskforge.preprocessing import AutoBinner, AutoGrouper
+from azoic.metrics import mean_tweedie_deviance
+from azoic.models import RiskGBM, RiskGLM
+from azoic.preprocessing import AutoBinner, AutoGrouper
 
 __all__ = [
     "distill_gbm",

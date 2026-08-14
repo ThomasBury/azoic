@@ -1,4 +1,4 @@
-# RiskForge
+# Azoic
 
 A scikit-learn-compatible Python toolkit for non-life technical tariff (pure
 premium) modelling: actuarial preprocessing, GLM (glum) + GBM (LightGBM),
@@ -29,7 +29,7 @@ inner split of the outer training partition, then refits on outer training data
 and reports the untouched outer test. Exported tariffs reject unknown categorical
 levels and non-finite numeric inputs.
 
-Positive-objective GBMs can be exported through `riskforge export-tariff
+Positive-objective GBMs can be exported through `azoic export-tariff
 --distill`; the workbook reproduces the distilled GLM student, not the teacher.
 
 ## Executable freMTPL2 tutorial

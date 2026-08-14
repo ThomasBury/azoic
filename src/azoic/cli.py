@@ -1,16 +1,16 @@
-"""RiskForge CLI (Typer): ``profile`` / ``fit`` / ``compare`` / ``export-tariff`` /
+"""Azoic CLI (Typer): ``profile`` / ``fit`` / ``compare`` / ``export-tariff`` /
 ``tune``.
 
 Wraps the M5 + M6 + M7 pieces end-to-end:
-  * ``riskforge profile`` -- runs ``profile_features`` + ``screen_features`` and
+  * ``azoic profile`` -- runs ``profile_features`` + ``screen_features`` and
     prints (or writes) the resulting screening table.
-  * ``riskforge fit`` -- loads an ``ExperimentConfig`` YAML, ``run_experiment``s
+  * ``azoic fit`` -- loads an ``ExperimentConfig`` YAML, ``run_experiment``s
     it, prints a model card to stdout (and/or writes md + html).
-  * ``riskforge compare`` -- runs one or more configs and prints a side-by-side
+  * ``azoic compare`` -- runs one or more configs and prints a side-by-side
     per-model metrics table.
-  * ``riskforge export-tariff`` -- runs a config, exports a named GLM or, with
+  * ``azoic export-tariff`` -- runs a config, exports a named GLM or, with
     ``--distill``, an exportable GLM student of a positive-objective GBM.
-  * ``riskforge tune`` -- optuna hyperparameter search per model
+  * ``azoic tune`` -- optuna hyperparameter search per model
     (``tune`` extra, M7 / v0.2 part 1) then a model card of the best fit.
 
 ponytail: the CLI is a thin shell over ``workflow`` + ``reporting`` +
@@ -23,17 +23,17 @@ from pathlib import Path
 
 import typer
 
-from riskforge.data import DatasetSpec, load_data
-from riskforge.profile import profile_features, screen_features
-from riskforge.reporting import comparison_dashboard, comparison_table, model_card
-from riskforge.tariff import distill_gbm as _distill_gbm
-from riskforge.tariff import export_tariff as _export_tariff
-from riskforge.workflow import ExperimentConfig, _split_indices, run_experiment
+from azoic.data import DatasetSpec, load_data
+from azoic.profile import profile_features, screen_features
+from azoic.reporting import comparison_dashboard, comparison_table, model_card
+from azoic.tariff import distill_gbm as _distill_gbm
+from azoic.tariff import export_tariff as _export_tariff
+from azoic.workflow import ExperimentConfig, _split_indices, run_experiment
 
 app = typer.Typer(
     no_args_is_help=True,
     add_completion=False,
-    help="RiskForge: non-life technical tariff (pure premium) modelling.",
+    help="Azoic: non-life technical tariff (pure premium) modelling.",
 )
 
 
@@ -116,7 +116,7 @@ def compare(
     if out is not None or out_html is not None:
         return
 
-    typer.echo(f"RiskForge compare\n{rows.to_string(index=False)}")
+    typer.echo(f"Azoic compare\n{rows.to_string(index=False)}")
 
 
 @app.command("export-tariff")
@@ -137,7 +137,7 @@ def export_tariff(
     ),
 ) -> None:
     """Run a config and export a GLM or an explicitly distilled GBM tariff."""
-    from riskforge.models import RiskGBM, RiskGLM
+    from azoic.models import RiskGBM, RiskGLM
 
     cfg = ExperimentConfig.from_yaml(config)
     _, ests = run_experiment(cfg, return_estimators=True)
@@ -198,7 +198,7 @@ def tune(
     quiet: bool = typer.Option(False, "--quiet", "-q", help="Do not print the card to stdout."),
 ) -> None:
     """Tune model hyperparameters with optuna, then write a model card of the best fit."""
-    from riskforge.tune import tune_experiment
+    from azoic.tune import tune_experiment
 
     cfg = ExperimentConfig.from_yaml(config)
     result = tune_experiment(cfg, n_trials=trials, calibration_penalty=calibration_penalty)

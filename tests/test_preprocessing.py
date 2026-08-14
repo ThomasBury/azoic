@@ -1,4 +1,4 @@
-"""Tests for riskforge.preprocessing: AutoBinner, AutoGrouper.
+"""Tests for azoic.preprocessing: AutoBinner, AutoGrouper.
 
 Covers functional behaviour (mapping_, set_mapping round-trip, strategies,
 credibility floors) and scikit-learn estimator conformance via
@@ -13,8 +13,8 @@ import pytest
 from sklearn.pipeline import Pipeline
 from sklearn.utils.estimator_checks import parametrize_with_checks
 
-from riskforge.models import RiskGLM
-from riskforge.preprocessing import AutoBinner, AutoGrouper, _merge_small_bins
+from azoic.models import RiskGLM
+from azoic.preprocessing import AutoBinner, AutoGrouper, _merge_small_bins
 from tests.conftest import make_synthetic_portfolio
 
 

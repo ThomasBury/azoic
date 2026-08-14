@@ -1,4 +1,4 @@
-"""Tests for riskforge.tariff: multiplicative-tariff export for a fitted RiskGLM.
+"""Tests for azoic.tariff: multiplicative-tariff export for a fitted RiskGLM.
 
 M6 acceptance: the tariff's recalibrated base reproduces the portfolio total
 observed claim amount exactly, and the structural (non-recalibrated) tariff's
@@ -13,9 +13,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from riskforge.metrics import mean_tweedie_deviance
-from riskforge.models import RiskGBM, RiskGLM
-from riskforge.tariff import (
+from azoic.metrics import mean_tweedie_deviance
+from azoic.models import RiskGBM, RiskGLM
+from azoic.tariff import (
     apply_tariff,
     distill_gbm,
     export_tariff,
@@ -463,7 +463,7 @@ def test_apply_tariff_rejects_nonfinite_numeric_input() -> None:
 
 
 def test_export_tariff_unwraps_preprocessing_pipeline(tmp_path: Path) -> None:
-    from riskforge.workflow import ExperimentConfig, ModelSpec, run_experiment
+    from azoic.workflow import ExperimentConfig, ModelSpec, run_experiment
 
     df = make_synthetic_portfolio(n=3000, seed=42)
     data = tmp_path / "portfolio.parquet"
@@ -517,7 +517,7 @@ def test_export_tariff_unwraps_preprocessing_pipeline(tmp_path: Path) -> None:
 def test_distilled_pipeline_preserves_preprocessing_and_export_provenance(tmp_path: Path) -> None:
     from sklearn.pipeline import Pipeline
 
-    from riskforge.workflow import ExperimentConfig, ModelSpec, _split_indices, run_experiment
+    from azoic.workflow import ExperimentConfig, ModelSpec, _split_indices, run_experiment
 
     df = make_synthetic_portfolio(n=3000, seed=42)
     data = tmp_path / "portfolio.parquet"

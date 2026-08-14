@@ -1,4 +1,4 @@
-"""Tests for riskforge.models: RiskGLM, RiskGBM, FrequencySeverityModel.
+"""Tests for azoic.models: RiskGLM, RiskGBM, FrequencySeverityModel.
 
 Covers sklearn estimator conformance (`parametrize_with_checks`), the exposure
 as a sample-weight contract (special cols travel inside X), the severity
@@ -13,7 +13,7 @@ import pandas as pd
 import pytest
 from sklearn.utils.estimator_checks import parametrize_with_checks
 
-from riskforge.models import FrequencySeverityModel, RiskGBM, RiskGLM
+from azoic.models import FrequencySeverityModel, RiskGBM, RiskGLM
 from tests.conftest import make_synthetic_portfolio
 
 
@@ -391,7 +391,7 @@ def test_freq_severity_score_compares_rates_with_exposure_weights() -> None:
 
 
 def test_m3_acceptance_freq_sev_approximates_direct_tweedie() -> None:
-    from riskforge.metrics import gini, op_ratio
+    from azoic.metrics import gini, op_ratio
 
     df = _df()
     X = _features(df)

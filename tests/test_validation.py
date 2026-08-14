@@ -1,4 +1,4 @@
-"""Tests for riskforge.validation: make_strata, temporal_split."""
+"""Tests for azoic.validation: make_strata, temporal_split."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import pandas as pd
 import pytest
 from sklearn.model_selection import StratifiedKFold
 
-from riskforge.validation import make_strata, temporal_split
+from azoic.validation import make_strata, temporal_split
 from tests.conftest import make_synthetic_portfolio
 
 

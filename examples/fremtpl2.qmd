@@ -1,6 +1,6 @@
 ---
 title: "From claims data to an executable technical tariff"
-subtitle: "RiskForge on the French Motor Third-Party Liability portfolio"
+subtitle: "Azoic on the French Motor Third-Party Liability portfolio"
 format:
   html:
     toc: true
@@ -55,12 +55,12 @@ import pandas as pd
 from IPython.display import display
 from sklearn.datasets import fetch_openml
 
-from riskforge.data import DatasetSpec
-from riskforge.mlops import log_run
-from riskforge.profile import profile_features, screen_features
-from riskforge.reporting import comparison_dashboard, comparison_table, model_card
-from riskforge.tariff import apply_tariff, distill_gbm, export_tariff
-from riskforge.workflow import (
+from azoic.data import DatasetSpec
+from azoic.mlops import log_run
+from azoic.profile import profile_features, screen_features
+from azoic.reporting import comparison_dashboard, comparison_table, model_card
+from azoic.tariff import apply_tariff, distill_gbm, export_tariff
+from azoic.workflow import (
     ExperimentConfig,
     ModelSpec,
     PreprocessingSpec,
@@ -100,7 +100,7 @@ Cleaning is deliberately deterministic and conservative:
 2. retain unique policies with \(0 < exposure \le 1\), non-negative outcomes,
    positive density, plausible non-negative ages, and consistent zero/positive
    claim count and amount;
-3. rename only the columns used by RiskForge; do not winsorize losses or derive
+3. rename only the columns used by Azoic; do not winsorize losses or derive
    outcome-informed features.
 
 ```{python}
@@ -526,7 +526,7 @@ import mlflow
 
 tracking_database = (ARTIFACT_DIR / "mlflow.db").resolve()
 tracking_uri = f"sqlite:///{tracking_database}"
-experiment_name = "riskforge-fremtpl2-tutorial"
+experiment_name = "azoic-fremtpl2-tutorial"
 artifact_root = (ARTIFACT_DIR / "mlruns").resolve()
 
 mlflow.set_tracking_uri(tracking_uri)

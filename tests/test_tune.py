@@ -1,4 +1,4 @@
-"""Tests for riskforge.tune.tune_experiment (optuna search, v0.2 part 1 / M7).
+"""Tests for azoic.tune.tune_experiment (optuna search, v0.2 part 1 / M7).
 
 optuna is provided by the ``tune`` extra. These tests run real optuna studies
 on the synthetic portfolio (no server needed -- optuna is in-memory by
@@ -17,12 +17,12 @@ import pytest
 
 optuna = pytest.importorskip("optuna")  # skip the whole module if tune extra absent
 
-from riskforge.tune import (  # noqa: E402
+from azoic.tune import (  # noqa: E402
     TuneResult,
     _objective_value,
     tune_experiment,
 )
-from riskforge.workflow import (  # noqa: E402
+from azoic.workflow import (  # noqa: E402
     ExperimentConfig,
     ModelSpec,
     _split_indices,

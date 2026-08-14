@@ -1,4 +1,4 @@
-# RiskForge dev commands. Requires uv and just.
+# Azoic dev commands. Requires uv and just.
 # Run `just --list` to see all targets.
 
 default:
@@ -39,6 +39,10 @@ check:
 # Render the executable freMTPL2 tutorial (Quarto must be on PATH).
 demo:
     uv run quarto render examples/fremtpl2.qmd --to html
+
+# Build the static documentation site.
+docs-build:
+    uv run zensical build --strict
 
 # Install pre-commit hooks once.
 install-hooks:

@@ -1,6 +1,6 @@
-"""Tests for riskforge.plots: lorenz / lift / calibration render headless to PNG.
+"""Tests for azoic.plots: lorenz / lift / calibration render headless to PNG.
 
-The Agg backend is forced before importing riskforge.plots so pyplot never
+The Agg backend is forced before importing azoic.plots so pyplot never
 tries to open a display (PRD M4 done-when: figures render headless to PNG).
 """
 
@@ -14,8 +14,8 @@ import matplotlib.pyplot as plt  # noqa: E402  (after use("Agg"))
 import numpy as np  # noqa: E402
 import pytest  # noqa: E402
 
-from riskforge.metrics import calibration_table  # noqa: E402
-from riskforge.plots import plot_calibration, plot_lift, plot_lorenz  # noqa: E402
+from azoic.metrics import calibration_table  # noqa: E402
+from azoic.plots import plot_calibration, plot_lift, plot_lorenz  # noqa: E402
 
 
 def _portfolio_and_predictions(seed: int = 7, n: int = 4000):

@@ -1,11 +1,11 @@
-"""Tests for riskforge.profile: profile_features and screen_features."""
+"""Tests for azoic.profile: profile_features and screen_features."""
 
 from __future__ import annotations
 
 import numpy as np
 import pandas as pd
 
-from riskforge.profile import profile_features, screen_features
+from azoic.profile import profile_features, screen_features
 from tests.conftest import make_synthetic_portfolio
 
 
