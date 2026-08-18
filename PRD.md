@@ -47,9 +47,9 @@ src/azoic/
   profile.py       profile_features() -> DataFrame; screen_features() -> keep/drop/review
   preprocessing.py AutoBinner, AutoGrouper (sklearn transformers; mapping_, set_mapping)
   models.py        RiskGLM, RiskGBM, FrequencySeverityModel
-  metrics.py       gini, lorenz, calibration_table; re-exports sklearn deviances
+  metrics.py       gini, lorenz, calibration_table, one_way_table, double_lift_table; re-exports sklearn deviances
   validation.py    make_strata, temporal_split
-  plots.py         plot_lorenz, plot_lift, plot_calibration (matplotlib)
+  plots.py         plot_lorenz, plot_lift, plot_calibration, plot_one_way, plot_double_lift, plot_actual_vs_predicted (matplotlib)
   tariff.py        distill_gbm(); export_tariff(glm_or_pipeline, path) -> xlsx
   workflow.py      ExperimentConfig (preprocessing + freq-sev), run_experiment
   reporting.py     model_card, comparison_table, comparison_dashboard
@@ -93,9 +93,15 @@ declares each used param explicitly.
    `mean_poisson_deviance` / `mean_gamma_deviance` all accept `sample_weight`.
    Re-export and wrap, never rewrite. The public `deviance_test` metric is
    exposure-weighted mean Tweedie deviance with fixed `power=1.5`.
-6. **Concentration Gini measures ranking only** — equal prediction scores are
-   aggregated before integration. Never infer calibration from Gini; always pair
-   it with `calibration_table` + O/P ratio.
+6. **Concentration Gini measures ranking only** — policies are ordered from
+   safest to riskiest (ascending `y_pred`); equal prediction scores are
+   aggregated into single blocks before integration so the curve sits below
+   the diagonal and the Gini is independent of row order. `gini = 1 - 2*auc`
+   on the tie-corrected polygonal curve, numerically identical to the
+   Frees-Meyers-Cummings midrank closed form. Never infer calibration from
+   Gini; always pair it with `calibration_table` + O/P ratio. The Lorenz
+   plot optionally overlays the perfect-model oracle curve and shades the
+   Gini area.
 7. **Primary diagnostics**: `gini`, `lorenz`, `calibration_table`, O/P ratio,
    lift by decile. `RMSE`/`MAE`/`R^2`/`MAPE` are secondary and accompanied by a
    warning when surfaced.

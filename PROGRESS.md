@@ -16,7 +16,7 @@ Legend: ☐ pending · ◐ in progress · ☑ done
   relativities and credibility floors, `profile_features`, `screen_features`.
 - ☑ **M3 — models** — `RiskGLM`, `RiskGBM`, `FrequencySeverityModel`.
 - ☑ **M4 — validation + plots** — `make_strata`, tie-safe `temporal_split`,
-  lorenz/lift/calibration.
+  lorenz/lift/calibration, one-way/double-lift tables and chart renderers.
 - ☑ **M5 — workflow + CLI** — `ExperimentConfig`, `run_experiment`,
   model card, Typer commands.
 - ☑ **M6 — tariff + mlops** — strict `export_tariff` application -> xlsx,
