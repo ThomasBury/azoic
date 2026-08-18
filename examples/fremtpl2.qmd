@@ -50,13 +50,25 @@ under `examples/_artifacts/fremtpl2/`, while the standalone HTML is ignored.
 ```{python}
 from pathlib import Path
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from IPython.display import display
 from sklearn.datasets import fetch_openml
 
 from azoic.data import DatasetSpec
+from azoic.metrics import calibration_table, double_lift_table, gini, one_way_table
 from azoic.mlops import log_run
+from azoic.plots import (
+    azoic_style,
+    model_colors,
+    plot_actual_vs_predicted,
+    plot_calibration,
+    plot_double_lift,
+    plot_lift,
+    plot_lorenz,
+    plot_one_way,
+)
 from azoic.profile import profile_features, screen_features
 from azoic.reporting import comparison_dashboard, comparison_table, model_card
 from azoic.tariff import apply_tariff, distill_gbm, export_tariff
@@ -74,15 +86,16 @@ if not (ROOT / "pyproject.toml").exists():
 ARTIFACT_DIR = ROOT / "examples" / "_artifacts" / "fremtpl2"
 ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
 
-SAMPLE_SIZE = 100_000
+SAMPLE_SIZE = 1_000_000
 RANDOM_STATE = 42
-JOINED_PATH = ARTIFACT_DIR / "fremtpl2_joined.parquet"
-PORTFOLIO_PATH = ARTIFACT_DIR / "portfolio.parquet"
+CLAIM_CAP = 100_000.0
+JOINED_PATH = ARTIFACT_DIR / "fremtpl2_joined_v3.parquet"
+PORTFOLIO_PATH = ARTIFACT_DIR / "portfolio_v3.parquet"
 ```
 
-Set `SAMPLE_SIZE` to the number of cleaned policies to use, or to a value
-larger than the portfolio for a full run. The fixed seed makes the default
-sample reproducible; it is pedagogical, not a benchmark.
+Set `SAMPLE_SIZE` to the number of cleaned policies to use; the default
+exceeds the portfolio, so the tutorial runs on the full cleaned data. The
+fixed seed keeps the (unused) sampling path reproducible.
 
 ## Fetch, join, and clean pinned OpenML data
 
@@ -96,12 +109,16 @@ avoids another download.
 
 Cleaning is deliberately deterministic and conservative:
 
-1. aggregate severity rows to policy-level claim amount and left-join by policy ID;
-2. retain unique policies with \(0 < exposure \le 1\), non-negative outcomes,
-   positive density, plausible non-negative ages, and consistent zero/positive
-   claim count and amount;
-3. rename only the columns used by Azoic; do not winsorize losses or derive
-   outcome-informed features.
+1. cap individual claim amounts at 100,000 (large-loss stability; roughly a
+   sixth of the uncapped total is removed and the tariff prices the retained
+   layer);
+2. aggregate severity rows to policy-level claim amount and left-join by
+   policy ID;
+3. retain unique policies with \(0 < exposure \le 1\), non-negative outcomes,
+   positive density, plausible ages, bonus-malus in \([50, 230]\), vehicle
+   power in \([2, 15]\), and consistent zero/positive claim count and amount;
+4. rename only the columns used by Azoic and derive no outcome-informed
+   features.
 
 ```{python}
 source_metadata = pd.DataFrame(
@@ -143,6 +160,9 @@ else:
 
     frequency_frame = frequency.frame.copy()
     severity_frame = severity.frame.copy()
+    uncapped_total = severity_frame["ClaimAmount"].sum()
+    severity_frame["ClaimAmount"] = severity_frame["ClaimAmount"].clip(upper=CLAIM_CAP)
+    capped_total = severity_frame["ClaimAmount"].sum()
     claim_totals = (
         severity_frame.groupby("IDpol", observed=True, as_index=False)["ClaimAmount"]
         .sum()
@@ -162,9 +182,13 @@ else:
             "ClaimAmount": "claim_amount",
             "DrivAge": "driver_age",
             "VehAge": "vehicle_age",
+            "BonusMalus": "bonus_malus",
             "Density": "density",
             "Region": "region",
             "VehBrand": "vehicle_brand",
+            "VehPower": "veh_power",
+            "VehGas": "veh_gas",
+            "Area": "area",
         }
     )
 
@@ -175,10 +199,12 @@ else:
         "claim_amount",
         "driver_age",
         "vehicle_age",
+        "bonus_malus",
         "density",
+        "veh_power",
     ]
     joined[numeric_columns] = joined[numeric_columns].apply(pd.to_numeric)
-    for column in ["region", "vehicle_brand"]:
+    for column in ["region", "vehicle_brand", "veh_gas", "area"]:
         joined[column] = joined[column].astype("string").fillna("Missing").astype(str)
 
     consistent_outcomes = (
@@ -194,6 +220,8 @@ else:
         & joined["claim_amount"].ge(0)
         & joined["driver_age"].between(18, 100)
         & joined["vehicle_age"].between(0, 100)
+        & joined["bonus_malus"].between(50, 230)
+        & joined["veh_power"].between(2, 15)
         & joined["density"].gt(0)
         & consistent_outcomes
     )
@@ -206,12 +234,21 @@ else:
             "claim_amount",
             "driver_age",
             "vehicle_age",
+            "bonus_malus",
             "density",
             "region",
             "vehicle_brand",
+            "veh_power",
+            "veh_gas",
+            "area",
         ],
     ].reset_index(drop=True)
+    joined["veh_power"] = joined["veh_power"].astype("string").fillna("Missing").astype(str)
     joined.to_parquet(JOINED_PATH, index=False)
+    print(
+        f"claim cap at {CLAIM_CAP:,.0f}: removed "
+        f"{1 - capped_total / uncapped_total:.1%} of the uncapped loss total"
+    )
 
 assert joined["policy_id"].is_unique
 assert (joined["exposure"] > 0).all()
@@ -254,9 +291,13 @@ are fitted later, using training rows only.
 features = [
     "driver_age",
     "vehicle_age",
+    "bonus_malus",
     "density",
     "region",
     "vehicle_brand",
+    "veh_power",
+    "veh_gas",
+    "area",
 ]
 profile = profile_features(portfolio[features])
 screening = screen_features(profile, max_groups=10, max_numeric_unique=20)
@@ -264,28 +305,40 @@ display(profile)
 display(screening)
 ```
 
-## One reproducible experiment
+## Two reproducible experiments
 
 freMTPL2 has no suitable policy-time field, so an out-of-time split would invent
-an order that is not present. We therefore use a fixed random holdout. Tree bins
-for driver age, vehicle age, and density and similarity groups for region and
-vehicle brand are learned on the training partition only. Special outcome and
-weight columns remain available to supervised preprocessing but are excluded from
-candidate features. Grouping relativities are `sum(claim_amount) / sum(exposure)`,
-and `min_claims` is an aggregate claim-count floor; any trailing under-credible
-similarity group merges into its neighbour.
+an order that is not present. Both experiments therefore use the same fixed
+random holdout (identical `random_state` and `test_size` on the same data), so
+every model is scored on exactly the same test rows.
 
-The three comparable pipelines are:
+**Tariff-structured experiment.** Tree bins for driver age, vehicle age, bonus
+malus, and density and similarity groups for region, vehicle brand, vehicle
+power, vehicle gas, and area are learned on the training partition only.
+Special outcome and weight columns remain available to supervised preprocessing
+but are excluded from candidate features. Grouping relativities are
+`sum(claim_amount) / sum(exposure)`, and `min_claims` is an aggregate
+claim-count floor; any trailing under-credible similarity group merges into its
+neighbour. Three pipelines share this tariff structure:
 
 - a direct log-link Tweedie GLM;
-- a Tweedie LightGBM;
-- Poisson-frequency × Gamma-severity GLMs. Frequency fits
+- Poisson-frequency $\times$ Gamma-severity GLMs. Frequency fits
   `claim_count / exposure` with exposure weights; the positive-claim severity
-  filter stays inside `FrequencySeverityModel.fit`.
+  filter stays inside `FrequencySeverityModel.fit`;
+- a Tweedie LightGBM on the binned/grouped features (`tweedie-lightgbm-tariff`)
+  — the tree model whose predictions are later distilled into an executable
+  tariff workbook.
+
+**Raw-feature experiment.** Trees build their own splits, so coarser
+supervised bins only discard information. The LightGBMs therefore read the raw
+features: a direct Tweedie GBM and Poisson-frequency $\times$ Gamma-severity
+LightGBMs wrapped in the same `FrequencySeverityModel`. The sub-estimators take
+any scikit-learn-compatible regressor exposing `fit(X, y, sample_weight=...)`
+and `predict(X)`.
 
 ```{python}
-config = ExperimentConfig(
-    name="fremtpl2-technical-tariff",
+glm_config = ExperimentConfig(
+    name="fremtpl2-tariff-structured",
     data_path=str(PORTFOLIO_PATH),
     spec=DatasetSpec(
         target="claim_amount",
@@ -296,19 +349,19 @@ config = ExperimentConfig(
     features=features,
     preprocessing=PreprocessingSpec(
         binner={
-            "cols": ["driver_age", "vehicle_age", "density"],
+            "cols": ["driver_age", "vehicle_age", "bonus_malus", "density"],
             "strategy": "tree",
             "max_bins": 8,
-            "min_exposure": 250,
-            "min_claims": 20,
+            "min_exposure": 1000,
+            "min_claims": 50,
             "random_state": RANDOM_STATE,
         },
         grouper={
-            "cols": ["region", "vehicle_brand"],
+            "cols": ["region", "vehicle_brand", "veh_power", "veh_gas", "area"],
             "strategy": "similarity",
             "max_groups": 8,
-            "min_exposure": 500,
-            "min_claims": 20,
+            "min_exposure": 2000,
+            "min_claims": 50,
         },
     ),
     split="random",
@@ -324,17 +377,6 @@ config = ExperimentConfig(
                 "alpha": 0.001,
             },
         ),
-        "tweedie-lightgbm": ModelSpec(
-            kind="gbm",
-            params={
-                "objective": "tweedie",
-                "tweedie_variance_power": 1.5,
-                "n_estimators": 100,
-                "num_leaves": 31,
-                "learning_rate": 0.05,
-                "random_state": RANDOM_STATE,
-            },
-        ),
         "frequency-severity-glm": ModelSpec(
             kind="frequency_severity",
             frequency=ModelSpec(
@@ -346,14 +388,79 @@ config = ExperimentConfig(
                 params={"family": "gamma", "link": "log", "alpha": 0.001},
             ),
         ),
+        "tweedie-lightgbm-tariff": ModelSpec(
+            kind="gbm",
+            params={
+                "objective": "tweedie",
+                "tweedie_variance_power": 1.5,
+                "n_estimators": 100,
+                "num_leaves": 31,
+                "learning_rate": 0.05,
+                "random_state": RANDOM_STATE,
+            },
+        ),
     },
 )
-display(pd.json_normalize(config.model_dump(exclude_none=True)))
+
+gbm_config = ExperimentConfig(
+    name="fremtpl2-raw-feature",
+    data_path=str(PORTFOLIO_PATH),
+    spec=glm_config.spec.model_copy(),
+    features=features,
+    split="random",
+    test_size=0.2,
+    random_state=RANDOM_STATE,
+    models={
+        "tweedie-lightgbm": ModelSpec(
+            kind="gbm",
+            params={
+                "objective": "tweedie",
+                "tweedie_variance_power": 1.5,
+                "n_estimators": 100,
+                "num_leaves": 31,
+                "learning_rate": 0.05,
+                "random_state": RANDOM_STATE,
+            },
+        ),
+        "frequency-severity-gbm": ModelSpec(
+            kind="frequency_severity",
+            frequency=ModelSpec(
+                kind="gbm",
+                params={
+                    "objective": "poisson",
+                    "n_estimators": 100,
+                    "num_leaves": 31,
+                    "learning_rate": 0.05,
+                    "random_state": RANDOM_STATE,
+                },
+            ),
+            severity=ModelSpec(
+                kind="gbm",
+                params={
+                    "objective": "gamma",
+                    "n_estimators": 100,
+                    "num_leaves": 31,
+                    "learning_rate": 0.05,
+                    "random_state": RANDOM_STATE,
+                },
+            ),
+        ),
+    },
+)
+
+display(pd.json_normalize(glm_config.model_dump(exclude_none=True)))
+display(pd.json_normalize(gbm_config.model_dump(exclude_none=True)))
 ```
 
 ```{python}
-run, estimators = run_experiment(config, return_estimators=True)
-assert set(run.models) == set(config.models)
+glm_run, glm_estimators = run_experiment(glm_config, return_estimators=True)
+gbm_run, gbm_estimators = run_experiment(gbm_config, return_estimators=True)
+runs = [glm_run, gbm_run]
+estimators = {**glm_estimators, **gbm_estimators}
+assert set(glm_run.models) == set(glm_config.models)
+assert set(gbm_run.models) == set(gbm_config.models)
+assert glm_run.n_test == gbm_run.n_test
+assert glm_run.data_fingerprint == gbm_run.data_fingerprint
 ```
 
 The split happens before pipeline fitting, so the held-out outcomes cannot
@@ -368,43 +475,329 @@ exposure-weighted calibration deciles, and exposure-weighted mean Tweedie devian
 with fixed power 1.5 assess different aspects of fit and must be reviewed alongside
 ranking.
 
+The split is reproduced below so charts can re-predict on the untouched test
+rows. Both `run_experiment` calls are fit on the same permutation, so the test
+partitions match exactly.
+
 ```{python}
-metrics = comparison_table([run]).drop(columns="config")
+metrics = comparison_table(runs)
 display(metrics)
+```
 
-calibration_and_lift = []
-for model_name, result in run.models.items():
-    table = result.calibration_table.copy()
-    portfolio_rate = table["claim_amount"].sum() / table["exposure"].sum()
-    table["lift"] = table["observed_pure_premium"] / portfolio_rate
-    table.insert(0, "model", model_name)
-    calibration_and_lift.append(table)
+### Level recalibration of the boosted models
 
-calibration_and_lift = pd.concat(calibration_and_lift, ignore_index=True)
-display(
-    calibration_and_lift[
-        [
-            "model",
-            "group",
-            "exposure",
-            "observed_pure_premium",
-            "predicted_pure_premium",
-            "o_p_ratio",
-            "lift",
-        ]
-    ]
+The boosted Gamma and Tweedie deviances trade level for deviance: their optimum
+sits below the exposure-weighted mean, so the fitted GBMs under-predict the
+portfolio total (the GLM intercept does not have this property, and the
+Poisson-frequency GBM is exactly calibrated). The standard actuarial remedy is
+a multiplicative burn-cost recalibration: multiply each GBM's rates by its
+training observed/predicted ratio. Ranking diagnostics are invariant to the
+scalar, so only level-based diagnostics move. Every chart below uses the
+recalibrated predictions.
+
+```{python}
+train_order = np.random.default_rng(glm_config.random_state).permutation(len(portfolio))
+train_idx = train_order[glm_run.n_test :]
+train_frame = portfolio.iloc[train_idx].reset_index(drop=True)
+y_train = train_frame["claim_amount"].to_numpy()
+w_train = train_frame["exposure"].to_numpy()
+
+raw_predict_columns = [*features, "exposure"]
+special_predict_columns = [*features, "exposure", "claim_amount", "claim_count"]
+
+recalibration_factors = {}
+for name in ["tweedie-lightgbm", "tweedie-lightgbm-tariff", "frequency-severity-gbm"]:
+    columns = raw_predict_columns if name == "tweedie-lightgbm" else special_predict_columns
+    pred_train = np.asarray(estimators[name].predict(train_frame[columns]), dtype=float)
+    recalibration_factors[name] = float(
+        y_train.sum() / (pred_train * w_train).sum()
+    )
+display(pd.Series(recalibration_factors, name="recalibration_factor").to_frame())
+```
+
+### Charts on the held-out test rows
+
+Re-derive the exact holdout indices and re-predict every fitted model so the
+charts see the same rows the metrics table does. Each estimator is given
+exactly the columns it was fitted on (pipelines and frequency-severity models
+carried the special columns; the raw-feature Tweedie GBM carried only features
+plus exposure).
+
+```{python}
+split_order = np.random.default_rng(glm_config.random_state).permutation(len(portfolio))
+test_idx = split_order[: glm_run.n_test]
+test_frame = portfolio.iloc[test_idx].reset_index(drop=True)
+y_test = test_frame["claim_amount"].to_numpy()
+w_test = test_frame["exposure"].to_numpy()
+
+test_predictions: dict[str, np.ndarray] = {}
+for name, estimator in estimators.items():
+    columns = raw_predict_columns if name == "tweedie-lightgbm" else special_predict_columns
+    prediction = np.asarray(estimator.predict(test_frame[columns]), dtype=float)
+    if name in recalibration_factors:
+        prediction = prediction * recalibration_factors[name]
+    test_predictions[name] = prediction
+
+CHAMPION = "tweedie-lightgbm"
+BENCHMARK = "direct-tweedie-glm"
+colors = model_colors(list(estimators))
+```
+
+Lorenz curves for all five models on one axes — the dotted diagonal (random
+ranking) and the grey dash-dot oracle (perfect ranking) are drawn once, one
+color per model, Gini in the legend. The area between the diagonal and a
+curve is the Gini; a curve dominates only when it does not cross the others.
+
+```{python}
+with azoic_style():
+    fig, ax = plt.subplots(figsize=(6.5, 5))
+    plot_lorenz(
+        y_test,
+        test_predictions,
+        w_test,
+        ax=ax,
+        show_oracle=True,
+        title="Lorenz curves on the held-out test set",
+    )
+    fig.savefig(ARTIFACT_DIR / "lorenz.png", bbox_inches="tight")
+    plt.show()
+```
+
+Lift and calibration grids, one panel per model, computed from the
+recalibrated test predictions. The lift chart shows the observed (grey) and
+predicted (model color) pure premium per exposure-balanced decile of predicted
+risk: the two lines should track in level (calibration) while observed rises
+with the decile (ranking), and crossings expose deciles where the model over-
+or under-prices. The calibration scatter shows level adequacy on the same
+rows.
+
+```{python}
+model_names = list(estimators)
+mosaic = [
+    [f"lift:{name}" for name in model_names],
+    [f"cal:{name}" for name in model_names],
+]
+with azoic_style():
+    fig, axd = plt.subplot_mosaic(
+        mosaic, figsize=(4 * len(model_names), 8), sharey=True
+    )
+    for name in model_names:
+        table = calibration_table(y_test, test_predictions[name], w_test, n_bins=10)
+        plot_lift(
+            table,
+            color=colors[name],
+            label=name,
+            ax=axd[f"lift:{name}"],
+            title=f"Lift — {name}",
+        )
+        plot_calibration(
+            table,
+            ax=axd[f"cal:{name}"],
+            title=f"Calibration — {name}",
+        )
+    fig.savefig(ARTIFACT_DIR / "lift_calibration.png", bbox_inches="tight")
+    plt.show()
+```
+
+### Hexbin density: actual vs predicted, and residuals
+
+Per-policy densities for the champion: observed vs predicted on the left
+(y=x dashed reference), residuals vs predicted on the right (zero
+reference). Hex counts are exposure-weighted; the log colour scale
+concentrates on where the portfolio mass actually sits. Most policies have
+zero claims, so the mass hugs the axes — the spread above y=x in the left
+panel is where the model under-prices the few large losses.
+
+```{python}
+with azoic_style():
+    plot_actual_vs_predicted(
+        y_test,
+        test_predictions[CHAMPION],
+        w_test,
+        title=CHAMPION,
+        path=ARTIFACT_DIR / "hexbin_actual_vs_predicted.png",
+    )
+    plt.show()
+```
+
+Gini is invariant to any monotonic increasing transformation of the predictions
+— only the rank order matters. The two computations below print the same number
+(the exponent is scaled by 100 purely to avoid `float` overflow; strict
+monotonicity is what matters).
+
+```{python}
+raw = test_predictions[CHAMPION]
+print(f"Gini on rates:            {gini(y_test, raw, w_test):.6f}")
+print(f"Gini on exp(rates / 100): {gini(y_test, np.exp(raw / 100), w_test):.6f}")
+np.testing.assert_allclose(
+    gini(y_test, raw, w_test),
+    gini(y_test, np.exp(raw / 100), w_test),
+    rtol=1e-5,
+    atol=1e-6,
 )
 ```
 
-These deciles are exposure-weighted. Lift compares each decile's observed pure
-premium with the portfolio observed pure premium; O/P compares observed with
-predicted level inside the same decile.
+### One-way charts: per-predictor calibration
+
+The recalibrated Tweedie LightGBM is treated as the working model on the
+metrics table above. Nine one-way charts — observed vs predicted pure premium
+per feature level, with translucent exposure bars underlayed — expose
+per-segment miscalibration that the global O/P ratio can hide.
+
+Numeric features are shown in their **natural values on the test set**: driver
+age and vehicle age get one point per unique test value (`n_bins=None`), not
+the tariff bins used for fitting. Bonus malus and density are near-continuous,
+so they stay on exposure-weighted quantiles (`n_bins=10`). The five
+categorical features (including vehicle power, carried as a string) are mapped
+through the `AutoGrouper` groups **learned on the training partition by the
+tariff-structured experiment**, so high-cardinality levels are
+credibility-grouped rather than raw.
+
+```{python}
+champion_pred = test_predictions[CHAMPION]
+test_X = test_frame[features]
+
+fitted_grouper = glm_estimators["direct-tweedie-glm"].named_steps["grouper"]
+test_grouped = test_X.copy()
+for col, mapping in fitted_grouper.mapping_.items():
+    if col in test_grouped.columns:
+        test_grouped[col] = test_grouped[col].map(mapping)
+
+feature_bins = {
+    "driver_age": None,
+    "vehicle_age": None,
+    "bonus_malus": 10,
+    "density": 10,
+}
+
+with azoic_style():
+    fig, axd = plt.subplot_mosaic(
+        [list(features)], figsize=(4 * len(features), 4), sharey=True
+    )
+    for feature in features:
+        table = one_way_table(
+            test_grouped,
+            feature,
+            y_test,
+            champion_pred,
+            w_test,
+            n_bins=feature_bins.get(feature, 10),
+        )
+        plot_one_way(
+            table,
+            color=colors[CHAMPION],
+            label=CHAMPION,
+            ax=axd[feature],
+            exposure="background",
+            title=feature,
+            xlabel=feature,
+        )
+    fig.savefig(ARTIFACT_DIR / "one_way.png", bbox_inches="tight")
+    plt.show()
+```
+
+### Double-lift: champion vs benchmark
+
+A double-lift chart orders policies by the ratio of the working model's
+prediction to a benchmark's prediction and looks at observed rates across the
+ratio deciles. Rising observed across deciles favours the working model;
+falling favours the benchmark. The middle deciles carry the most diagnostic
+signal — the endpoints are anchored by construction. The chart carries all
+the table's information (mean ratio per decile on the ticks, observed and
+both predicted rates as lines), so the table itself is not printed.
+
+```{python}
+dl_table = double_lift_table(
+    y_test,
+    champion_pred,
+    test_predictions[BENCHMARK],
+    w_test,
+    n_bins=10,
+    label_a=CHAMPION,
+    label_b=BENCHMARK,
+)
+with azoic_style():
+    fig, ax = plt.subplots(figsize=(7, 4.5))
+    plot_double_lift(
+        dl_table,
+        ax=ax,
+        label_a=CHAMPION,
+        label_b=BENCHMARK,
+        color_a=colors[CHAMPION],
+        color_b=colors[BENCHMARK],
+        title=f"Double-lift: {CHAMPION} vs {BENCHMARK}",
+    )
+    fig.savefig(ARTIFACT_DIR / "double_lift.png", bbox_inches="tight")
+    plt.show()
+```
+
+### How to read these tables and charts
+
+Four diagnostics answer four questions; a fifth (business sense) is checked by
+humans, not the model. The full guide lives in the
+[docs site](https://thomasbury.github.io/azoic/guide/actuarial-workflow/);
+the condensed version used here:
+
+- **Gini** measures ranking ability only, not accuracy. A monotonic increasing
+  transformation of the predictions leaves the Gini unchanged, because the rank
+  order is unchanged. Two models with the same Gini can charge very different
+  totals. Verify with the `exp(rates)` assertion above — same Gini, different
+  absolute scale.
+- **Weighted deviance** is the proper score matched to the response distribution
+  (Poisson for frequency, Gamma for severity, Tweedie for pure premium). Smaller
+  is better; one unit does not translate directly to euros. When the true
+  distribution differs from the assumed, deviance is a proxy for accuracy, not
+  a measurement of it.
+- **$D^2$** = $1 - \text{deviance}/\text{null deviance}$, the explained-deviance share against
+  the weighted-mean null. Higher is better. $D^2$ is only comparable between models
+  of the same response and same family; a frequency $D^2$ cannot be ranked against
+  a severity $D^2$.
+- **A/E (actual / expected)** is $\sum_i w_i y_i / \sum_i w_i \hat{p}_i$. A/E near 1 is necessary
+  but not sufficient: a portfolio can hit 1.0 with offsetting biases that cancel
+  across segments. Always segment-check (the one-way charts above are exactly
+  that check).
+- **Lorenz curve** — the area between the diagonal and the curve is the Gini. A
+  curve dominates only when it does not cross; crossing curves are not a
+  ranking win. Good models bow the curve below the diagonal; the diagonal
+  itself is random ranking.
+- **Lift chart** — observed and predicted per decile. The two should track on
+  absolute level (calibration) and the observed should rise with the decile
+  (ranking). Crossing signals that the model over-estimates in some deciles and
+  under-estimates in others. The decile range is the rank-quality part; the
+  gap between observed and predicted is the calibration part.
+- **One-way chart** — the predicted lines should sit close to the observed line
+  per feature level. A bowed observed line without a matching predicted line is
+  systematic miscalibration by segment, not bad ranking.
+- **Double-lift chart** — orders policies by the A/B ratio and looks at observed
+  rates across ratio deciles. Rising observed across deciles favours A;
+  falling favours B. Flat, noisy, or crossing evidence is inconclusive. The
+  middle deciles carry the most diagnostic signal; the endpoints are anchored
+  by construction.
+
+### The five-line checklist applied to these five models
+
+- **Accuracy** — deviance and $D^2$ are smaller / larger than the GLM benchmark
+  within the same family. The raw-feature GBMs are the candidates; the GLM is
+  the within-family reference.
+- **Portfolio calibration** — A/E near 1, with credible sub-segments. The
+  one-way charts above are the segment-check; favour the model whose predicted
+  line tracks the observed across all nine features.
+- **Ranking** — positive Gini; the Lorenz curve dominates the GLM benchmark
+  without crossing; monotonic invariance verified on the re-prediction above.
+- **Lift** — observed per-decile tracks predicted in level; the decile range is
+  large; no crossings of observed and predicted.
+- **Business** — relativities make sense, fairness check passes, model is
+  stable when re-fit on a resample (not shown here).
+
+The verdict is the agreement of accuracy, calibration, ranking, and business
+constraints — no single number makes a pricing decision.
 
 ## Score an outcome-free portfolio
 
 The scoring interface remains `estimator.predict(raw_frame)`. No scoring
 service or persistence layer is required. The frame below contains only rating
-features and exposure.
+features and exposure; the GBM rates shown are level-recalibrated, matching the
+diagnostics above.
 
 ```{python}
 scoring_frame = portfolio[[*features, "exposure"]].copy()
@@ -412,6 +805,8 @@ scored = pd.DataFrame(index=scoring_frame.index)
 
 for model_name, estimator in estimators.items():
     prediction = np.asarray(estimator.predict(scoring_frame), dtype=float)
+    if model_name in recalibration_factors:
+        prediction = prediction * recalibration_factors[model_name]
     assert len(prediction) == len(scoring_frame)
     assert np.isfinite(prediction).all()
     assert (prediction >= 0).all()
@@ -423,10 +818,13 @@ display(scored.describe().T)
 ## Distil the GBM into an executable tariff
 
 A tree model is not itself a multiplicative tariff. `distill_gbm` fits a
-log-link GLM student to the GBM teacher's predictions on the experiment's
+log-link GLM student to a GBM teacher's predictions on the experiment's
 training rows, then measures fidelity on the untouched test rows. It copies the
 already-fitted preprocessing, so bins and group mappings are not relearned from
-the holdout.
+the holdout. The teacher here is the **tariff-structured** Tweedie LightGBM
+(`tweedie-lightgbm-tariff`): the student lives in the same binned/grouped
+feature space, which is what keeps distillation faithful — and its ranking
+already showed the cost of that structure compared with the raw-feature GBMs.
 
 The workbook contains the same `base_rate`, `factors`, and `mappings` sheets as
 a direct GLM export. Here `recalibrate=False` is deliberate: applying the
@@ -438,10 +836,10 @@ tariff_path = ARTIFACT_DIR / "distilled_tweedie_tariff.xlsx"
 tariff_X = portfolio[
     [*features, "exposure", "claim_amount", "claim_count"]
 ]
-teacher_pipeline = estimators["tweedie-lightgbm"]
-split_order = np.random.default_rng(config.random_state).permutation(len(portfolio))
-validation_idx = split_order[: run.n_test]
-fit_idx = split_order[run.n_test :]
+teacher_pipeline = estimators["tweedie-lightgbm-tariff"]
+split_order = np.random.default_rng(glm_config.random_state).permutation(len(portfolio))
+validation_idx = split_order[: glm_run.n_test]
+fit_idx = split_order[glm_run.n_test :]
 distilled_pipeline = distill_gbm(
     teacher_pipeline,
     tariff_X.iloc[fit_idx],
@@ -500,25 +898,29 @@ display(rate_comparison.describe().T)
 
 ## Reports and local MLflow tracking
 
-The model card is Markdown. The comparison dashboard is standalone HTML with
-Plotly embedded, and its metrics table contains all three fitted models.
+Each experiment gets a Markdown model card. The comparison dashboard is
+standalone HTML with Plotly embedded, and its metrics table contains all five
+fitted models from both experiments.
 
 ```{python}
-model_card_path = ARTIFACT_DIR / "model_card.md"
+glm_card_path = ARTIFACT_DIR / "model_card_tariff_structured.md"
+gbm_card_path = ARTIFACT_DIR / "model_card_raw_feature.md"
 dashboard_path = ARTIFACT_DIR / "comparison_dashboard.html"
 
-model_card_path.write_text(model_card(run, fmt="md"), encoding="utf-8")
-dashboard_path.write_text(comparison_dashboard([run]), encoding="utf-8")
+glm_card_path.write_text(model_card(glm_run, fmt="md"), encoding="utf-8")
+gbm_card_path.write_text(model_card(gbm_run, fmt="md"), encoding="utf-8")
+dashboard_path.write_text(comparison_dashboard(runs), encoding="utf-8")
 
-assert metrics["model"].nunique() == 3
-assert model_card_path.stat().st_size > 0
+assert metrics["model"].nunique() == 5
+assert glm_card_path.stat().st_size > 0
+assert gbm_card_path.stat().st_size > 0
 assert dashboard_path.stat().st_size > 0
-display(metrics[["model", "gini_test", "op_ratio_test", "deviance_test"]])
+display(metrics[["config", "model", "gini_test", "op_ratio_test", "deviance_test"]])
 ```
 
 MLflow uses a local SQLite backend. Its artifact root is also placed under the
-tutorial artifact directory. `log_run` records the data fingerprint,
-experiment and model parameters, all finite metrics, and the three generated
+tutorial artifact directory. Each `log_run` call records the data fingerprint,
+experiment and model parameters, all finite metrics, and the generated
 artifacts.
 
 ```{python}
@@ -536,33 +938,41 @@ if mlflow.get_experiment_by_name(experiment_name) is None:
         artifact_location=artifact_root.as_uri(),
     )
 
-mlflow_run_id = log_run(
-    run,
-    tracking_uri=tracking_uri,
-    experiment_name=experiment_name,
-    artifacts=[tariff_path, model_card_path, dashboard_path],
-)
+artifacts = [tariff_path, glm_card_path, gbm_card_path, dashboard_path]
+mlflow_run_ids = [
+    log_run(
+        run,
+        tracking_uri=tracking_uri,
+        experiment_name=experiment_name,
+        artifacts=artifacts,
+    )
+    for run in runs
+]
 
 client = mlflow.MlflowClient(tracking_uri=tracking_uri)
-logged = client.get_run(mlflow_run_id)
-logged_artifacts = client.list_artifacts(mlflow_run_id, path="artifacts")
+logged = [client.get_run(run_id) for run_id in mlflow_run_ids]
 
-assert logged.data.params["experiment.data_fingerprint"] == run.data_fingerprint
+assert glm_run.data_fingerprint == gbm_run.data_fingerprint
 assert all(
-    f"{model_name}.gini_test" in logged.data.metrics
+    entry.data.params["experiment.data_fingerprint"] == glm_run.data_fingerprint
+    for entry in logged
+)
+assert all(
+    f"{model_name}.gini_test" in entry.data.metrics
+    for entry, run in zip(logged, runs, strict=True)
     for model_name in run.models
 )
-assert {Path(item.path).name for item in logged_artifacts} == {
-    tariff_path.name,
-    model_card_path.name,
-    dashboard_path.name,
-}
+assert all(
+    {Path(item.path).name for item in client.list_artifacts(run_id, path="artifacts")}
+    == {Path(path).name for path in artifacts}
+    for run_id in mlflow_run_ids
+)
 
 pd.DataFrame(
     {
-        "run_id": [mlflow_run_id],
-        "tracking_database": [str(tracking_database)],
-        "artifact_count": [len(logged_artifacts)],
+        "run_id": mlflow_run_ids,
+        "tracking_database": [str(tracking_database)] * len(mlflow_run_ids),
+        "artifact_count": [len(artifacts)] * len(mlflow_run_ids),
     }
 )
 ```

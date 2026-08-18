@@ -108,8 +108,6 @@ def log_run(
                     # Upload the directory's contents under "<artifact_path>/<dir_name>"
                     # so the directory name is preserved in the artifact tree
                     # (mlflow.log_artifacts uploads contents flat under artifact_path).
-                    mlflow.log_artifacts(
-                        str(p), artifact_path=f"{artifact_path}/{p.name}"
-                    )
+                    mlflow.log_artifacts(str(p), artifact_path=f"{artifact_path}/{p.name}")
 
         return str(handle.info.run_id)

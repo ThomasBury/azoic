@@ -79,8 +79,7 @@ def _render_markdown(run: Run) -> str:
         f"- target: `{cfg.spec.target}`  exposure: `{cfg.spec.exposure}`",
         f"- data fingerprint: `{run.data_fingerprint}`",
         f"- rows: {run.n_rows}  (train {run.n_train} / test {run.n_test})",
-        f"- features ({len(run.feature_names)}): "
-        + ", ".join(f"`{c}`" for c in run.feature_names),
+        f"- features ({len(run.feature_names)}): " + ", ".join(f"`{c}`" for c in run.feature_names),
         "",
     ]
     for name, res in run.models.items():
