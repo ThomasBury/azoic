@@ -1,16 +1,19 @@
-"""Tests for azoic.metrics: Gini, Lorenz, calibration table, deviances."""
+"""Tests for azoic.metrics: Gini, Lorenz, calibration, one-way, double-lift, deviances."""
 
 from __future__ import annotations
 
 import numpy as np
+import pandas as pd
 
 from azoic.metrics import (
     calibration_table,
+    double_lift_table,
     gini,
     lorenz,
     mean_gamma_deviance,
     mean_poisson_deviance,
     mean_tweedie_deviance,
+    one_way_table,
     op_ratio,
 )
 from tests.conftest import make_synthetic_portfolio
@@ -94,6 +97,8 @@ def test_lorenz_endpoints_and_monotonic() -> None:
     assert np.all(np.diff(res.exposure_pct) >= 0)
     assert np.all(np.diff(res.claims_pct) >= 0)
     assert res.gini > 0.0
+    assert np.all(res.claims_pct <= res.exposure_pct + 1e-12)
+    assert np.isclose(res.gini, 1.0 - 2.0 * np.trapezoid(res.claims_pct, res.exposure_pct))
 
 
 def test_calibration_table_totals_match_portfolio() -> None:
@@ -147,3 +152,117 @@ def test_deviances_reexported() -> None:
     y = np.array([1.0, 0.5, 2.0])
     p = np.array([1.1, 0.6, 1.8])
     assert mean_poisson_deviance(y, p) >= 0.0
+
+
+def test_one_way_table_numeric_bins_matches_calibration_when_perfect() -> None:
+    rng = np.random.default_rng(11)
+    n = 3000
+    X = pd.DataFrame({"driver_age": rng.integers(18, 90, size=n)})
+    rate = rng.uniform(0.5, 2.0, size=n)
+    w = rng.uniform(0.5, 1.0, size=n)
+    y_true = rate * w  # observed aggregate claim_amount
+    y_pred = rate  # perfect rate prediction
+    tbl = one_way_table(X, "driver_age", y_true, y_pred, w, n_bins=10)
+    assert len(tbl) >= 2 and len(tbl) <= 10
+    assert np.isclose(tbl["exposure"].sum(), w.sum())
+    assert np.isclose(tbl["claim_amount"].sum(), y_true.sum())
+    assert np.isclose(tbl["predicted_claim_amount"].sum(), (y_pred * w).sum())
+    assert np.allclose(tbl["o_p_ratio"], 1.0, atol=1e-9)
+    assert set(tbl.columns) == {
+        "level",
+        "level_label",
+        "level_center",
+        "exposure",
+        "claim_amount",
+        "predicted_claim_amount",
+        "observed_pure_premium",
+        "predicted_pure_premium",
+        "o_p_ratio",
+    }
+    assert tbl["level_center"].notna().all()
+    assert (tbl["level_label"].str.startswith("[") & tbl["level_label"].str.endswith("]")).all()
+
+
+def test_one_way_table_categorical_passthrough() -> None:
+    rng = np.random.default_rng(12)
+    n = 2000
+    X = pd.DataFrame({"region": rng.choice(["urban", "suburban", "rural"], size=n)})
+    w = rng.uniform(0.5, 1.0, size=n)
+    y_pred = np.full(n, 1.0)
+    y_true = y_pred * w
+    tbl = one_way_table(X, "region", y_true, y_pred, w)
+    assert set(tbl["level"]) == {"urban", "suburban", "rural"}
+    assert set(tbl["level_label"]) == {"urban", "suburban", "rural"}
+    assert tbl["level_center"].isna().all()
+    assert len(tbl) == 3
+    assert np.allclose(tbl["o_p_ratio"], 1.0, atol=1e-9)
+
+
+def test_one_way_table_missing_feature_raises() -> None:
+    rng = np.random.default_rng(13)
+    n = 200
+    X = pd.DataFrame({"a": rng.integers(0, 100, size=n)})
+    with np.testing.assert_raises(ValueError):
+        one_way_table(X, "missing", rng.uniform(size=n), rng.uniform(size=n))
+
+
+def test_double_lift_table_columns_and_shape() -> None:
+    rng = np.random.default_rng(14)
+    n = 4000
+    y_true = rng.exponential(1.0, size=n)
+    pred_a = y_true * rng.uniform(0.5, 1.5, size=n)
+    pred_b = y_true * rng.uniform(0.8, 1.2, size=n)
+    w = rng.uniform(0.5, 1.0, size=n)
+    tbl = double_lift_table(
+        y_true, pred_a, pred_b, w, n_bins=10, label_a="champion", label_b="benchmark"
+    )
+    assert 1 <= len(tbl) <= 10
+    for col in (
+        "group",
+        "mean_ratio",
+        "exposure",
+        "claim_amount",
+        "observed_pure_premium",
+        "champion_pure_premium",
+        "benchmark_pure_premium",
+    ):
+        assert col in tbl.columns
+    assert np.isclose(tbl["exposure"].sum(), w.sum(), atol=1e-9)
+
+
+def test_double_lift_table_ratio_monotone() -> None:
+    """Deciles are ordered by the ratio, so mean_ratio is non-decreasing."""
+    rng = np.random.default_rng(15)
+    n = 4000
+    y_true = rng.exponential(1.0, size=n)
+    pred_a = rng.uniform(0.1, 5.0, size=n)
+    pred_b = rng.uniform(0.5, 2.0, size=n)
+    w = rng.uniform(0.5, 1.0, size=n)
+    tbl = double_lift_table(y_true, pred_a, pred_b, w, n_bins=10)
+    assert np.all(np.diff(tbl["mean_ratio"].to_numpy()) >= 0.0)
+
+
+def test_double_lift_table_zero_prediction_floored() -> None:
+    """Predictions floored for the ratio so deciles stay finite."""
+    rng = np.random.default_rng(16)
+    n = 2000
+    y_true = rng.exponential(1.0, size=n)
+    pred_a = rng.uniform(0.1, 2.0, size=n)
+    pred_b = np.zeros(n)  # exact zeros must not crash the ratio
+    w = rng.uniform(0.5, 1.0, size=n)
+    tbl = double_lift_table(y_true, pred_a, pred_b, w, n_bins=5)
+    assert len(tbl) >= 1
+    assert np.isfinite(tbl["mean_ratio"]).all()
+    assert np.isfinite(tbl["model A_pure_premium"]).all()
+    assert np.allclose(tbl["model B_pure_premium"], 0.0)
+
+
+def test_double_lift_table_shape_mismatch_raises() -> None:
+    rng = np.random.default_rng(17)
+    n = 100
+    y_true = rng.exponential(1.0, size=n)
+    pred_a = rng.uniform(size=n)
+    pred_b = rng.uniform(size=n + 1)
+    w = rng.uniform(size=n)
+    with np.testing.assert_raises(ValueError):
+        double_lift_table(y_true, pred_a, pred_b, w)

@@ -83,12 +83,18 @@ def test_model_card_known_layout_for_multiple_models(tmp_path: Path) -> None:
         spec={"target": "claim_amount", "exposure": "exposure"},
         features=["driver_age", "vehicle_age", "region", "vehicle_brand"],
         models={
-            "glm": ModelSpec(kind="glm",
-                             params={"family": "tweedie", "link": "log",
-                                     "exposure_col": "exposure"}),
-            "gbm": ModelSpec(kind="gbm", params={"objective": "tweedie",
-                                                 "exposure_col": "exposure",
-                                                 "n_estimators": 20, "random_state": 42}),
+            "glm": ModelSpec(
+                kind="glm", params={"family": "tweedie", "link": "log", "exposure_col": "exposure"}
+            ),
+            "gbm": ModelSpec(
+                kind="gbm",
+                params={
+                    "objective": "tweedie",
+                    "exposure_col": "exposure",
+                    "n_estimators": 20,
+                    "random_state": 42,
+                },
+            ),
         },
     )
     run = run_experiment(cfg)
