@@ -18,7 +18,7 @@ closed form on the tie-aggregated blocks.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections import namedtuple
 
 import numpy as np
 import pandas as pd
@@ -96,13 +96,8 @@ def gini(y_true, y_pred, sample_weight=None) -> float:
     return float(1.0 - 2.0 * auc(cum_w, cum_o))
 
 
-@dataclass(frozen=True, slots=True)
-class Lorenz:
-    """Exposure-vs-claims concentration curve (actuarial ascending y_pred)."""
-
-    exposure_pct: np.ndarray
-    claims_pct: np.ndarray
-    gini: float
+Lorenz = namedtuple("Lorenz", ["exposure_pct", "claims_pct", "gini"])
+"""Exposure-vs-claims concentration curve (actuarial ascending y_pred)."""
 
 
 def lorenz(y_true, y_pred, sample_weight=None) -> Lorenz:
