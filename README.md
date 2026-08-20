@@ -40,7 +40,7 @@ existing MLflow and Plotly extras; install Quarto separately and ensure its
 `quarto` executable is on `PATH`.
 
 ```bash
-uv sync --group demo --extra mlops --extra plot
+uv sync --group demo --extra mlops
 just demo
 ```
 
