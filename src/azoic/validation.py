@@ -1,19 +1,41 @@
-"""Validation helpers: stratum labels for stratified splits, temporal split.
+"""Validation helpers: stratum labels for stratified splits, temporal split,
+single-shot stratified random split.
 
-Two thin function helpers, not splitter classes -- sklearn already has the
+Three thin function helpers, not splitter classes -- sklearn already has the
 splitters (``StratifiedKFold`` / ``StratifiedGroupKFold`` / ``TimeSeriesSplit``).
 ``make_strata`` discretizes a continuous y so sklearn's stratifiers work on
 pure-premium / claim-count targets; ``temporal_split`` is the single-
 holdout case (one cutoff, no leakage) that ``TimeSeriesSplit`` does not cover
-directly.
+directly; ``stratified_random_split`` is the ``train_test_split(stratify=...)``
+case for low-frequency events where a random shuffle can leave the test set
+with an unrepresentative share of positives (claim presence is the canonical
+actuarial example).
 """
 
 from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+from sklearn.model_selection import StratifiedShuffleSplit
 
-__all__ = ["make_strata", "temporal_split"]
+__all__ = ["make_strata", "temporal_split", "stratified_random_split"]
+
+
+def _weighted_quantile_edges(y, sample_weight, *, n_quantiles: int) -> np.ndarray:
+    """``n_quantiles - 1`` unique weighted-quantile edges of ``y`` (sorted)."""
+    y = np.asarray(y, dtype=float)
+    w = np.asarray(sample_weight, dtype=float)
+    if w.shape != y.shape:
+        raise ValueError(f"`sample_weight` shape {w.shape} does not match `y` shape {y.shape}")
+    order = np.argsort(y, kind="stable")
+    ys, ws = y[order], w[order]
+    cum = np.cumsum(ws)
+    total = float(cum[-1])
+    if total <= 0:
+        return np.array([])
+    qs = np.linspace(0.0, total, n_quantiles + 1)[1:-1]
+    idx = np.clip(np.searchsorted(cum, qs, side="right"), 0, len(ys) - 1)
+    return np.unique(ys[idx])
 
 
 def make_strata(y, sample_weight=None, *, n_strata: int = 10) -> np.ndarray:
@@ -36,28 +58,15 @@ def make_strata(y, sample_weight=None, *, n_strata: int = 10) -> np.ndarray:
         contiguous -- sklearn stratifiers only need distinct labels. Drop
         ``-1`` rows or remap to ``0`` before passing to a splitter that
         rejects negative labels.
-
-    ponytail: integer labels only; the splitter does the actual folding. The
-      weighted path uses cumulative-exposure searchsorted edges, same pattern
-      as ``AutoBinner._quantile_edges`` -- duplicated rather than coupled, M6
-      may factor a shared helper if a third copy shows up.
     """
     y = np.asarray(y, dtype=float)
     if sample_weight is None:
         codes = pd.qcut(pd.Series(y), n_strata, labels=False, duplicates="drop")
         return codes.fillna(-1).astype(int).to_numpy()
     w = np.asarray(sample_weight, dtype=float)
-    if w.shape != y.shape:
-        raise ValueError(f"`sample_weight` shape {w.shape} does not match `y` shape {y.shape}")
-    order = np.argsort(y, kind="stable")
-    ys, ws = y[order], w[order]
-    cum = np.cumsum(ws)
-    total = float(cum[-1])
-    if total <= 0:
+    edges = _weighted_quantile_edges(y, w, n_quantiles=n_strata)
+    if edges.size == 0:
         return np.zeros(len(y), dtype=int)
-    qs = np.linspace(0.0, total, n_strata + 1)[1:-1]
-    idx = np.clip(np.searchsorted(cum, qs, side="right"), 0, len(ys) - 1)
-    edges = np.unique(ys[idx])
     codes = np.searchsorted(edges, y, side="right")
     return np.where(np.isnan(y), -1, codes).astype(int)
 
@@ -120,4 +129,51 @@ def temporal_split(
     train, test = order[:cut_pos], order[cut_pos:]
     if len(train) == 0 or len(test) == 0:
         raise ValueError("temporal split produces an empty train or test partition")
+    return train, test
+
+
+def stratified_random_split(
+    strata,
+    *,
+    test_size: float | int,
+    random_state: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Positional ``(train_idx, test_idx)`` from a single stratified random split.
+
+    Thin wrapper around ``sklearn.StratifiedShuffleSplit`` that returns
+    positional indices, mirroring ``temporal_split``. Use when a naive random
+    shuffle can produce a test partition with an unrepresentative share of the
+    rare class -- claim presence (``(claim_count > 0).astype(int)``) is the
+    actuarial default for low-frequency events.
+
+    ``test_size`` follows ``train_test_split`` conventions: float in ``(0, 1)``
+    is the fraction of rows; int is the absolute count and must satisfy
+    ``1 <= n_test < n``.
+
+    Returns
+    -------
+    (ndarray[int], ndarray[int])
+        Positional row indices (use ``df.iloc[...]``). Disjoint, together
+        cover the full input length. Strata classes of size < 2 raise --
+        sklearn rejects them.
+
+    ponytail: returns positional indices only -- a single holdout does not need
+      a sklearn splitter; for K-fold stratified CV use ``StratifiedKFold`` with
+      ``make_strata`` codes.
+    """
+    strata = np.asarray(strata)
+    n = len(strata)
+    if n == 0:
+        raise ValueError("strata is empty")
+    _, counts = np.unique(strata, return_counts=True)
+    if (counts < 2).any():
+        raise ValueError("each stratum must contain at least 2 rows")
+    splitter = StratifiedShuffleSplit(
+        n_splits=1,
+        test_size=test_size,
+        random_state=random_state,
+    )
+    train, test = next(splitter.split(np.zeros(n), strata))
+    if len(train) == 0 or len(test) == 0:
+        raise ValueError("stratified_random_split produces an empty train or test partition")
     return train, test

@@ -22,6 +22,8 @@ from sklearn.isotonic import isotonic_regression
 from sklearn.tree import DecisionTreeRegressor
 from sklearn.utils.validation import validate_data
 
+from azoic.validation import _weighted_quantile_edges
+
 __all__ = ["AutoBinner", "AutoGrouper"]
 
 
@@ -52,14 +54,6 @@ def _resolve_target(X, y, target_col, exposure_col):
     if target is not None:
         return target
     return None if y is None else np.asarray(y, dtype=float)
-
-
-def _feature_names_out(estimator, input_features):
-    if input_features is not None:
-        return np.asarray(input_features)
-    if hasattr(estimator, "feature_names_in_"):
-        return estimator.feature_names_in_
-    return np.asarray([f"x{i}" for i in range(estimator.n_features_in_)])
 
 
 def _merge_small_bins(values, weights, edges, min_weight):
@@ -249,18 +243,8 @@ class AutoBinner(TransformerMixin, BaseEstimator):
 
     def _quantile_edges(self, v, w):
         if w is None:
-            edges = np.quantile(v, np.linspace(0, 1, self.max_bins + 1)[1:-1])
-        else:
-            order = np.argsort(v, kind="stable")
-            vs, ws = v[order], w[order]
-            cum = np.cumsum(ws)
-            if cum[-1] <= 0:
-                return np.array([])
-            qs = np.linspace(0, cum[-1], self.max_bins + 1)[1:-1]
-            idx = np.searchsorted(cum, qs, side="right")
-            idx = np.clip(idx, 0, len(vs) - 1)
-            edges = vs[idx]
-        return np.unique(edges)
+            return np.unique(np.quantile(v, np.linspace(0, 1, self.max_bins + 1)[1:-1]))
+        return _weighted_quantile_edges(v, w, n_quantiles=self.max_bins)
 
     def _tree_edges(self, v, y, w):
         tree = DecisionTreeRegressor(
