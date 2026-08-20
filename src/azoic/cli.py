@@ -5,9 +5,9 @@ Wraps the M5 + M6 + M7 pieces end-to-end:
   * ``azoic profile`` -- runs ``profile_features`` + ``screen_features`` and
     prints (or writes) the resulting screening table.
   * ``azoic fit`` -- loads an ``ExperimentConfig`` YAML, ``run_experiment``s
-    it, prints a model card to stdout (and/or writes md + html).
+    it, prints a model card to stdout (and/or writes it to disk).
   * ``azoic compare`` -- runs one or more configs and prints a side-by-side
-    per-model metrics table.
+    per-model metrics table (CSV to disk if ``--out``).
   * ``azoic export-tariff`` -- runs a config, exports a named GLM or, with
     ``--distill``, an exportable GLM student of a positive-objective GBM.
   * ``azoic tune`` -- optuna hyperparameter search per model
@@ -25,7 +25,7 @@ import typer
 
 from azoic.data import DatasetSpec, load_data
 from azoic.profile import profile_features, screen_features
-from azoic.reporting import comparison_dashboard, comparison_table, model_card
+from azoic.reporting import comparison_table, model_card
 from azoic.tariff import distill_gbm as _distill_gbm
 from azoic.tariff import export_tariff as _export_tariff
 from azoic.workflow import ExperimentConfig, _split_indices, run_experiment
@@ -44,7 +44,6 @@ def profile(
     exposure: str = typer.Option(..., "--exposure", help="Exposure column name."),
     claim_count: str | None = typer.Option(None, "--claim-count", help="Claim-count column."),
     time_col: str | None = typer.Option(None, "--time-col", help="Time column."),
-    id_col: str | None = typer.Option(None, "--id-col", help="Policy id column."),
     out: Path | None = typer.Option(
         None, "--out", help="Write the screening table to CSV (default: print to stdout)."
     ),
@@ -55,7 +54,6 @@ def profile(
         exposure=exposure,
         claim_count=claim_count,
         time_col=time_col,
-        id_col=id_col,
     )
     df = load_data(data, spec=spec)
     prof = profile_features(df)
@@ -73,20 +71,16 @@ def profile(
 def fit(
     config: Path = typer.Option(..., "--config", help="ExperimentConfig YAML."),
     out: Path | None = typer.Option(None, "--out", help="Write the model card markdown here."),
-    out_html: Path | None = typer.Option(None, "--out-html", help="Write an HTML model card."),
     quiet: bool = typer.Option(False, "--quiet", "-q", help="Do not print the card to stdout."),
 ) -> None:
     """Run all models in an ``ExperimentConfig`` YAML; produce a model card."""
     cfg = ExperimentConfig.from_yaml(config)
     run = run_experiment(cfg)
-    md = model_card(run, fmt="md")
+    md = model_card(run)
 
     if out is not None:
         out.write_text(md, encoding="utf-8")
         typer.echo(f"Wrote markdown card to {out}")
-    if out_html is not None:
-        out_html.write_text(model_card(run, fmt="html"), encoding="utf-8")
-        typer.echo(f"Wrote HTML card to {out_html}")
     if not quiet:
         typer.echo(md)
 
@@ -99,9 +93,6 @@ def compare(
     out: Path | None = typer.Option(
         None, "--out", help="Write the comparison table to CSV (default: print to stdout)."
     ),
-    out_html: Path | None = typer.Option(
-        None, "--out-html", help="Write a standalone comparison dashboard."
-    ),
 ) -> None:
     """Run multiple configs and print a side-by-side per-model metric table."""
     runs = [run_experiment(ExperimentConfig.from_yaml(cfg_path)) for cfg_path in configs]
@@ -110,10 +101,6 @@ def compare(
     if out is not None:
         rows.to_csv(out, index=False)
         typer.echo(f"Wrote {len(rows)} rows to {out}")
-    if out_html is not None:
-        out_html.write_text(comparison_dashboard(runs), encoding="utf-8")
-        typer.echo(f"Wrote dashboard to {out_html}")
-    if out is not None or out_html is not None:
         return
 
     typer.echo(f"Azoic compare\n{rows.to_string(index=False)}")
@@ -194,7 +181,6 @@ def tune(
         help="Penalty weight on |1 - op_ratio_test|; scale to deviance magnitude.",
     ),
     out: Path | None = typer.Option(None, "--out", help="Write the model card markdown here."),
-    out_html: Path | None = typer.Option(None, "--out-html", help="Write an HTML model card."),
     quiet: bool = typer.Option(False, "--quiet", "-q", help="Do not print the card to stdout."),
 ) -> None:
     """Tune model hyperparameters with optuna, then write a model card of the best fit."""
@@ -202,16 +188,13 @@ def tune(
 
     cfg = ExperimentConfig.from_yaml(config)
     result = tune_experiment(cfg, n_trials=trials, calibration_penalty=calibration_penalty)
-    md = model_card(result.run, fmt="md")
+    md = model_card(result.run)
 
     for name, params in result.best_params.items():
         typer.echo(f"tuned {name}: " + ", ".join(f"{k}={v:.4g}" for k, v in params.items()))
     if out is not None:
         out.write_text(md, encoding="utf-8")
         typer.echo(f"Wrote markdown card to {out}")
-    if out_html is not None:
-        out_html.write_text(model_card(result.run, fmt="html"), encoding="utf-8")
-        typer.echo(f"Wrote HTML card to {out_html}")
     if not quiet:
         typer.echo(md)
 

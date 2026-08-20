@@ -1,19 +1,15 @@
 """Model card rendering for a ``azoic.workflow.Run``.
 
-``model_card(run, fmt="md")`` returns a markdown (or HTML) summary of the
-experiment: config name, dataset shape + features, and a per-model block with
-metrics + a calibration-table preview. The HTML output wraps the canonical
-markdown in a minimal HTML5 document (``<pre>``); a real markdown parser is a
-``plot`` extra candidate when reports need styling.
+``model_card(run)`` returns a markdown summary of the experiment: config name,
+dataset shape + features, and a per-model block with metrics + a calibration-
+table preview.
 
-ponytail: deliberately tiny -- md is the canonical form, html is a thin wrap.
+ponytail: deliberately tiny -- md only.
 """
 
 from __future__ import annotations
 
-import html
-import textwrap
-from typing import Literal
+from typing import Any
 
 import pandas as pd
 
@@ -22,7 +18,7 @@ from azoic.workflow import Run
 __all__ = ["model_card", "comparison_table", "comparison_dashboard"]
 
 
-def _fmt(x, dp: int = 4) -> str:
+def _fmt(x: Any, dp: int = 4) -> str:
     """Format a scalar (number / NaN) for the card with ``dp`` decimals."""
     if x is None:
         return ""
@@ -63,6 +59,7 @@ def _metrics_block_md(name: str, kind: str, params: dict, metrics: dict) -> str:
         f"- gini (test):  {_fmt(metrics.get('gini_test'))}",
         f"- O/P ratio (test):  {_fmt(metrics.get('op_ratio_test'))}",
         f"- deviance (test):  {_fmt(metrics.get('deviance_test'), 6)}",
+        f"- D² (test):        {_fmt(metrics.get('d2_test'))}",
     ]
     return "\n".join(lines)
 
@@ -92,38 +89,9 @@ def _render_markdown(run: Run) -> str:
     return "\n".join(lines)
 
 
-def _wrap_html(markdown: str, *, title: str) -> str:
-    """Wrap markdown in a minimal HTML5 doc; body is ``<pre>``-escaped.
-
-    ponytail: no markdown parser in core deps; replace with a renderer in a
-    `plot`/`reporting` extra when styling matters. M5 only needs an HTML
-    artifact to exist alongside the markdown.
-    """
-    body = html.escape(markdown)
-    return textwrap.dedent(
-        """\
-        <!doctype html>
-        <html lang="en">
-        <head>
-        <meta charset="utf-8">
-        <title>{title}</title>
-        </head>
-        <body>
-        <pre>{body}</pre>
-        </body>
-        </html>
-        """
-    ).format(title=html.escape(title), body=body)
-
-
-def model_card(run: Run, *, fmt: Literal["md", "html"] = "md") -> str:
-    """Return the model card for ``run`` as markdown (default) or HTML."""
-    md = _render_markdown(run)
-    if fmt == "md":
-        return md
-    if fmt == "html":
-        return _wrap_html(md, title=run.config.name)
-    raise ValueError(f"unknown fmt {fmt!r}; expected 'md' or 'html'")
+def model_card(run: Run) -> str:
+    """Return the model card for ``run`` as markdown."""
+    return _render_markdown(run)
 
 
 def comparison_table(runs) -> pd.DataFrame:
@@ -140,6 +108,7 @@ def comparison_table(runs) -> pd.DataFrame:
         "gini_test",
         "op_ratio_test",
         "deviance_test",
+        "d2_test",
     ]
     return pd.DataFrame(rows) if rows else pd.DataFrame(columns=pd.Index(columns))
 
