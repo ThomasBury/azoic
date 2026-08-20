@@ -72,6 +72,7 @@ from azoic.plots import (
 from azoic.profile import profile_features, screen_features
 from azoic.reporting import comparison_dashboard, comparison_table, model_card
 from azoic.tariff import apply_tariff, distill_gbm, export_tariff
+from azoic.validation import stratified_random_split
 from azoic.workflow import (
     ExperimentConfig,
     ModelSpec,
@@ -344,7 +345,6 @@ glm_config = ExperimentConfig(
         target="claim_amount",
         exposure="exposure",
         claim_count="claim_count",
-        id_col="policy_id",
     ),
     features=features,
     preprocessing=PreprocessingSpec(
@@ -461,10 +461,20 @@ assert set(glm_run.models) == set(glm_config.models)
 assert set(gbm_run.models) == set(gbm_config.models)
 assert glm_run.n_test == gbm_run.n_test
 assert glm_run.data_fingerprint == gbm_run.data_fingerprint
+
+train_idx, test_idx = stratified_random_split(
+    (portfolio["claim_count"].to_numpy() > 0).astype(int),
+    test_size=glm_config.test_size,
+    random_state=glm_config.random_state,
+)
+assert len(train_idx) == glm_run.n_train
+assert len(test_idx) == glm_run.n_test
 ```
 
 The split happens before pipeline fitting, so the held-out outcomes cannot
-influence the learned bins or groups.
+influence the learned bins or groups. Stratifying on claim presence keeps the
+test set's claim-positive share within rounding of the portfolio's, so a rare
+event like a claim is not silently concentrated in train.
 
 ## Held-out ranking, calibration, deviance, and lift
 
@@ -496,8 +506,6 @@ scalar, so only level-based diagnostics move. Every chart below uses the
 recalibrated predictions.
 
 ```{python}
-train_order = np.random.default_rng(glm_config.random_state).permutation(len(portfolio))
-train_idx = train_order[glm_run.n_test :]
 train_frame = portfolio.iloc[train_idx].reset_index(drop=True)
 y_train = train_frame["claim_amount"].to_numpy()
 w_train = train_frame["exposure"].to_numpy()
@@ -517,15 +525,12 @@ display(pd.Series(recalibration_factors, name="recalibration_factor").to_frame()
 
 ### Charts on the held-out test rows
 
-Re-derive the exact holdout indices and re-predict every fitted model so the
-charts see the same rows the metrics table does. Each estimator is given
-exactly the columns it was fitted on (pipelines and frequency-severity models
-carried the special columns; the raw-feature Tweedie GBM carried only features
-plus exposure).
+Re-predict every fitted model on the same holdout the metrics table saw.
+Each estimator is given exactly the columns it was fitted on (pipelines and
+frequency-severity models carried the special columns; the raw-feature Tweedie
+GBM carried only features plus exposure).
 
 ```{python}
-split_order = np.random.default_rng(glm_config.random_state).permutation(len(portfolio))
-test_idx = split_order[: glm_run.n_test]
 test_frame = portfolio.iloc[test_idx].reset_index(drop=True)
 y_test = test_frame["claim_amount"].to_numpy()
 w_test = test_frame["exposure"].to_numpy()
@@ -742,7 +747,15 @@ the condensed version used here:
   transformation of the predictions leaves the Gini unchanged, because the rank
   order is unchanged. Two models with the same Gini can charge very different
   totals. Verify with the `exp(rates)` assertion above — same Gini, different
-  absolute scale.
+  absolute scale. Three equivalent definitions of the same number exist:
+  mean-absolute-difference over pairs (Gini's original, $O(n^2)$),
+  $1 - 2 \cdot \mathrm{AUC}$ of the Lorenz curve (the actuarial convention), and
+  the Frees-Meyers-Cummings midrank closed form $2 \sum_i w_i y_i \bar F_i /
+  \sum_i w_i y_i - 1$. Azoic uses the midrank form because tied predictions
+  are aggregated into single blocks before integration, so the value is
+  permutation-invariant by construction (a GLM with only categorical features
+  produces many ties; a vendor implementation that integrates through rows in
+  arbitrary order gives a different number).
 - **Weighted deviance** is the proper score matched to the response distribution
   (Poisson for frequency, Gamma for severity, Tweedie for pure premium). Smaller
   is better; one unit does not translate directly to euros. When the true
@@ -773,6 +786,24 @@ the condensed version used here:
   falling favours B. Flat, noisy, or crossing evidence is inconclusive. The
   middle deciles carry the most diagnostic signal; the endpoints are anchored
   by construction.
+- **Hexbin (actual vs predicted)** — predicted-vs-observed on linear axes shows
+  the bulk plus the claim-free band at observed = 0 (the linear view is
+  clipped to the predicted-value span, so observed outliers extend beyond it).
+  The **residual panel** (observed − predicted) carries the shape diagnostic:
+  - *Band centred on zero across the full predicted range* — the model is
+    locally unbiased at every level; what remains is noise. A flat vertical
+    shift is fixable by a single A/E rescale.
+  - *Tilted or curved band* — the model's *shape* is wrong, not its level. A
+    global A/E rescale will not fix it; refit with the missing structure
+    (misspecified link, missing non-linear term, or an interaction the model
+    never saw).
+  - *Funnel shape (spread grows with predicted mean)* — expected for
+    Poisson-Gamma-Tweedie variance; widening alone is not a defect.
+  - *Discrete stripes, off-diagonal structure* — an unsaturated feature or a
+    categorical split the model smoothed (GLUM) versus a few dominant leaves
+    (LightGBM). Compare the two panels: structure the GLM smooths but
+    LightGBM preserves points to a structural story rather than a
+    distributional one.
 
 ### The five-line checklist applied to these five models
 
@@ -837,9 +868,8 @@ tariff_X = portfolio[
     [*features, "exposure", "claim_amount", "claim_count"]
 ]
 teacher_pipeline = estimators["tweedie-lightgbm-tariff"]
-split_order = np.random.default_rng(glm_config.random_state).permutation(len(portfolio))
-validation_idx = split_order[: glm_run.n_test]
-fit_idx = split_order[glm_run.n_test :]
+validation_idx = test_idx
+fit_idx = train_idx
 distilled_pipeline = distill_gbm(
     teacher_pipeline,
     tariff_X.iloc[fit_idx],
@@ -898,17 +928,17 @@ display(rate_comparison.describe().T)
 
 ## Reports and local MLflow tracking
 
-Each experiment gets a Markdown model card. The comparison dashboard is
-standalone HTML with Plotly embedded, and its metrics table contains all five
-fitted models from both experiments.
+Each experiment gets a Markdown model card and a standalone HTML comparison
+dashboard; the cross-config comparison table collects all five fitted models
+from both experiments.
 
 ```{python}
 glm_card_path = ARTIFACT_DIR / "model_card_tariff_structured.md"
 gbm_card_path = ARTIFACT_DIR / "model_card_raw_feature.md"
 dashboard_path = ARTIFACT_DIR / "comparison_dashboard.html"
 
-glm_card_path.write_text(model_card(glm_run, fmt="md"), encoding="utf-8")
-gbm_card_path.write_text(model_card(gbm_run, fmt="md"), encoding="utf-8")
+glm_card_path.write_text(model_card(glm_run), encoding="utf-8")
+gbm_card_path.write_text(model_card(gbm_run), encoding="utf-8")
 dashboard_path.write_text(comparison_dashboard(runs), encoding="utf-8")
 
 assert metrics["model"].nunique() == 5
