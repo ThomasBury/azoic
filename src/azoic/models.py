@@ -36,19 +36,25 @@ _GBM_OBJECTIVE_POWER = {"poisson": 1.0, "gamma": 2.0, "regression": 0.0, "rmse":
 
 
 def _pop_weight(X, exposure_col, sample_weight):
-    """Return (X_features, weight_array_or_None).
+    """Return (X_features, weight_array).
 
     Drops ``exposure_col`` from a DataFrame ``X`` when it would otherwise leak
-    as a feature. The popped column becomes ``sample_weight`` unless the caller
+    as a feature. The popped column becomes the weight unless the caller
     passed an explicit ``sample_weight`` (used by FrequencySeverityModel to
-    route ``claim_count`` as the severity weight).
+    route ``claim_count`` as the severity weight). Raises when every weight is
+    zero -- a weighted fit cannot move.
     """
-    if not isinstance(X, pd.DataFrame) or exposure_col is None or exposure_col not in X.columns:
-        return X, sample_weight
-    features = X.drop(columns=[exposure_col])
-    if sample_weight is None:
-        return features, X[exposure_col].to_numpy(dtype=float)
-    return features, np.asarray(sample_weight, dtype=float)
+    if isinstance(X, pd.DataFrame) and exposure_col and exposure_col in X.columns:
+        features = X.drop(columns=[exposure_col])
+        if sample_weight is None:
+            w = X[exposure_col].to_numpy(dtype=float)
+        else:
+            w = np.asarray(sample_weight, dtype=float)
+    else:
+        features, w = X, sample_weight
+    if w is not None and not np.asarray(w).any():
+        raise ValueError("All sample_weight entries are zero; cannot fit a weighted model.")
+    return features, w
 
 
 def _store_fit_meta(estimator, X):
@@ -64,13 +70,6 @@ def _store_fit_meta(estimator, X):
     else:
         allow_nan = bool(estimator.__sklearn_tags__().input_tags.allow_nan)
         validate_data(estimator, X=X, ensure_all_finite=not allow_nan)
-
-
-def _check_predict_meta(estimator, X):
-    """At predict-time, enforce consistent n_features_in_ on ndarray input."""
-    if not isinstance(X, pd.DataFrame):
-        allow_nan = bool(estimator.__sklearn_tags__().input_tags.allow_nan)
-        validate_data(estimator, X=X, reset=False, ensure_all_finite=not allow_nan)
 
 
 def _categorize_strings(X):
@@ -89,15 +88,6 @@ def _categorize_strings(X):
     for c in obj_cols:
         out[c] = out[c].astype("category")
     return out
-
-
-def _check_all_zero_weight(sample_weight):
-    if (
-        sample_weight is not None
-        and np.asarray(sample_weight).size > 0
-        and np.all(np.asarray(sample_weight) == 0)
-    ):
-        raise ValueError("All sample_weight entries are zero; cannot fit a weighted model.")
 
 
 class RiskGLM(RegressorMixin, BaseEstimator):
@@ -186,7 +176,6 @@ class RiskGLM(RegressorMixin, BaseEstimator):
     def fit(self, X, y, sample_weight=None):
         _store_fit_meta(self, X)
         X_features, w = _pop_weight(X, self.exposure_col, sample_weight)
-        _check_all_zero_weight(w)
         backend = self._make_backend()
         backend.fit(_categorize_strings(X_features), np.asarray(y, dtype=float), sample_weight=w)
         self.backend_ = backend
@@ -197,13 +186,11 @@ class RiskGLM(RegressorMixin, BaseEstimator):
 
     def predict(self, X):
         check_is_fitted(self, "backend_")
-        _check_predict_meta(self, X)
         X_features, _ = _pop_weight(X, self.exposure_col, None)
         return self.backend_.predict(_categorize_strings(X_features))
 
     def score(self, X, y, sample_weight=None):
         check_is_fitted(self, "backend_")
-        _check_predict_meta(self, X)
         X_features, w = _pop_weight(X, self.exposure_col, sample_weight)
         return self.backend_.score(
             _categorize_strings(X_features), np.asarray(y, dtype=float), sample_weight=w
@@ -380,7 +367,6 @@ class RiskGBM(RegressorMixin, BaseEstimator):
     def fit(self, X, y, sample_weight=None):
         _store_fit_meta(self, X)
         X_features, w = _pop_weight(X, self.exposure_col, sample_weight)
-        _check_all_zero_weight(w)
         X_backend = _categorize_strings(X_features)
         feature_names = list(X_backend.columns) if isinstance(X_backend, pd.DataFrame) else None
         categorical_names = (
@@ -401,12 +387,10 @@ class RiskGBM(RegressorMixin, BaseEstimator):
         )
         backend.fit(X_backend, np.asarray(y, dtype=float), sample_weight=w)
         self.backend_ = backend
-        self.n_iter_ = self.n_estimators
         return self
 
     def predict(self, X):
         check_is_fitted(self, "backend_")
-        _check_predict_meta(self, X)
         X_features, _ = _pop_weight(X, self.exposure_col, None)
         return self.backend_.predict(_categorize_strings(X_features))
 
@@ -417,7 +401,6 @@ class RiskGBM(RegressorMixin, BaseEstimator):
 
     def score(self, X, y, sample_weight=None):
         check_is_fitted(self, "backend_")
-        _check_predict_meta(self, X)
         X_features, w = _pop_weight(X, self.exposure_col, sample_weight)
         y = np.asarray(y, dtype=float)
         y_pred = self.backend_.predict(_categorize_strings(X_features))
