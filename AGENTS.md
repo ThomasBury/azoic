@@ -19,7 +19,7 @@ policy admin, Guidewire integration.
 - Install runtime only: `uv sync --no-dev`
 - Install default development environment: `uv sync`
 - Install everything: `uv sync --all-extras --all-groups`
-- Install tutorial stack: `uv sync --group demo --extra mlops --extra plot`
+- Install tutorial stack: `uv sync --group demo --extra mlops`
 - Run tests (fail fast): `uv run pytest -x`
 - Run all tests: `uv run pytest`
 - Lint: `uv run ruff check .`

@@ -28,7 +28,7 @@ Legend: ☐ pending · ◐ in progress · ☑ done
 - ☑ **v0.2 part 2** — canonical dataset fingerprints; exposure-weighted
   calibration bins; distinct numeric missing bins; YAML preprocessing and
   frequency-severity pipelines; pipeline-aware tariff export; standalone
-  comparison dashboard; one-million-row bin merge reduced from 3.12s to 0.066s.
+  comparison table; one-million-row bin merge reduced from 3.12s to 0.066s.
 - ☑ **M8 — executable freMTPL2 tutorial**
   - [x] unlabeled scoring fixed
   - [x] tutorial and demo dependency added

@@ -52,7 +52,7 @@ src/azoic/
   plots.py         plot_lorenz, plot_lift, plot_calibration, plot_one_way, plot_double_lift, plot_actual_vs_predicted (matplotlib)
   tariff.py        distill_gbm(); export_tariff(glm_or_pipeline, path) -> xlsx
   workflow.py      ExperimentConfig (preprocessing + freq-sev), run_experiment
-  reporting.py     model_card, comparison_table, comparison_dashboard
+  reporting.py     model_card, comparison_table
   mlops.py         log_run (thin mlflow; mlflow in [mlops] extra)
   tune.py          tune_experiment (optuna in [tune] extra)
   cli.py           Typer: profile / fit / compare / export-tariff / tune
@@ -164,13 +164,12 @@ Each is independently shippable. Done-when = acceptance check.
 ## 7. Later iterations (optional, none blocking)
 
 - **v0.2** — optuna objective (`deviance + calibration penalty`) **(M7 -- done)**,
-  monotonic binning + LGBM monotone_constraints and comparison dashboard **done**.
+  monotonic binning + LGBM monotone_constraints **done**.
   OOT is an opt-in use of `temporal_split` when the dataset has any sortable period
   column; equal periods remain on one side and missing periods are rejected. Without
   an ordered period, only non-temporal validation is possible.
-- **Conditional, no version** — add interactive Plotly diagnostic charts only when
-  users have a real business need to explore individual charts; the standalone
-  comparison dashboard already covers interactive model comparison. Add a Polars
+- **Conditional, no version** — add interactive diagnostic charts only when
+  users have a real business need to explore individual charts; add a Polars
   ingest extra only when a real portfolio demonstrates an unacceptable pandas
   load-time or RAM bottleneck; keep pandas at Azoic's module boundaries.
 - **v0.3** — GBM->tariff distillation **done**: positive-objective teachers use
@@ -191,10 +190,8 @@ lightgbm, pyarrow, pydantic, pyyaml, typer, matplotlib, openpyxl.
 - `aws` — s3fs
 - `mlops` — mlflow
 - `tune` — optuna
-- `plot` — plotly (comparison dashboard only; lazy import)
 - `demo` (dependency-group) — jupyter kernel for the executable tutorial
 - `dev` (dependency-group) — pytest, ruff, pre-commit
-- `docs` (dependency-group) — Zensical + mkdocstrings-python, documentation build only
 - `docs` (dependency-group) — Zensical + mkdocstrings-python, documentation build only
 
 `uv sync --no-dev` for runtime only; `uv sync` for the default development
@@ -221,7 +218,7 @@ is over-engineering unless a concrete need appears.
 | `selection/` module (5 classes) | flags = profiler columns | `screen_features(profile)` |
 | Hydra | one config, no composition yet | YAML + pydantic + Typer overrides |
 | polars + duckdb in core | pandas is canonical | add Polars only for a measured ingest bottleneck; duckdb = notebook habit |
-| plotly dual diagnostic backend | doubles test surface | existing Plotly comparison dashboard; add diagnostic charts only for a real business need |
+| plotly dual diagnostic backend | doubles test surface | matplotlib diagnostics only; add interactive charts only for a real business need |
 | Textual, PowerPoint, ALE, geopandas | YAGNI for v1 | cut until concrete demand; M8 remains one `.qmd`, with Zensical publishing it, with Zensical publishing it |
 | `pydantic AND dataclasses` | overlap | pydantic only |
 | `ModelCard.to_pdf` | windows weasyprint pain | md + html only |
@@ -233,7 +230,7 @@ is over-engineering unless a concrete need appears.
 | Python 3.12 (not 3.14) | glum/lightgbm wheels confirmed for 3.12; 3.14 too new |
 | Preprocessing built fresh (not ported from arfs) | no arfs source located in `~/projects` |
 | Defer Hydra | one config, no composition pain yet; Typer flags suffice |
-| matplotlib diagnostics by default | headless PNG/PDF free; Plotly remains limited to the comparison dashboard until interactive charts have a business need |
+| matplotlib diagnostics by default | headless PNG/PDF free; Plotly deferred until interactive charts have a business need |
 | Zensical site | task-first navigation and generated tutorial HTML; no custom theme or JavaScript |
 | glum + lightgbm in core (not extras) | GLM/GBM is the package's point; avoid ImportError-on-import wart |
 | mlflow in `mlops` extra (not core) | heavy; only needed at M6; `log_run` imports lazily |
