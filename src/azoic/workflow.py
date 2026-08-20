@@ -336,6 +336,14 @@ def _evaluate_split(
                 exposure=exp_test,
             ),
         }
+        obs_test_rate = obs_test_agg / exp_test
+        null_pred = np.full_like(obs_test_agg, obs_test_agg.sum() / exp_test.sum())
+        null_dev = mean_tweedie_deviance(
+            obs_test_rate, null_pred, sample_weight=exp_test, power=1.5
+        )
+        metrics["d2_test"] = (
+            1.0 - metrics["deviance_test"] / null_dev if null_dev > 0 else float("nan")
+        )
         cal = calibration_table(obs_test_agg, pred_test, exp_test, n_bins=10)
         params = dict(spec.params)
         if spec.kind == "frequency_severity":
