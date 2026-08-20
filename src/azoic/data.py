@@ -23,9 +23,7 @@ class DatasetSpec(BaseModel):
     target: str
     exposure: str
     claim_count: str | None = None
-    earned_premium: str | None = None
     time_col: str | None = None
-    id_col: str | None = None
 
     @field_validator("target", "exposure")
     @classmethod
@@ -36,7 +34,7 @@ class DatasetSpec(BaseModel):
 
     def required_columns(self) -> list[str]:
         cols = [self.target, self.exposure]
-        for opt in (self.claim_count, self.earned_premium, self.time_col, self.id_col):
+        for opt in (self.claim_count, self.time_col):
             if opt:
                 cols.append(opt)
         return cols
