@@ -248,7 +248,7 @@ def test_m6_acceptance_mlflow_run_records_params_metrics_artifacts(
         },
     )
     card_path = tmp_path / "card.md"
-    card_path.write_text(model_card(run, fmt="md"), encoding="utf-8")
+    card_path.write_text(model_card(run), encoding="utf-8")
     uri = _tracking_uri(tmp_path)
     run_id = log_run(
         run,

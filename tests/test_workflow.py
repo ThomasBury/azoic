@@ -236,6 +236,8 @@ models:
     assert isinstance(estimators["freq-sev"].named_steps["model"], FrequencySeverityModel)
     assert estimators["direct"].named_steps["model"].exposure_col == "exposure"
     assert np.isfinite(run.models["freq-sev"].metrics["deviance_test"])
+    assert np.isfinite(run.models["freq-sev"].metrics["d2_test"])
+    assert run.models["freq-sev"].metrics["d2_test"] <= 1.0
 
     outcome_columns = ["claim_amount", "claim_count"]
     labeled = pd.read_parquet(data)[[*run.feature_names, "exposure", *outcome_columns]]

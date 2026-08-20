@@ -1,4 +1,4 @@
-"""Tests for azoic.validation: make_strata, temporal_split."""
+"""Tests for azoic.validation: make_strata, temporal_split, stratified_random_split."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import pandas as pd
 import pytest
 from sklearn.model_selection import StratifiedKFold
 
-from azoic.validation import make_strata, temporal_split
+from azoic.validation import make_strata, stratified_random_split, temporal_split
 from tests.conftest import make_synthetic_portfolio
 
 
@@ -194,3 +194,62 @@ def test_temporal_split_rejects_missing_times_and_empty_cutoff_partitions() -> N
         temporal_split(df, "time", cutoff=0)
     with pytest.raises(ValueError, match="empty"):
         temporal_split(df, "time", cutoff=3)
+
+
+# stratified_random_split
+
+
+def test_stratified_random_split_returns_disjoint_indices_with_correct_sizes() -> None:
+    rng = np.random.default_rng(0)
+    strata = rng.integers(0, 3, size=1000)
+    train, test = stratified_random_split(strata, test_size=0.2, random_state=42)
+    assert len(train) == 800
+    assert len(test) == 200
+    assert set(train).isdisjoint(set(test))
+    assert len(train) + len(test) == 1000
+
+
+def test_stratified_random_split_balances_strata_ratios() -> None:
+    rng = np.random.default_rng(0)
+    strata = (rng.random(2000) < 0.05).astype(int)  # 5% positives
+    train, test = stratified_random_split(strata, test_size=0.2, random_state=42)
+    overall_pos = strata.mean()
+    test_pos = strata[test].mean()
+    assert abs(test_pos - overall_pos) < 0.01
+
+
+def test_stratified_random_split_is_deterministic_for_fixed_seed() -> None:
+    rng = np.random.default_rng(0)
+    strata = rng.integers(0, 4, size=500)
+    a_train, a_test = stratified_random_split(strata, test_size=0.25, random_state=7)
+    b_train, b_test = stratified_random_split(strata, test_size=0.25, random_state=7)
+    np.testing.assert_array_equal(a_train, b_train)
+    np.testing.assert_array_equal(a_test, b_test)
+
+
+def test_stratified_random_split_int_test_size() -> None:
+    strata = np.array([0, 1] * 50)
+    train, test = stratified_random_split(strata, test_size=20, random_state=0)
+    assert len(test) == 20
+    assert len(train) == 80
+
+
+def test_stratified_random_split_rejects_singleton_strata() -> None:
+    with pytest.raises(ValueError, match="at least 2"):
+        stratified_random_split(np.array([0, 1, 1]), test_size=0.5, random_state=0)
+
+
+def test_stratified_random_split_rejects_empty_input() -> None:
+    with pytest.raises(ValueError, match="empty"):
+        stratified_random_split(np.array([], dtype=int), test_size=0.5, random_state=0)
+
+
+def test_stratified_random_split_balances_claim_presence_on_synthetic_portfolio() -> None:
+    df = make_synthetic_portfolio(n=2000, seed=42)
+    claim_presence = (df["claim_count"].to_numpy() > 0).astype(int)
+    train, test = stratified_random_split(
+        claim_presence, test_size=0.2, random_state=42
+    )
+    overall_rate = claim_presence.mean()
+    assert abs(claim_presence[test].mean() - overall_rate) < 0.01
+    assert abs(claim_presence[train].mean() - overall_rate) < 0.01

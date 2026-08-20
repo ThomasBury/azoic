@@ -153,11 +153,11 @@ def test_tune_experiment_preserves_yaml_identity_params_in_final_run(
 
 def test_tune_experiment_return_estimators(tmp_path: Path) -> None:
     cfg = _config(tmp_path, models={"glm-tweedie": _glm()})
-    result, estimators = tune_experiment(cfg, n_trials=2, return_estimators=True)
+    result = tune_experiment(cfg, n_trials=2, return_estimators=True)
     assert isinstance(result, TuneResult)
-    assert set(estimators) == {"glm-tweedie"}
+    assert set(result.estimators) == {"glm-tweedie"}
     # The estimator is fitted (has coef_ from glum).
-    assert hasattr(estimators["glm-tweedie"], "coef_")
+    assert hasattr(result.estimators["glm-tweedie"], "coef_")
 
 
 def test_tune_experiment_reproducible_with_random_state(tmp_path: Path) -> None:
