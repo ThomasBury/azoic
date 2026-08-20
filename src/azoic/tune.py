@@ -28,7 +28,7 @@ constraints).
 
 from __future__ import annotations
 
-from typing import Any, Literal, overload
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
@@ -101,6 +101,9 @@ class TuneResult(BaseModel):
 
     ``best_params`` carries only the sampled (tuned) hyperparams per model; the
     identity params from the YAML live on ``Run.models[name].params``.
+    ``estimators`` is populated only when ``return_estimators=True`` (mirror of
+    the same kwarg on ``run_experiment``; needed by ``export_tariff`` after a
+    tuned run).
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid", arbitrary_types_allowed=True)
@@ -109,28 +112,7 @@ class TuneResult(BaseModel):
     best_values: dict[str, float]
     n_trials: int
     run: Run
-
-
-@overload
-def tune_experiment(
-    config: ExperimentConfig,
-    *,
-    n_trials: int = 20,
-    calibration_penalty: float = 1.0,
-    random_state: int = 42,
-    return_estimators: Literal[False] = False,
-) -> TuneResult: ...
-
-
-@overload
-def tune_experiment(
-    config: ExperimentConfig,
-    *,
-    n_trials: int = 20,
-    calibration_penalty: float = 1.0,
-    random_state: int = 42,
-    return_estimators: Literal[True],
-) -> tuple[TuneResult, dict[str, Any]]: ...
+    estimators: dict[str, Any] | None = None
 
 
 def tune_experiment(
@@ -140,7 +122,7 @@ def tune_experiment(
     calibration_penalty: float = 1.0,
     random_state: int = 42,
     return_estimators: bool = False,
-) -> TuneResult | tuple[TuneResult, dict[str, Any]]:
+) -> TuneResult:
     """Run an optuna study per named model; return a ``TuneResult`` whose
     ``run`` refits every selected model on outer training data and scores outer test.
 
@@ -150,9 +132,8 @@ def tune_experiment(
     deviance; raise the penalty until calibration loss shows up in the trial
     ordering).
 
-    ``return_estimators=True`` also returns ``{name: fitted_estimator}`` from
-    the final ``run_experiment`` (mirror of the same kwarg on
-    ``run_experiment``; needed by ``export_tariff`` after a tuned run).
+    ``return_estimators=True`` also populates ``TuneResult.estimators`` with
+    ``{name: fitted_estimator}`` from the final ``run_experiment``.
     """
     if n_trials < 1:
         raise ValueError(f"n_trials must be >= 1; got {n_trials}")
@@ -219,14 +200,12 @@ def tune_experiment(
             outer_test_idx,
             return_estimators=True,
         )
-        return (
-            TuneResult(
-                best_params=best_params,
-                best_values=best_values,
-                n_trials=int(n_trials),
-                run=run,
-            ),
-            estimators,
+        return TuneResult(
+            best_params=best_params,
+            best_values=best_values,
+            n_trials=int(n_trials),
+            run=run,
+            estimators=estimators,
         )
     run = _evaluate_split(final_config, df, outer_train_idx, outer_test_idx)
     return TuneResult(
