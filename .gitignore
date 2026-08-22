@@ -42,3 +42,4 @@ examples/fremtpl2_files/
 examples/.quarto/
 examples/_freeze/
 examples/_artifacts/
+examples/synthetic.parquet
