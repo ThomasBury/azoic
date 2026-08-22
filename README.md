@@ -5,6 +5,8 @@ premium) modelling: actuarial preprocessing, GLM (glum) + GBM (LightGBM),
 frequency-severity decomposition, actuarial diagnostics, reproducible runs,
 GBM-to-GLM distillation, and multiplicative tariff export.
 
+- Documentation: <https://thomasbury.github.io/azoic/>
+- Hosted freMTPL2 tutorial: <https://thomasbury.github.io/azoic/tutorial/fremtpl2.html>
 - Full spec and conventions: [`PRD.md`](PRD.md)
 - Agent quick rules: [`AGENTS.md`](AGENTS.md)
 - Status: [`PROGRESS.md`](PROGRESS.md)

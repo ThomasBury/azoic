@@ -40,9 +40,15 @@ Legend: ☐ pending · ◐ in progress · ☑ done
   GBMs distil to log-link GLM students on the existing train/test boundary;
   held-out fidelity and provenance travel in the three-sheet tariff workbook.
 - ☑ **v0.4 — Azoic release** — renamed distribution, imports, and CLI; Zensical site and GitHub Pages/PyPI OIDC workflows.
+- ☑ **Documentation onboarding** — complete install and network-free first-model
+  path; five focused guides; comprehensive configuration/CLI reference;
+  top-level freMTPL2 tutorial; official MathJax integration; runnable checkout
+  YAML.
 
 ## Current focus
 
-v0.3 GBM-to-tariff distillation is implemented. Adjacency-aware grouping, remote
-MLflow guidance, SHAP, and SageMaker remain demand-gated. Azoic 0.4.0 adds the renamed package, documentation site, and release workflows. Generated
-tutorial files and artifacts stay ignored.
+Azoic 0.4.0 includes the renamed package, task-first documentation site,
+network-free onboarding example, and hosted freMTPL2 tutorial. Adjacency-aware
+grouping, remote MLflow guidance, SHAP, and SageMaker remain demand-gated.
+Generated site, tutorial files, charts, workbooks, fetched data, reports, and
+MLflow state stay ignored.

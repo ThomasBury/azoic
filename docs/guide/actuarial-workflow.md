@@ -1,121 +1,110 @@
 # Actuarial workflow
 
-Profile features, split (temporally when policy-time is available, random
-otherwise), compare ranking with Gini and the Lorenz curve, compare adequacy
-with the calibration table, O/P ratio and exposure-weighted deviance, and
-evaluate the untouched outer test set once.
+Azoic follows one explicit path: understand the portfolio, preserve a final
+holdout, fit candidates under the same exposure convention, and judge ranking,
+calibration, and business plausibility together.
 
-## Reading the diagnostics
+## The sequence
 
-Every diagnostic answers a different question; a verdict needs them all. The
-metrics live in `azoic.metrics`; the charts in `azoic.plots`; the API contract
-is `metrics.py` returns tables, `plots.py` renders them.
+1. Validate target, exposure, claim-count, feature, and time columns.
+2. Profile features and decide which variables to keep, bin, group, or drop.
+3. Reserve an untouched temporal test set when an ordered policy-time field
+   exists; otherwise use a documented non-temporal holdout.
+4. Select preprocessing and model parameters only inside the training data.
+5. Refit the selected candidates on the outer training data and evaluate the
+   outer test once.
+6. Review diagnostics and relativities before reporting or exporting a tariff.
 
-### What each metric tells you
+!!! danger "Leakage boundary"
 
-**Gini — ranking only, not accuracy.** A concentration Gini in the actuarial
-sense: rank policies by descending predicted pure premium and compute the area
-between the cumulative-claims curve and the diagonal. Equal prediction scores
-are aggregated into tied blocks before integration, so row order inside a tie
-cannot change the result.
+    A final test result is evidence only if outcomes, preprocessing decisions,
+    and tuning trials did not influence that partition. Azoic tuning uses an
+    inner split of outer training data and evaluates outer test data once.
 
-The most important consequence is that any monotonic increasing transformation
-of the predictions leaves the Gini unchanged — only the rank order matters.
+!!! important "Pure-premium weighting"
 
-```python
-import numpy as np
-from azoic.metrics import gini
+    For a rate response, use
+    \(y_i = \text{claim amount}_i / \text{exposure}_i\) with exposure as
+    `sample_weight`. Use a log-exposure offset only for an aggregate claim
+    amount response. Never combine the two formulations.
 
-raw = np.asarray(predictions)
-print(f"Gini on rates:      {gini(y_test, raw, exposure):.6f}")
-print(f"Gini on exp(rates): {gini(y_test, np.exp(raw), exposure):.6f}")
-# Identical to at least six decimals.
-```
+The special columns travel inside `X` so scikit-learn pipelines and
+`GridSearchCV` can route them. Estimators remove those columns before fitting
+features.
 
-Two models with the same Gini can charge very different totals. The metric is
-diagnostic of ranking, never of pricing level.
+## Read each diagnostic for its own question
 
-**Weighted deviance — the proper score for the response distribution.** Smaller
-is better. Use Poisson deviance for frequency, Gamma deviance for severity,
-Tweedie deviance (with the right variance power) for pure premium. Azoic
-re-exports `sklearn.metrics.mean_{poisson,gamma,tweedie}_deviance`, all of
-which accept `sample_weight`. One deviance unit does not translate directly to
-euros — when the true distribution differs from the assumed, deviance is a
-proxy for accuracy, not a measurement of it.
+### Ranking
 
-**$D^2$ — explained-deviance share.** $D^2 = 1 - \text{deviance} / \text{null deviance}$, where
-the null model is the exposure-weighted mean. Higher is better. $D^2$ is only
-comparable between models of the same response and same family; a frequency
-$D^2$ cannot be ranked against a severity $D^2$.
+The concentration Gini orders policies from safest to riskiest by predicted
+pure premium. Equal scores are aggregated before integration, so row order
+inside a tied score cannot change the result. Positive Gini means observed
+claims concentrate in the high-predicted-risk tail.
 
-**A/E (actual / expected) $\equiv$ O/P ratio.** $A/E = \sum_i w_i y_i / \sum_i w_i \hat{p}_i$. An O/P
-ratio near 1 is necessary but not sufficient: a portfolio can hit 1.0 with
-offsetting biases that cancel across segments. Always segment-check.
+A monotonic transformation of predictions leaves Gini unchanged. It therefore
+cannot establish correct premium level.
 
-**Lift by decile.** Each predicted-risk decile's observed pure premium divided
-by the portfolio observed pure premium. Bars above 1.0 in the high-predicted-risk
-tail expose ranking. The decile range is the rank-quality part; the gap between
-observed and predicted is the calibration part.
+### Distributional accuracy
 
-### What each chart tells you
+Exposure-weighted deviance is a proper score for the assumed response family.
+Smaller is better when models use the same response, holdout, and family.
+Compare Poisson with Poisson, Gamma with Gamma, and Tweedie with the same
+Tweedie power.
 
-**Lorenz curve (`plot_lorenz`).** The area between the diagonal and the curve
-is the Gini. A curve dominates only when it does not cross another curve;
-crossing curves are not a ranking win. Good models bow the curve below the
-diagonal; the diagonal itself is random ranking.
+Explained deviance is
 
-**Lift chart (`plot_lift`).** Observed and predicted per segment vs the
-portfolio baseline (default 1.0). The two should track on absolute level
-(calibration) and the observed should rise with the decile (ranking). Crossing
-signals that the model over-estimates in some deciles and under-estimates in
-others.
+\[
+D^2 = 1 - \frac{\text{candidate deviance}}{\text{null deviance}}.
+\]
 
-**Calibration chart (`plot_calibration`).** Observed vs predicted pure premium
-per segment with the y=x reference. Dispersion around the diagonal is
-calibration error; Gini/ranking is read from the Lorenz plot, not this one.
+Higher is better, but \(D^2\) values from different response families are not
+comparable.
 
-**One-way chart (`plot_one_way`).** Per-feature observed vs predicted pure
-premium with exposure-share bars on a secondary axis. The predicted lines should
-sit close to the observed line per feature level. A bowed observed line without
-a matching predicted line is systematic miscalibration by segment, not bad
-ranking. For wide-cardinality numeric features, `one_way_table` exposure-
-weight-buckets the column into deciles by default.
+### Portfolio and segment calibration
 
-**Double-lift chart (`plot_double_lift`).** Orders policies by the A/B ratio
-of two predictions and looks at observed rates across ratio deciles. Rising
-observed across deciles favours A; falling favours B. Flat, noisy, or crossing
-evidence is inconclusive. The middle deciles carry the most diagnostic signal;
-the endpoints are anchored by construction (they collect the extreme-ratio
-rows).
+The observed/predicted ratio is
 
-### What a good model looks like — the five-line checklist
+\[
+\frac{O}{P}
+=
+\frac{\sum_i \text{claim amount}_i}
+     {\sum_i \text{exposure}_i\,\widehat{\text{pure premium}}_i}.
+\]
 
-Apply these five tests to a candidate model's diagnostics on the held-out set.
-A verdict needs agreement across them.
+An O/P ratio near 1 is necessary, not sufficient. Opposing segment biases can
+cancel at portfolio level, so inspect calibration and one-way tables as well.
 
-1. **Accuracy.** Deviance and $D^2$ are smaller / larger than a within-family
-   benchmark. Pair Tweedie-deviance with Tweedie-deviance; Poisson with Poisson;
-   never cross families.
-3. **Portfolio calibration.** A/E near 1, with credible sub-segments checked
-   through the one-way charts. A model that hits 1.0 globally but bows every
-   one-way is miscalibrated inside the portfolio.
-4. **Ranking.** Positive Gini; the Lorenz curve dominates the benchmark without
-   crossing; monotonic invariance verified on a re-prediction.
-5. **Lift.** Observed per-decile tracks predicted in level; the decile range is
-   large; no crossings of observed and predicted.
-6. **Business.** Relativities make sense (a younger driver pays more than a
-   middle-aged driver; an older vehicle has higher severity); fairness check
-   passes; the model is stable when re-fit on a resample.
+### Visual evidence
 
-### The process in a nutshell
+| View | Question | Useful signal | Boundary |
+|---|---|---|---|
+| Lorenz curve | Does the model rank risk? | A curve below the diagonal and non-crossing dominance over a benchmark | Crossing curves do not establish one winner |
+| Lift chart | Does observed risk rise with predicted decile, and do levels agree? | Increasing observed lift with observed and predicted lines close together | Wide gaps are calibration errors, not ranking errors |
+| Calibration chart | Are segment predictions on level? | Exposure-heavy points near the diagonal | It says nothing about individual-policy accuracy |
+| One-way chart | Is a feature segment systematically mispriced? | Observed and predicted lines track across credible levels | Thin-exposure levels are noisy |
+| Double-lift chart | Where do two models disagree, and which ordering matches outcomes? | A clear observed trend across prediction-ratio deciles | Flat or crossing evidence is inconclusive |
+| Actual vs predicted | Where is policy-level density and residual structure? | Dense mass near the reference with residuals around zero | Zero-heavy claims make individual points noisy |
 
-Load audited claims with a documented cap, split off an untouched test set,
-select every hyperparameter (Tweedie variance power, GLM regularization,
-LightGBM grid) on the development split, fit the same protocol on the chosen
-model families, produce the final pure-premium estimates, then apply the five
-checks above to the same test set and weigh them jointly. No single number
-makes a pricing decision; the verdict is the agreement of accuracy,
-calibration, ranking, and business constraints.
+The [diagnostics and visualization guide](diagnostics-visualization.md) contains
+the runnable table and plotting recipes.
 
-The [freMTPL2 tutorial](../../tutorial/fremtpl2.html) renders every chart and
-table in this page on a public French motor portfolio.
+## Five checks before choosing a model
+
+1. **Accuracy.** Held-out deviance beats a within-family benchmark and
+   \(D^2\) improves.
+2. **Portfolio calibration.** O/P is credible, and one-way views do not reveal
+   material offsetting bias.
+3. **Ranking.** Gini is positive and the Lorenz curve improves without relying
+   on calibration claims.
+4. **Lift.** Observed risk generally rises with predicted risk while observed
+   and predicted levels remain close.
+5. **Business review.** Relativities are plausible, fairness and governance
+   checks pass, and the result is stable enough for its decision.
+
+No single metric makes a pricing decision. The conclusion comes from agreement
+between distributional accuracy, ranking, calibration, stability, and business
+constraints.
+
+[Profile and preprocess data](data-preprocessing.md){ .md-button .md-button--primary }
+[Compare model families](model-choice.md){ .md-button }
+[Open the complete tutorial](fremtpl2.md){ .md-button }

@@ -62,6 +62,13 @@ src/azoic/
 table = DataFrame; run = frozen pydantic result) mean stopping after any
 milestone never forces a refactor.
 
+Documentation uses a task-first Zensical layout: `getting-started/` for
+installation and the network-free first model, `guide/` for the conceptual
+workflow plus five focused task guides and the freMTPL2 bridge, `reference/`
+for comprehensive configuration/CLI and generated Python API pages, and
+`javascripts/` only for the official MathJax integration. The Quarto tutorial
+remains `examples/fremtpl2.qmd` and is linked rather than restyled.
+
 ## 4. Model API conventions
 
 ### Special columns travel inside X (not as fit kwargs)
@@ -161,6 +168,15 @@ Each is independently shippable. Done-when = acceptance check.
   green, and `just demo` renders one self-contained HTML tutorial from a clean
   generated-artifact state without making generated files visible to Git.*
 
+- **v0.4 documentation onboarding**: task-first Zensical home, complete install
+  and first-model path, five focused guides, comprehensive configuration/CLI
+  reference, prominent freMTPL2 bridge, and MathJax 3 using Zensical's official
+  helper. The default theme and existing dependencies remain unchanged.
+  *Done when the documented first model and checkout YAML run,
+  `just docs-build` is strict-green, generated HTML contains navigation, tables,
+  highlighted code, Arithmatex wrappers, and both MathJax scripts, and project
+  checks remain green.*
+
 ## 7. Later iterations (optional, none blocking)
 
 - **v0.2** — optuna objective (`deviance + calibration penalty`) **(M7 -- done)**,
@@ -176,9 +192,9 @@ Each is independently shippable. Done-when = acceptance check.
   the existing experiment holdout for fidelity metrics and export a log-link GLM
   student through the unchanged three-sheet workbook contract.
 - **Conditional, no version** — adjacency-aware geo grouping waits for a portfolio
-  with real adjacency; remote MLflow waits for an endpoint; Zensical waits for
-  multi-page publishing demand; SHAP waits for interventional explanations or SHAP
-  plots; SageMaker waits for a named target environment. LightGBM native
+  with real adjacency; remote MLflow waits for an endpoint; SHAP waits for
+  interventional explanations or SHAP plots; SageMaker waits for a named target
+  environment. LightGBM native
   contributions cover basic explanations without another dependency.
 
 ## 8. Dependencies
@@ -218,8 +234,13 @@ is over-engineering unless a concrete need appears.
 | `selection/` module (5 classes) | flags = profiler columns | `screen_features(profile)` |
 | Hydra | one config, no composition yet | YAML + pydantic + Typer overrides |
 | polars + duckdb in core | pandas is canonical | add Polars only for a measured ingest bottleneck; duckdb = notebook habit |
+<<<<<<< HEAD
 | plotly dual diagnostic backend | doubles test surface | matplotlib diagnostics only; add interactive charts only for a real business need |
 | Textual, PowerPoint, ALE, geopandas | YAGNI for v1 | cut until concrete demand; M8 remains one `.qmd`, with Zensical publishing it, with Zensical publishing it |
+=======
+| plotly dual diagnostic backend | doubles test surface | existing Plotly comparison dashboard; add diagnostic charts only for a real business need |
+| Textual, PowerPoint, ALE, geopandas | YAGNI for v1 | cut until concrete demand; M8 remains one `.qmd` linked from Zensical |
+>>>>>>> 69f8553 (docs: add task-first onboarding guides)
 | `pydantic AND dataclasses` | overlap | pydantic only |
 | `ModelCard.to_pdf` | windows weasyprint pain | md + html only |
 
@@ -230,8 +251,13 @@ is over-engineering unless a concrete need appears.
 | Python 3.12 (not 3.14) | glum/lightgbm wheels confirmed for 3.12; 3.14 too new |
 | Preprocessing built fresh (not ported from arfs) | no arfs source located in `~/projects` |
 | Defer Hydra | one config, no composition pain yet; Typer flags suffice |
+<<<<<<< HEAD
 | matplotlib diagnostics by default | headless PNG/PDF free; Plotly deferred until interactive charts have a business need |
 | Zensical site | task-first navigation and generated tutorial HTML; no custom theme or JavaScript |
+=======
+| matplotlib diagnostics by default | headless PNG/PDF free; Plotly remains limited to the comparison dashboard until interactive charts have a business need |
+| Zensical site | task-first navigation and generated tutorial HTML; default theme; JavaScript limited to Zensical's official MathJax helper and CDN runtime |
+>>>>>>> 69f8553 (docs: add task-first onboarding guides)
 | glum + lightgbm in core (not extras) | GLM/GBM is the package's point; avoid ImportError-on-import wart |
 | mlflow in `mlops` extra (not core) | heavy; only needed at M6; `log_run` imports lazily |
 | No additional OOT workflow helpers | `time_col` is optional and already accepts any sortable period (including year-month); a dataset without an ordered period cannot support OOT validation |

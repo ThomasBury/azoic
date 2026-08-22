@@ -1,6 +1,10 @@
 [project]
 site_name = "Azoic"
 site_url = "https://thomasbury.github.io/azoic/"
+extra_javascript = [
+    "javascripts/mathjax.js",
+    "https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js",
+]
 nav = [
     {"Home" = "index.md"},
     {"Get started" = [
@@ -8,10 +12,14 @@ nav = [
         {"First model" = "getting-started/first-model.md"},
     ]},
     {"Guide" = [
-        {"Model choice" = "guide/model-choice.md"},
         {"Actuarial workflow" = "guide/actuarial-workflow.md"},
-        {"freMTPL2 tutorial" = "guide/fremtpl2.md"},
+        {"Data profiling and preprocessing" = "guide/data-preprocessing.md"},
+        {"Model choice and fitting" = "guide/model-choice.md"},
+        {"Experiments and CLI" = "guide/experiment-configuration.md"},
+        {"Diagnostics and visualization" = "guide/diagnostics-visualization.md"},
+        {"Reporting and operations" = "guide/operations.md"},
     ]},
+    {"Tutorial" = "guide/fremtpl2.md"},
     {"Reference" = [
         {"Configuration and CLI" = "reference/configuration-cli.md"},
         {"Data and preparation" = "reference/data-preparation.md"},
@@ -20,6 +28,15 @@ nav = [
     ]},
     {"Migration to 0.4" = "migration.md"},
 ]
+
+[project.markdown_extensions]
+admonition = {}
+attr_list = {}
+md_in_html = {}
+tables = {}
+pymdownx.arithmatex.generic = true
+pymdownx.highlight = {}
+pymdownx.superfences = {}
 
 [project.plugins.mkdocstrings.handlers.python]
 paths = ["src"]

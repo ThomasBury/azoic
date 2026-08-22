@@ -54,6 +54,17 @@ examples/fremtpl2.qmd # source-only executable freMTPL2 tutorial
 13 flat modules. No `utils`. No subpackages. Don't create either without
 checking `PRD.md` sections 3 and 9.
 
+Documentation is task-first:
+
+```
+docs/
+  getting-started/  # installation and one network-free first model
+  guide/            # workflow plus five focused task guides and tutorial bridge
+  reference/        # generated Python API plus comprehensive config/CLI schema
+  javascripts/      # official Zensical MathJax integration only
+examples/fremtpl2.qmd  # Quarto source; linked, not restyled, by Zensical
+```
+
 ## Code style
 
 - **sklearn API** — `fit`/`transform`/`predict`, fitted attrs end in `_`, no
@@ -69,6 +80,9 @@ checking `PRD.md` sections 3 and 9.
   <trigger>`.
 - **No comments unless they encode a non-obvious rule** (e.g. the actuarial
   rules below) — code reads as intent.
+- **Documentation** — keep Zensical's default theme; use cards only on section
+  hubs; JavaScript is limited to the official MathJax helper/runtime; never
+  commit generated site, tutorial, chart, or fetched-data artifacts.
 - **Format**: ruff defaults, double quotes, line-length 100, py312 target.
 
 ## Actuarial rules (do not violate; full context in PRD.md sections 4-5)
