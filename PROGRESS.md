@@ -48,7 +48,7 @@ Legend: ☐ pending · ◐ in progress · ☑ done
   YAML.
 - ☑ **M9 — contract and residual correctness (v0.4.1)** — standardize estimator
   and residual rate contracts; reconcile CLI/reporting documentation.
-- ☐ **M10 — configuration-driven tuning** — typed optional trial settings and
+- ☑ **M10 — configuration-driven tuning** — typed optional trial settings and
   per-model parameter distributions with defaults preserved.
 - ☐ **M11 — temporal stability diagnostics** — period-level exposure, totals,
   O/P, Gini, deviance, and \(D^2\) with full-input reconciliation.
@@ -59,6 +59,6 @@ Legend: ☐ pending · ◐ in progress · ☑ done
 
 ## Current focus
 
-- M10 is the sole next milestone.
-- M11 must not begin until M10 is marked complete.
+- M11 is the sole next milestone.
+- M12 must not begin until M11 is marked complete.
 - Demand-gated items are not implementation work without new evidence.
