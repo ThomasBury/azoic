@@ -14,6 +14,10 @@ runs, multiplicative tariff xlsx export.
 **Is**: pricing/pure-premium modelling. **Is NOT**: reserving, fraud, AutoML,
 policy admin, Guidewire integration.
 
+## Milestone execution
+
+> Implement exactly one pending milestone per session. Mark it ◐ before implementation, run its acceptance checks, mark it ☑ only when green, then stop with a handoff. Do not start the next milestone automatically.
+
 ## Setup commands
 
 - Install runtime only: `uv sync --no-dev`

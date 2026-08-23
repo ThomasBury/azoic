@@ -5,6 +5,8 @@
 
 Legend: ☐ pending · ◐ in progress · ☑ done
 
+> Implement exactly one pending milestone per session. Mark it ◐ before implementation, run its acceptance checks, mark it ☑ only when green, then stop with a handoff. Do not start the next milestone automatically.
+
 ## Milestones
 
 - ☑ **M0 — scaffold** — uv, src layout, ruff, pytest, pre-commit,
@@ -44,11 +46,19 @@ Legend: ☐ pending · ◐ in progress · ☑ done
   path; five focused guides; comprehensive configuration/CLI reference;
   top-level freMTPL2 tutorial; official MathJax integration; runnable checkout
   YAML.
+- ☐ **M9 — contract and residual correctness (v0.4.1)** — standardize estimator
+  and residual rate contracts; reconcile CLI/reporting documentation.
+- ☐ **M10 — configuration-driven tuning** — typed optional trial settings and
+  per-model parameter distributions with defaults preserved.
+- ☐ **M11 — temporal stability diagnostics** — period-level exposure, totals,
+  O/P, Gini, deviance, and \(D^2\) with full-input reconciliation.
+- ☐ **M12 — protected-group audit** — prevent protected-column leakage and retain
+  held-out subgroup calibration evidence.
+- ☐ **M13 — interpretation recipes** — sklearn PDP/ICE and LightGBM native
+  contribution examples without new wrappers or explanation dependencies.
 
 ## Current focus
 
-Azoic 0.4.0 includes the renamed package, task-first documentation site,
-network-free onboarding example, and hosted freMTPL2 tutorial. Adjacency-aware
-grouping, remote MLflow guidance, SHAP, and SageMaker remain demand-gated.
-Generated site, tutorial files, charts, workbooks, fetched data, reports, and
-MLflow state stay ignored.
+- M9 is the sole next milestone.
+- M10 must not begin until M9 is marked complete.
+- Demand-gated items are not implementation work without new evidence.

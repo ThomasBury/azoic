@@ -136,7 +136,7 @@ Each is independently shippable. Done-when = acceptance check.
   lorenz/lift/calibration figures (matplotlib). Timestamp ties stay on one side
   of temporal holdouts. *Done when figures render headless to PNG.*
 - **M5 — workflow + CLI**: YAML -> `ExperimentConfig`, `run_experiment()`,
-  model card md/html, and CLI commands `profile`, `fit`, `compare`,
+  Markdown model card, and CLI commands `profile`, `fit`, `compare`,
   `export-tariff`, and `tune`. *Done when an example
   config runs end-to-end on synthetic data.*
 - **M6 — tariff + mlops**: `export_tariff` -> xlsx (base/factors/mappings
@@ -177,6 +177,35 @@ Each is independently shippable. Done-when = acceptance check.
   highlighted code, Arithmatex wrappers, and both MathJax scripts, and project
   checks remain green.*
 
+- **M9 — contract and residual correctness (v0.4.1)**: standardize estimator
+  prediction and scoring units; validate a supplied rate target in
+  `FrequencySeverityModel`; correct actual-versus-predicted and residual plots
+  to compare observed and predicted rates; and reconcile stale CLI/reporting
+  documentation. *Done when contract tests, residual-unit tests, `just check`,
+  and `just docs-build` pass.*
+- **M10 — configuration-driven tuning**: add optional typed tuning configuration
+  with trial count, calibration penalty, and per-model parameter distributions.
+  Preserve existing defaults when it is absent. Reject identity-defining
+  parameters; nested frequency-severity tuning remains out of scope. *Done when
+  YAML validation, reproducibility, explicit CLI precedence, and untouched
+  outer-holdout tests pass.*
+- **M11 — temporal stability diagnostics**: add `stability_table` with exposure,
+  observed and predicted totals, O/P, Gini, deviance, and \(D^2\) by period.
+  Reject missing periods and reconcile period totals to the full input. Rolling
+  refit orchestration and a new plotting backend remain out of scope. *Done when
+  seeded synthetic temporal tests and project checks pass.*
+- **M12 — protected-group audit**: add protected columns to the dataset contract,
+  exclude them from model features, and retain them for held-out group
+  calibration. Surface evidence in results and model cards without universal
+  fairness thresholds or legal conclusions. Reuse `calibration_table`; add no
+  fairness dependency. *Done when leakage-prevention and subgroup-to-portfolio
+  reconciliation tests pass.*
+- **M13 — interpretation recipes**: document sklearn PDP/ICE and LightGBM native
+  contributions using fitted Azoic estimators and pipelines. Explain
+  correlated-feature and causal-interpretation limits. Add no Azoic wrapper and
+  no DALEX/SHAP dependency. *Done when examples run on synthetic data and the
+  strict docs build passes.*
+
 ## 7. Later iterations (optional, none blocking)
 
 - **v0.2** — optuna objective (`deviance + calibration penalty`) **(M7 -- done)**,
@@ -192,10 +221,21 @@ Each is independently shippable. Done-when = acceptance check.
   the existing experiment holdout for fidelity metrics and export a log-link GLM
   student through the unchanged three-sheet workbook contract.
 - **Conditional, no version** — adjacency-aware geo grouping waits for a portfolio
-  with real adjacency; remote MLflow waits for an endpoint; SHAP waits for
-  interventional explanations or SHAP plots; SageMaker waits for a named target
-  environment. LightGBM native
-  contributions cover basic explanations without another dependency.
+  with real adjacency; remote MLflow waits for an endpoint; SageMaker waits for
+  a named target environment.
+
+Demand-gated decisions below are not pending milestones:
+
+- **Exact fused/group lasso** — first test existing monotonic preprocessing and
+  glum quadratic difference penalties on a real unstable ordered factor.
+- **Second-stage residual modelling** — require an out-of-fold correction design
+  and a stable untouched-holdout improvement over direct GBM.
+- **Large-loss tail modelling** — require claim-level severities and a defined
+  capping, censoring, or excess-loading objective.
+- **Guidewire adapter** — the existing workbook covers manual entry; require a
+  concrete importer contract before integration work.
+- **ALE, SHAP, or DALEX** — add an optional explanation extra only when PDP/ICE
+  or native contributions are insufficient.
 
 ## 8. Dependencies
 
@@ -234,15 +274,10 @@ is over-engineering unless a concrete need appears.
 | `selection/` module (5 classes) | flags = profiler columns | `screen_features(profile)` |
 | Hydra | one config, no composition yet | YAML + pydantic + Typer overrides |
 | polars + duckdb in core | pandas is canonical | add Polars only for a measured ingest bottleneck; duckdb = notebook habit |
-<<<<<<< HEAD
-| plotly dual diagnostic backend | doubles test surface | matplotlib diagnostics only; add interactive charts only for a real business need |
-| Textual, PowerPoint, ALE, geopandas | YAGNI for v1 | cut until concrete demand; M8 remains one `.qmd`, with Zensical publishing it, with Zensical publishing it |
-=======
 | plotly dual diagnostic backend | doubles test surface | existing Plotly comparison dashboard; add diagnostic charts only for a real business need |
 | Textual, PowerPoint, ALE, geopandas | YAGNI for v1 | cut until concrete demand; M8 remains one `.qmd` linked from Zensical |
->>>>>>> 69f8553 (docs: add task-first onboarding guides)
 | `pydantic AND dataclasses` | overlap | pydantic only |
-| `ModelCard.to_pdf` | windows weasyprint pain | md + html only |
+| `ModelCard.to_pdf` | windows weasyprint pain | Markdown-only `model_card()` |
 
 ## 10. Decisions log
 
@@ -251,13 +286,8 @@ is over-engineering unless a concrete need appears.
 | Python 3.12 (not 3.14) | glum/lightgbm wheels confirmed for 3.12; 3.14 too new |
 | Preprocessing built fresh (not ported from arfs) | no arfs source located in `~/projects` |
 | Defer Hydra | one config, no composition pain yet; Typer flags suffice |
-<<<<<<< HEAD
-| matplotlib diagnostics by default | headless PNG/PDF free; Plotly deferred until interactive charts have a business need |
-| Zensical site | task-first navigation and generated tutorial HTML; no custom theme or JavaScript |
-=======
 | matplotlib diagnostics by default | headless PNG/PDF free; Plotly remains limited to the comparison dashboard until interactive charts have a business need |
 | Zensical site | task-first navigation and generated tutorial HTML; default theme; JavaScript limited to Zensical's official MathJax helper and CDN runtime |
->>>>>>> 69f8553 (docs: add task-first onboarding guides)
 | glum + lightgbm in core (not extras) | GLM/GBM is the package's point; avoid ImportError-on-import wart |
 | mlflow in `mlops` extra (not core) | heavy; only needed at M6; `log_run` imports lazily |
 | No additional OOT workflow helpers | `time_col` is optional and already accepts any sortable period (including year-month); a dataset without an ordered period cannot support OOT validation |
