@@ -15,27 +15,26 @@ are refit on all outer training rows and evaluated once for the returned
 canonical ``Run``.
 
 The default search space touches only regularization / tree-structure
-hyperparams. The YAML's identity-defining params (``family`` / ``link`` /
-``objective`` / ``tweedie_power`` / ``tweedie_variance_power`` /
-``exposure_col``) stay put, so PRD rules 1 and 4 are never violated by a
-search suggestion.
-
-ponytail: ceiling -- one default search space per ``kind`` (glm/gbm). Add a
-config-driven ``search_space`` when a real portfolio needs model-specific
-ranges or extra params (``subsample`` / ``colsample_bytree`` / monotone
-constraints).
+hyperparams. A typed custom model space replaces that model's default space.
+Identity, routing, and seed params stay put, so PRD rules 1 and 4 are never
+violated by a search suggestion.
 """
 
 from __future__ import annotations
 
+from math import isfinite
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
 from azoic.data import load_data
 from azoic.workflow import (
+    CategoricalDistribution,
     ExperimentConfig,
+    FloatDistribution,
+    IntDistribution,
     ModelSpec,
+    ParameterDistribution,
     Run,
     _evaluate_split,
     _split_indices,
@@ -45,7 +44,12 @@ from azoic.workflow import (
 __all__ = ["tune_experiment", "TuneResult"]
 
 
-def _suggest(trial, kind: str, base: dict[str, Any]) -> dict[str, Any]:
+def _suggest(
+    trial,
+    kind: str,
+    base: dict[str, Any],
+    search_space: dict[str, ParameterDistribution] | None = None,
+) -> dict[str, Any]:
     """Default actuarial-safe search space per ``kind``.
 
     Identity params (``family`` / ``link`` / ``objective`` / ``exposure_col`` /
@@ -54,6 +58,27 @@ def _suggest(trial, kind: str, base: dict[str, Any]) -> dict[str, Any]:
     inviolable under search.
     """
     out = dict(base)
+    if search_space is not None:
+        for name, distribution in search_space.items():
+            if isinstance(distribution, FloatDistribution):
+                out[name] = trial.suggest_float(
+                    name,
+                    distribution.low,
+                    distribution.high,
+                    step=distribution.step,
+                    log=distribution.log,
+                )
+            elif isinstance(distribution, IntDistribution):
+                out[name] = trial.suggest_int(
+                    name,
+                    distribution.low,
+                    distribution.high,
+                    step=distribution.step,
+                    log=distribution.log,
+                )
+            elif isinstance(distribution, CategoricalDistribution):
+                out[name] = trial.suggest_categorical(name, distribution.choices)
+        return out
     if kind == "glm":
         out["alpha"] = trial.suggest_float("alpha", 1e-6, 1.0, log=True)
         out["l1_ratio"] = trial.suggest_float("l1_ratio", 0.0, 1.0)
@@ -85,11 +110,12 @@ def _make_objective(
     df,
     train_idx,
     test_idx,
+    search_space: dict[str, ParameterDistribution] | None,
 ):
     def objective(trial):
-        tuned_params = _suggest(trial, spec.kind, dict(spec.params))
+        tuned_params = _suggest(trial, spec.kind, dict(spec.params), search_space)
         tuned_spec = spec.model_copy(update={"params": tuned_params})
-        tuned_config = config.model_copy(update={"models": {name: tuned_spec}})
+        tuned_config = config.model_copy(update={"models": {name: tuned_spec}, "tuning": None})
         run = _evaluate_split(tuned_config, df, train_idx, test_idx)
         return _objective_value(run.models[name].metrics, calibration_penalty)
 
@@ -118,8 +144,8 @@ class TuneResult(BaseModel):
 def tune_experiment(
     config: ExperimentConfig,
     *,
-    n_trials: int = 20,
-    calibration_penalty: float = 1.0,
+    n_trials: int | None = None,
+    calibration_penalty: float | None = None,
     random_state: int = 42,
     return_estimators: bool = False,
 ) -> TuneResult:
@@ -132,11 +158,23 @@ def tune_experiment(
     deviance; raise the penalty until calibration loss shows up in the trial
     ordering).
 
+    Explicit ``n_trials`` and ``calibration_penalty`` values override
+    ``config.tuning``; omitted values use YAML, then 20 and 1.0.
     ``return_estimators=True`` also populates ``TuneResult.estimators`` with
     ``{name: fitted_estimator}`` from the final ``run_experiment``.
     """
+    if n_trials is None:
+        n_trials = config.tuning.n_trials if config.tuning is not None else 20
+    if calibration_penalty is None:
+        calibration_penalty = (
+            config.tuning.calibration_penalty if config.tuning is not None else 1.0
+        )
     if n_trials < 1:
         raise ValueError(f"n_trials must be >= 1; got {n_trials}")
+    if not isfinite(calibration_penalty) or calibration_penalty < 0:
+        raise ValueError(
+            f"calibration_penalty must be a non-negative finite value; got {calibration_penalty}"
+        )
     unsupported = [
         name for name, spec in config.models.items() if spec.kind == "frequency_severity"
     ]
@@ -175,6 +213,7 @@ def tune_experiment(
                 df,
                 inner_train_idx,
                 inner_test_idx,
+                config.tuning.search_space.get(name) if config.tuning is not None else None,
             ),
             n_trials=n_trials,
         )

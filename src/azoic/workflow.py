@@ -17,12 +17,12 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 import numpy as np
 import pandas as pd
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, FiniteFloat, model_validator
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import FunctionTransformer
 
@@ -38,6 +38,11 @@ from azoic.preprocessing import AutoBinner, AutoGrouper
 from azoic.validation import temporal_split
 
 __all__ = [
+    "FloatDistribution",
+    "IntDistribution",
+    "CategoricalDistribution",
+    "ParameterDistribution",
+    "TuningSpec",
     "PreprocessingSpec",
     "ModelSpec",
     "ExperimentConfig",
@@ -45,6 +50,78 @@ __all__ = [
     "Run",
     "run_experiment",
 ]
+
+
+class FloatDistribution(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["float"]
+    low: FiniteFloat
+    high: FiniteFloat
+    step: FiniteFloat | None = None
+    log: bool = False
+
+    @model_validator(mode="after")
+    def _validate_range(self):
+        if self.low > self.high:
+            raise ValueError("float distribution requires low <= high")
+        if self.step is not None and self.step <= 0:
+            raise ValueError("float distribution step must be positive")
+        if self.step is not None and self.log:
+            raise ValueError("float distribution step and log are mutually exclusive")
+        if self.log and self.low <= 0:
+            raise ValueError("logarithmic float distribution bounds must be positive")
+        return self
+
+
+class IntDistribution(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["int"]
+    low: int
+    high: int
+    step: int = 1
+    log: bool = False
+
+    @model_validator(mode="after")
+    def _validate_range(self):
+        if self.low > self.high:
+            raise ValueError("int distribution requires low <= high")
+        if self.step <= 0:
+            raise ValueError("int distribution step must be a positive integer")
+        if self.log and self.step != 1:
+            raise ValueError("logarithmic int distribution requires step: 1")
+        if self.log and self.low <= 0:
+            raise ValueError("logarithmic int distribution bounds must be positive")
+        return self
+
+
+class CategoricalDistribution(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["categorical"]
+    choices: list[None | bool | int | FiniteFloat | str] = Field(min_length=1)
+
+
+ParameterDistribution = Annotated[
+    FloatDistribution | IntDistribution | CategoricalDistribution,
+    Field(discriminator="type"),
+]
+
+
+class TuningSpec(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    n_trials: int = Field(default=20, ge=1)
+    calibration_penalty: FiniteFloat = Field(default=1.0, ge=0)
+    search_space: dict[str, dict[str, ParameterDistribution]] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _validate_spaces(self):
+        empty = sorted(name for name, space in self.search_space.items() if not space)
+        if empty:
+            raise ValueError(f"custom model search spaces must not be empty: {empty}")
+        return self
 
 
 class PreprocessingSpec(BaseModel):
@@ -146,6 +223,7 @@ class ExperimentConfig(BaseModel):
     test_size: float = 0.2
     random_state: int = 42
     models: dict[str, ModelSpec] = Field(min_length=1)
+    tuning: TuningSpec | None = None
 
     @model_validator(mode="after")
     def _validate_features(self):
@@ -157,6 +235,42 @@ class ExperimentConfig(BaseModel):
         special_features = sorted(set(self.features) & set(self.spec.required_columns()))
         if special_features:
             raise ValueError(f"features contains special columns: {special_features}")
+        return self
+
+    @model_validator(mode="after")
+    def _validate_tuning(self):
+        if self.tuning is None:
+            return self
+        unknown_models = sorted(set(self.tuning.search_space) - set(self.models))
+        if unknown_models:
+            raise ValueError(f"tuning search_space contains unknown models: {unknown_models}")
+        fixed = {
+            "family",
+            "link",
+            "objective",
+            "tweedie_power",
+            "tweedie_variance_power",
+            "exposure_col",
+            "random_state",
+        }
+        for name, search_space in self.tuning.search_space.items():
+            spec = self.models[name]
+            if spec.kind == "frequency_severity":
+                raise ValueError(
+                    f"tuning frequency_severity search spaces is not supported: {name!r}"
+                )
+            forbidden = sorted(set(search_space) & fixed)
+            if forbidden:
+                raise ValueError(
+                    f"tuning search_space for {name!r} contains fixed parameters: {forbidden}"
+                )
+            supported = set(spec.build().get_params(deep=False))
+            unknown_params = sorted(set(search_space) - supported)
+            if unknown_params:
+                raise ValueError(
+                    f"tuning search_space for {name!r} contains unsupported "
+                    f"{spec.kind} parameters: {unknown_params}"
+                )
         return self
 
     @classmethod

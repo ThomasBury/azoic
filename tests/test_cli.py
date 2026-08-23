@@ -10,6 +10,7 @@ export-tariff`` writes a 3-sheet xlsx from a fitted GLM. M7 acceptance:
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pandas as pd
 import pytest
@@ -336,6 +337,54 @@ def test_cli_tune_calibration_penalty_flag_passes_through(tmp_path: Path) -> Non
     )
     assert result.exit_code == 0, result.output
     assert out_md.exists()
+
+
+def test_cli_tune_options_defer_to_yaml_and_override_when_supplied(
+    monkeypatch, tmp_path: Path
+) -> None:
+    import azoic.tune as tune_module
+
+    calls = []
+
+    def capture(config, *, n_trials=None, calibration_penalty=None):
+        calls.append((n_trials, calibration_penalty, config.tuning))
+        return SimpleNamespace(run=object(), best_params={})
+
+    monkeypatch.setattr(tune_module, "tune_experiment", capture)
+    monkeypatch.setattr("azoic.cli.model_card", lambda run: "")
+    configured = _write_yaml(
+        tmp_path,
+        _yaml("ignored")
+        + """tuning:
+  n_trials: 3
+  calibration_penalty: 2.0
+""",
+        name="configured.yaml",
+    )
+    fallback = _write_yaml(tmp_path, _yaml("ignored"), name="fallback.yaml")
+
+    omitted = runner.invoke(app, ["tune", "--config", str(configured), "--quiet"])
+    explicit = runner.invoke(
+        app,
+        [
+            "tune",
+            "--config",
+            str(configured),
+            "--trials",
+            "4",
+            "--calibration-penalty",
+            "5.0",
+            "--quiet",
+        ],
+    )
+    legacy = runner.invoke(app, ["tune", "--config", str(fallback), "--quiet"])
+
+    assert omitted.exit_code == explicit.exit_code == legacy.exit_code == 0
+    assert calls[0][0:2] == (None, None)
+    assert calls[0][2].n_trials == 3
+    assert calls[0][2].calibration_penalty == 2.0
+    assert calls[1][0:2] == (4, 5.0)
+    assert calls[2] == (None, None, None)
 
 
 def test_cli_help_lists_five_commands() -> None:

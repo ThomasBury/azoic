@@ -9,10 +9,14 @@ import pandas as pd
 import pytest
 
 from azoic.workflow import (
+    CategoricalDistribution,
     ExperimentConfig,
+    FloatDistribution,
+    IntDistribution,
     ModelResult,
     ModelSpec,
     Run,
+    TuningSpec,
     _data_fingerprint,
     _deviance_test,
     run_experiment,
@@ -100,6 +104,160 @@ def test_experiment_config_from_yaml_roundtrip(tmp_path: Path) -> None:
     assert set(cfg.models.keys()) == {"glm-tweedie", "gbm-tweedie"}
     assert cfg.models["glm-tweedie"].kind == "glm"
     assert cfg.models["gbm-tweedie"].params["n_estimators"] == 30
+
+
+def test_experiment_config_parses_typed_tuning_yaml(tmp_path: Path) -> None:
+    data = _write_portfolio(tmp_path)
+    body = (
+        _basic_yaml(str(data))
+        + """tuning:
+  n_trials: 30
+  calibration_penalty: 2.0
+  search_space:
+    glm-tweedie:
+      alpha:
+        type: float
+        low: 1.0e-6
+        high: 0.1
+        log: true
+      l1_ratio:
+        type: float
+        low: 0.0
+        high: 1.0
+    gbm-tweedie:
+      num_leaves:
+        type: int
+        low: 8
+        high: 64
+        step: 8
+      max_depth:
+        type: categorical
+        choices: [-1, 4, 6]
+"""
+    )
+
+    tuning = ExperimentConfig.from_yaml(_write_yaml(tmp_path, body)).tuning
+
+    assert tuning is not None
+    assert tuning.n_trials == 30
+    assert tuning.calibration_penalty == 2.0
+    assert isinstance(tuning.search_space["glm-tweedie"]["alpha"], FloatDistribution)
+    assert isinstance(tuning.search_space["gbm-tweedie"]["num_leaves"], IntDistribution)
+    assert isinstance(tuning.search_space["gbm-tweedie"]["max_depth"], CategoricalDistribution)
+
+
+@pytest.mark.parametrize(
+    ("distribution", "message"),
+    [
+        ({"type": "float", "low": 2.0, "high": 1.0}, "low <= high"),
+        ({"type": "float", "low": float("inf"), "high": 1.0}, "finite"),
+        ({"type": "float", "low": 0.0, "high": 1.0, "step": 0.0}, "positive"),
+        (
+            {"type": "float", "low": 0.1, "high": 1.0, "step": 0.1, "log": True},
+            "mutually exclusive",
+        ),
+        ({"type": "float", "low": 0.0, "high": 1.0, "log": True}, "positive"),
+        ({"type": "int", "low": 2, "high": 1}, "low <= high"),
+        ({"type": "int", "low": 1, "high": 2, "step": 0}, "positive"),
+        ({"type": "int", "low": 1, "high": 2, "step": 2, "log": True}, "step: 1"),
+        ({"type": "int", "low": 0, "high": 2, "log": True}, "positive"),
+        ({"type": "categorical", "choices": []}, "at least 1"),
+        ({"type": "categorical", "choices": [float("nan")]}, "finite"),
+        ({"type": "categorical", "choices": [[1, 2]]}, "valid"),
+    ],
+)
+def test_tuning_distributions_reject_invalid_values(distribution, message: str) -> None:
+    with pytest.raises(ValueError, match=message):
+        TuningSpec(search_space={"model": {"parameter": distribution}})
+
+
+@pytest.mark.parametrize(
+    "distribution",
+    [
+        {"type": "float", "low": 0.0, "high": 1.0, "extra": True},
+        {"type": "int", "low": 0, "high": 1, "extra": True},
+        {"type": "categorical", "choices": [None], "extra": True},
+    ],
+)
+def test_tuning_typed_objects_reject_extra_fields(distribution) -> None:
+    with pytest.raises(ValueError, match="extra"):
+        TuningSpec(search_space={"model": {"parameter": distribution}})
+    with pytest.raises(ValueError, match="extra"):
+        TuningSpec(extra=True)
+
+
+def test_tuning_rejects_empty_unknown_unsupported_and_frequency_severity_spaces() -> None:
+    base = {
+        "data_path": "ignored",
+        "spec": {"target": "claim_amount", "exposure": "exposure", "claim_count": "claim_count"},
+        "models": {"glm": ModelSpec(kind="glm")},
+    }
+    with pytest.raises(ValueError, match="must not be empty"):
+        ExperimentConfig(**base, tuning={"search_space": {"glm": {}}})
+    with pytest.raises(ValueError, match="unknown models"):
+        ExperimentConfig(
+            **base,
+            tuning={
+                "search_space": {"missing": {"alpha": {"type": "float", "low": 0.0, "high": 1.0}}}
+            },
+        )
+    with pytest.raises(ValueError, match="unsupported glm parameters"):
+        ExperimentConfig(
+            **base,
+            tuning={"search_space": {"glm": {"num_leaves": {"type": "int", "low": 4, "high": 8}}}},
+        )
+
+    freq_sev = ModelSpec(
+        kind="frequency_severity",
+        frequency=ModelSpec(kind="glm"),
+        severity=ModelSpec(kind="glm"),
+    )
+    with pytest.raises(ValueError, match="frequency_severity"):
+        ExperimentConfig(
+            **{**base, "models": {"frequency-severity": freq_sev}},
+            tuning={
+                "search_space": {
+                    "frequency-severity": {"alpha": {"type": "float", "low": 0.0, "high": 1.0}}
+                }
+            },
+        )
+
+
+@pytest.mark.parametrize(
+    "parameter",
+    [
+        "family",
+        "link",
+        "objective",
+        "tweedie_power",
+        "tweedie_variance_power",
+        "exposure_col",
+        "random_state",
+    ],
+)
+def test_tuning_rejects_fixed_identity_routing_and_seed_parameters(parameter: str) -> None:
+    with pytest.raises(ValueError, match="fixed parameters"):
+        ExperimentConfig(
+            data_path="ignored",
+            spec={"target": "claim_amount", "exposure": "exposure"},
+            models={"glm": ModelSpec(kind="glm")},
+            tuning={
+                "search_space": {"glm": {parameter: {"type": "categorical", "choices": [None]}}}
+            },
+        )
+
+
+@pytest.mark.parametrize(
+    "tuning",
+    [
+        {"n_trials": 0},
+        {"calibration_penalty": float("inf")},
+        {"calibration_penalty": -1.0},
+    ],
+)
+def test_tuning_rejects_invalid_global_settings(tuning) -> None:
+    with pytest.raises(ValueError):
+        TuningSpec(**tuning)
 
 
 def test_experiment_config_rejects_extra_fields(tmp_path: Path) -> None:

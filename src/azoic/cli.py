@@ -172,13 +172,15 @@ def export_tariff(
 @app.command()
 def tune(
     config: Path = typer.Option(..., "--config", help="ExperimentConfig YAML."),
-    trials: int = typer.Option(
-        20, "--trials", help="Optuna trials per model (tune extra required)."
+    trials: int | None = typer.Option(
+        None,
+        "--trials",
+        help="Optuna trials per model; overrides YAML (default: YAML or 20).",
     ),
-    calibration_penalty: float = typer.Option(
-        1.0,
+    calibration_penalty: float | None = typer.Option(
+        None,
         "--calibration-penalty",
-        help="Penalty weight on |1 - op_ratio_test|; scale to deviance magnitude.",
+        help="O/P penalty weight; overrides YAML (default: YAML or 1.0).",
     ),
     out: Path | None = typer.Option(None, "--out", help="Write the model card markdown here."),
     quiet: bool = typer.Option(False, "--quiet", "-q", help="Do not print the card to stdout."),
@@ -191,7 +193,7 @@ def tune(
     md = model_card(result.run)
 
     for name, params in result.best_params.items():
-        typer.echo(f"tuned {name}: " + ", ".join(f"{k}={v:.4g}" for k, v in params.items()))
+        typer.echo(f"tuned {name}: " + ", ".join(f"{k}={v}" for k, v in params.items()))
     if out is not None:
         out.write_text(md, encoding="utf-8")
         typer.echo(f"Wrote markdown card to {out}")

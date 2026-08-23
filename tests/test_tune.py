@@ -10,6 +10,7 @@ deviance and a populated calibration table.
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
@@ -25,6 +26,7 @@ from azoic.tune import (  # noqa: E402
 from azoic.workflow import (  # noqa: E402
     ExperimentConfig,
     ModelSpec,
+    TuningSpec,
     _split_indices,
     run_experiment,
 )
@@ -32,7 +34,11 @@ from tests.conftest import make_synthetic_portfolio  # noqa: E402
 
 
 def _config(
-    tmp_path: Path, *, models: dict[str, ModelSpec], name: str = "smoke"
+    tmp_path: Path,
+    *,
+    models: dict[str, ModelSpec],
+    name: str = "smoke",
+    tuning: TuningSpec | dict | None = None,
 ) -> ExperimentConfig:
     p = tmp_path / "portfolio.parquet"
     make_synthetic_portfolio(n=2000, seed=42).to_parquet(p)
@@ -45,6 +51,7 @@ def _config(
         test_size=0.2,
         random_state=42,
         models=models,
+        tuning=tuning,
     )
 
 
@@ -134,6 +141,84 @@ def test_tune_experiment_gbm_search_space_only_samples_structure(tmp_path: Path)
         assert forbidden not in sampled
 
 
+def test_custom_space_replaces_one_model_defaults_and_leaves_sibling_defaults(
+    tmp_path: Path,
+) -> None:
+    cfg = _config(
+        tmp_path,
+        models={"glm-tweedie": _glm(), "gbm-tweedie": _gbm()},
+        tuning={
+            "n_trials": 2,
+            "search_space": {
+                "gbm-tweedie": {
+                    "learning_rate": {
+                        "type": "float",
+                        "low": 0.01,
+                        "high": 0.1,
+                        "log": True,
+                    },
+                    "num_leaves": {"type": "int", "low": 8, "high": 16, "step": 8},
+                    "max_depth": {"type": "categorical", "choices": [-1, 4]},
+                }
+            },
+        },
+    )
+
+    result = tune_experiment(cfg)
+
+    assert set(result.best_params["gbm-tweedie"]) == {
+        "learning_rate",
+        "num_leaves",
+        "max_depth",
+    }
+    assert set(result.best_params["glm-tweedie"]) == {"alpha", "l1_ratio"}
+
+
+def test_omitted_tuning_reproduces_default_space_and_seeded_results(tmp_path: Path) -> None:
+    models = {"glm-tweedie": _glm()}
+    omitted = _config(tmp_path, models=models)
+    empty = omitted.model_copy(update={"tuning": TuningSpec()})
+
+    original = tune_experiment(omitted, n_trials=3, random_state=9)
+    configured = tune_experiment(empty, n_trials=3, random_state=9)
+
+    assert original.best_params == configured.best_params
+    assert original.best_values == pytest.approx(configured.best_values, rel=1e-9)
+
+
+def test_python_tuning_precedence(monkeypatch, tmp_path: Path) -> None:
+    import azoic.tune as tune_module
+
+    captured_trials = []
+    captured_penalties = []
+
+    class Study:
+        best_trial = SimpleNamespace(params={}, value=0.0)
+
+        def optimize(self, objective, *, n_trials):
+            captured_trials.append(n_trials)
+
+    def capture_objective(config, name, spec, calibration_penalty, *args):
+        captured_penalties.append(calibration_penalty)
+        return lambda trial: 0.0
+
+    monkeypatch.setattr(optuna, "create_study", lambda **kwargs: Study())
+    monkeypatch.setattr(tune_module, "_make_objective", capture_objective)
+    config = _config(
+        tmp_path,
+        models={"glm-tweedie": _glm()},
+        tuning={"n_trials": 2, "calibration_penalty": 3.0},
+    )
+
+    explicit = tune_experiment(config, n_trials=4, calibration_penalty=5.0)
+    yaml = tune_experiment(config)
+    fallback = tune_experiment(config.model_copy(update={"tuning": None}))
+
+    assert [explicit.n_trials, yaml.n_trials, fallback.n_trials] == [4, 2, 20]
+    assert captured_trials == [4, 2, 20]
+    assert captured_penalties == [5.0, 3.0, 1.0]
+
+
 def test_tune_experiment_preserves_yaml_identity_params_in_final_run(
     tmp_path: Path,
 ) -> None:
@@ -161,7 +246,23 @@ def test_tune_experiment_return_estimators(tmp_path: Path) -> None:
 
 
 def test_tune_experiment_reproducible_with_random_state(tmp_path: Path) -> None:
-    cfg = _config(tmp_path, models={"glm-tweedie": _glm()})
+    cfg = _config(
+        tmp_path,
+        models={"glm-tweedie": _glm()},
+        tuning={
+            "search_space": {
+                "glm-tweedie": {
+                    "alpha": {
+                        "type": "float",
+                        "low": 1e-5,
+                        "high": 0.1,
+                        "log": True,
+                    },
+                    "l1_ratio": {"type": "categorical", "choices": [0.0, 0.5, 1.0]},
+                }
+            }
+        },
+    )
     a = tune_experiment(cfg, n_trials=3, random_state=42)
     b = tune_experiment(cfg, n_trials=3, random_state=42)
     assert a.best_params == b.best_params
@@ -176,6 +277,15 @@ def test_tune_experiment_rejects_zero_trials(tmp_path: Path) -> None:
     cfg = _config(tmp_path, models={"glm-tweedie": _glm()})
     with pytest.raises(ValueError, match="n_trials"):
         tune_experiment(cfg, n_trials=0)
+
+
+@pytest.mark.parametrize("penalty", [-1.0, float("inf"), float("nan")])
+def test_tune_experiment_rejects_invalid_calibration_penalty(
+    tmp_path: Path, penalty: float
+) -> None:
+    cfg = _config(tmp_path, models={"glm-tweedie": _glm()})
+    with pytest.raises(ValueError, match="calibration_penalty"):
+        tune_experiment(cfg, n_trials=1, calibration_penalty=penalty)
 
 
 def test_tune_experiment_rejects_frequency_severity(tmp_path: Path) -> None:
@@ -216,8 +326,23 @@ def test_tune_experiment_missing_optuna_raises_helpful_error(
 # ---------------------------------------------------------------------------
 
 
-def test_tuning_does_not_inspect_outer_test_outcomes(tmp_path: Path) -> None:
-    config = _config(tmp_path, models={"glm-tweedie": _glm()})
+@pytest.mark.parametrize("custom_space", [False, True])
+def test_tuning_does_not_inspect_outer_test_outcomes(tmp_path: Path, custom_space: bool) -> None:
+    tuning = None
+    if custom_space:
+        tuning = {
+            "search_space": {
+                "glm-tweedie": {
+                    "alpha": {
+                        "type": "float",
+                        "low": 1e-5,
+                        "high": 0.1,
+                        "log": True,
+                    }
+                }
+            }
+        }
+    config = _config(tmp_path, models={"glm-tweedie": _glm()}, tuning=tuning)
     df = pd.read_parquet(config.data_path)
     _, outer_test_idx = _split_indices(config, df)
     changed = df.copy()
