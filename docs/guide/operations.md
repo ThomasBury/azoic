@@ -37,14 +37,53 @@ requires the `plot` extra; the CSV table does not.
 
 ```bash
 uv add "azoic[tune]"
-azoic tune --config experiment.yaml --trials 20 --calibration-penalty 1.0
+azoic tune --config experiment.yaml
 ```
 
-`tune_experiment` creates an inner split of outer training data, minimizes
-Tweedie deviance plus a numeric O/P penalty, refits selected parameters on all
-outer training data, and evaluates outer test once. Its built-in search space
-covers GLM regularization and GBM tree structure. It does not tune nested
-frequency-severity models.
+Put optional trial settings and model-specific scalar distributions in the
+experiment YAML:
+
+```yaml
+tuning:
+  n_trials: 30
+  calibration_penalty: 2.0
+  search_space:
+    tweedie-glm:
+      alpha:
+        type: float
+        low: 1.0e-6
+        high: 0.1
+        log: true
+      l1_ratio:
+        type: float
+        low: 0.0
+        high: 1.0
+    tweedie-gbm:
+      num_leaves:
+        type: int
+        low: 8
+        high: 64
+        step: 8
+      max_depth:
+        type: categorical
+        choices: [-1, 4, 6]
+```
+
+A custom entry replaces that model's built-in search space; it is not merged
+with the defaults. A model without a custom entry keeps the existing GLM or GBM
+space exactly. `--trials` and `--calibration-penalty` override YAML values.
+Omitted flags defer to YAML, then to the legacy defaults of 20 trials and 1.0.
+
+`tune_experiment` still creates an inner split of outer training data,
+minimizes Tweedie deviance plus a numeric O/P penalty, refits selected
+parameters on all outer training data, and evaluates outer test once.
+Configuration changes the candidate values, not this leakage boundary.
+
+Invalid bounds, non-finite values, incompatible `step` and `log` settings,
+empty spaces or categorical choices, unknown models or estimator parameters,
+and extra fields fail while parsing the config. Family, link, objective,
+Tweedie powers, exposure routing, and random seeds cannot be tuned.
+Frequency-severity tuning remains unsupported.
 
 !!! warning "Scale the calibration penalty"
 

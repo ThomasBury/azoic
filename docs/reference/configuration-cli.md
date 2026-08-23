@@ -33,6 +33,7 @@ must exist.
 | `test_size` | float | `0.2` | Requested test fraction |
 | `random_state` | integer | `42` | Random split seed; estimator seeds remain model parameters |
 | `models` | mapping | required, at least one | Stable model name to `ModelSpec` |
+| `tuning` | `TuningSpec` or null | `null` | Optional trial settings and per-model scalar search spaces |
 
 Explicit features must exist, be unique, and exclude every named special
 column.
@@ -151,6 +152,64 @@ The workflow derives exposure, claim-count, and claim-amount column names from
 \(y = \text{claim count}/\text{exposure}\) with exposure weight. Severity fits
 only positive-claim rows on mean claim size with claim-count weight.
 
+## Tuning settings
+
+`TuningSpec` is optional. Its complete YAML shape is:
+
+```yaml
+tuning:
+  n_trials: 30
+  calibration_penalty: 2.0
+  search_space:
+    tweedie-glm:
+      alpha:
+        type: float
+        low: 1.0e-6
+        high: 0.1
+        log: true
+      l1_ratio:
+        type: float
+        low: 0.0
+        high: 1.0
+    tweedie-gbm:
+      num_leaves:
+        type: int
+        low: 8
+        high: 64
+        step: 8
+      max_depth:
+        type: categorical
+        choices: [-1, 4, 6]
+```
+
+| Field | Type | Default | Validation |
+|---|---|---|---|
+| `n_trials` | integer | `20` | At least one |
+| `calibration_penalty` | finite float | `1.0` | Non-negative |
+| `search_space` | model-name mapping | `{}` | Names must exist in `models`; each supplied model space must be non-empty |
+
+| Distribution | Required fields | Optional fields | Validation |
+|---|---|---|---|
+| `float` | finite `low`, finite `high` | positive finite `step`, `log: true` | `low <= high`; `step` and `log` are mutually exclusive; logarithmic bounds are positive |
+| `int` | integer `low`, integer `high` | positive integer `step` (default `1`), `log: true` | `low <= high`; logarithmic sampling requires positive bounds and `step: 1` |
+| `categorical` | non-empty `choices` | none | Each choice is null, boolean, integer, finite float, or string |
+
+A custom model entry replaces that model's built-in search space. It does not
+merge with the defaults. GLM or GBM siblings without a custom entry keep their
+existing built-in spaces exactly.
+
+Search-space parameters must be exposed by that model kind's estimator.
+Unknown model names, unsupported parameters, frequency-severity spaces, empty
+spaces, empty choices, invalid distributions, and extra fields fail validation.
+The fixed identity, routing, and seed parameters `family`, `link`,
+`objective`, `tweedie_power`, `tweedie_variance_power`, `exposure_col`,
+and `random_state` cannot appear in a search space.
+
+Explicit Python `n_trials=` and `calibration_penalty=` arguments have highest
+precedence. CLI `--trials` and `--calibration-penalty` supply those explicit
+arguments. Omitted arguments defer first to `tuning`, then to 20 and 1.0.
+The sampler's separate `random_state=42` API is unchanged.
+
 ## Split behavior
 
 | Split | Behavior | Validation |
@@ -165,6 +224,7 @@ integer test size in Python, use `temporal_split` itself.
 
     Tuning creates an inner split of outer training data. The selected candidate
     is refit on all outer training rows, and the outer test is evaluated once.
+    Custom search spaces do not change this leakage boundary.
 
 ## Complete YAML shape
 
@@ -206,6 +266,7 @@ preprocessing:
 split: random
 test_size: 0.2
 random_state: 42
+tuning: null
 
 models:
   tweedie-glm:
@@ -248,7 +309,7 @@ models:
 | `azoic profile` | `--data`, `--target`, `--exposure` | `--claim-count`, `--time-col`, `--out` | Screening table to stdout or CSV |
 | `azoic fit` | `--config` | `--out`, `--quiet` | Markdown model card to stdout and/or a file |
 | `azoic compare` | One or more config paths | `--out` | Comparison table to stdout or CSV |
-| `azoic tune` | `--config` | `--trials 20`, `--calibration-penalty 1.0`, `--out`, `--quiet` | Best parameters plus Markdown model card |
+| `azoic tune` | `--config` | `--trials` (YAML or 20), `--calibration-penalty` (YAML or 1.0), `--out`, `--quiet` | Best parameters plus Markdown model card |
 | `azoic export-tariff` | `--config`, `--model`, `--out` | `--distill`, `--recalibrate/--no-recalibrate` | Three-sheet xlsx tariff |
 
 Run `azoic COMMAND --help` for Typer's current option spellings.
@@ -267,7 +328,8 @@ Run `azoic COMMAND --help` for Typer's current option spellings.
 
 ## Validation rules
 
-- `ExperimentConfig`, `ModelSpec`, and `PreprocessingSpec` reject extra fields.
+- `ExperimentConfig`, `ModelSpec`, `PreprocessingSpec`, `TuningSpec`, and
+  all parameter distributions reject extra fields.
 - Data must be non-empty; exposure must be positive and finite; target and claim
   count must be non-negative and finite.
 - Claim-count and target rows must be zero or positive together.
@@ -276,6 +338,8 @@ Run `azoic COMMAND --help` for Typer's current option spellings.
   together.
 - Tweedie LightGBM power outside \([1.0, 2.0)\) fails.
 - Frequency-severity requires both nested sub-specs and `spec.claim_count`.
+- Tuning rejects unknown models, empty model spaces, unsupported or fixed
+  parameters, invalid scalar distributions, and frequency-severity spaces.
 - Preprocessing credibility by claims requires a claim-count column.
 - Model prediction frames may omit outcome columns; fitted workflow pipelines
   supply harmless placeholders and drop them before the final estimator.
