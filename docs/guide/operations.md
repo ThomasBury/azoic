@@ -9,26 +9,29 @@ export.
 ```python
 from pathlib import Path
 
-from azoic.reporting import comparison_table, model_card
+from azoic.reporting import comparison_dashboard, comparison_table, model_card
 
-Path("model-card.md").write_text(model_card(run, fmt="md"), encoding="utf-8")
-Path("model-card.html").write_text(model_card(run, fmt="html"), encoding="utf-8")
+Path("model-card.md").write_text(model_card(run), encoding="utf-8")
 
 comparison = comparison_table([baseline_run, candidate_run])
 comparison.to_csv("comparison.csv", index=False)
+Path("comparison.html").write_text(
+    comparison_dashboard([baseline_run, candidate_run]),
+    encoding="utf-8",
+)
 ```
 
-A model card records the experiment data contract, fingerprint, split, features,
-model parameters, held-out metrics, and a calibration preview.
+A model card is Markdown and records the experiment data contract, fingerprint,
+split, features, model parameters, held-out metrics, and a calibration preview.
 
-The CLI can run several configs and optionally write the Plotly dashboard:
+The CLI can run several configs and write their comparison table:
 
 ```bash
 azoic compare baseline.yaml candidate.yaml --out comparison.csv
-azoic compare baseline.yaml candidate.yaml --out-html comparison.html
 ```
 
-The HTML dashboard requires the `plot` extra; the CSV table does not.
+The Python-only `comparison_dashboard` API returns standalone Plotly HTML and
+requires the `plot` extra; the CSV table does not.
 
 ## Tune without touching outer test
 

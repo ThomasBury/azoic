@@ -3,6 +3,9 @@
 Start with the model whose constraints match the decision, then ask whether a
 more flexible candidate improves held-out evidence enough to justify itself.
 
+All Azoic estimators take pure-premium rate targets in `fit` and `score`
+and return pure-premium rates from `predict`.
+
 | Candidate | Use it when | Main trade-off |
 |---|---|---|
 | `RiskGLM` | Stable multiplicative relativities, direct coefficient review, and tariff export matter | Additive linear predictor needs explicit feature engineering or binning |
@@ -86,12 +89,18 @@ frequency_severity = FrequencySeverityModel(
     claim_count_col="claim_count",
     claim_amount_col="claim_amount",
 )
-frequency_severity.fit(train[columns])
+frequency_severity.fit(train[columns], y_train)
 prediction = frequency_severity.predict(test[columns])
+score = frequency_severity.score(
+    test[columns],
+    test["claim_amount"] / test["exposure"],
+)
 ```
 
 Do not filter severity rows in user code; doing so can desynchronize the two
-submodels and breaks the estimator's pipeline contract.
+submodels and breaks the estimator's pipeline contract. The rate target may be
+omitted from `fit` because the outcomes already travel inside `X`; when
+supplied, it is checked against `claim_amount / exposure`.
 
 ## Compare candidates fairly
 

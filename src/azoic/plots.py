@@ -512,20 +512,26 @@ def plot_actual_vs_predicted(
     path: str | Path | None = None,
     title: str = "Actual vs predicted",
 ) -> plt.Axes:
-    """Hexbin density of observed vs predicted with a residual hexbin panel.
+    """Hexbin density of observed vs predicted rates with a residual panel.
 
-    Left panel: observed on x, predicted on y, y=x dashed reference. Right
-    panel: residuals (observed − predicted) vs predicted with a zero
-    reference. Density colouring is exposure-weighted (Σ exposure per hex)
-    when ``sample_weight`` is supplied, otherwise log counts; the two panels
+    ``y_true`` is aggregate claim amount, ``y_pred`` is predicted
+    pure-premium rate, and ``sample_weight`` is exposure. Observed amounts
+    are divided by exposure before plotting; omitted exposure means unit
+    exposure. Left panel: observed rate on x, predicted rate on y, y=x dashed
+    reference. Right panel: rate residuals (observed − predicted) vs predicted
+    rate with a zero reference. Density colouring is exposure-weighted
+    (Σ exposure per hex) when supplied, otherwise log counts; the two panels
     get independent colorbars. ``cividis`` by default (CVD-safe).
     """
     with azoic_style():
         cmap = "cividis" if cmap is None else cmap
-        y_true = _as_float_array(y_true)
+        claim_amount = _as_float_array(y_true)
         y_pred = _as_float_array(y_pred)
         if sample_weight is not None:
             sample_weight = _as_float_array(sample_weight)
+            observed_rate = claim_amount / sample_weight
+        else:
+            observed_rate = claim_amount
         if ax is None:
             fig, axd = plt.subplot_mosaic([["scatter", "residual"]], figsize=(11, 4.5))
             ax_scatter, ax_resid = axd["scatter"], axd["residual"]
@@ -535,7 +541,7 @@ def plot_actual_vs_predicted(
             ax_resid = ax.inset_axes((1.04, 0.0, 1.0, 1.0))
         if sample_weight is not None:
             hb = ax_scatter.hexbin(
-                x=y_true,
+                x=observed_rate,
                 y=y_pred,
                 C=sample_weight,
                 reduce_C_function=np.sum,
@@ -547,7 +553,7 @@ def plot_actual_vs_predicted(
             cb_label = "Σ exposure"
         else:
             hb = ax_scatter.hexbin(
-                x=y_true,
+                x=observed_rate,
                 y=y_pred,
                 gridsize=gridsize,
                 cmap=cmap,
@@ -561,18 +567,18 @@ def plot_actual_vs_predicted(
             ax_scatter.set_ylim(lo, hi)
             ref_x = np.linspace(lo, hi, 100)
         else:
-            ref_x = np.linspace(float(y_true.min()), float(y_true.max()), 100)
+            ref_x = np.linspace(float(observed_rate.min()), float(observed_rate.max()), 100)
             ax_scatter.set_xlim(ref_x[0], ref_x[-1])
             ax_scatter.set_ylim(float(y_pred.min()), float(y_pred.max()))
         ax_scatter.plot(ref_x, ref_x, "--", color="black", linewidth=1.2, label="y = x")
-        ax_scatter.set_xlabel("observed")
-        ax_scatter.set_ylabel("predicted")
+        ax_scatter.set_xlabel("observed pure-premium rate")
+        ax_scatter.set_ylabel("predicted pure-premium rate")
         ax_scatter.set_title(f"{title} — scatter")
         _draw_colorbar(hb, target_axes=ax_scatter, label=cb_label)
         if sample_weight is not None:
             hb2 = ax_resid.hexbin(
                 x=y_pred,
-                y=y_true - y_pred,
+                y=observed_rate - y_pred,
                 C=sample_weight,
                 reduce_C_function=np.sum,
                 gridsize=gridsize,
@@ -583,15 +589,15 @@ def plot_actual_vs_predicted(
         else:
             hb2 = ax_resid.hexbin(
                 x=y_pred,
-                y=y_true - y_pred,
+                y=observed_rate - y_pred,
                 gridsize=gridsize,
                 cmap=cmap,
                 bins=bins,
                 mincnt=1,
             )
         ax_resid.axhline(0.0, color="black", linewidth=1.2, linestyle="--")
-        ax_resid.set_xlabel("predicted")
-        ax_resid.set_ylabel("residual (observed − predicted)")
+        ax_resid.set_xlabel("predicted pure-premium rate")
+        ax_resid.set_ylabel("rate residual (observed − predicted)")
         ax_resid.set_title(f"{title} — residuals")
         _draw_colorbar(hb2, target_axes=ax_resid, label=cb_label)
         if logx:

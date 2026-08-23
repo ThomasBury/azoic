@@ -235,21 +235,58 @@ def test_riskgbm_monotone_constraints_dict_requires_dataframe() -> None:
 
 def test_freq_severity_fit_predict_basics() -> None:
     df = _df()
+    y_rate = (df["claim_amount"] / df["exposure"]).to_numpy()
     fs = FrequencySeverityModel(
         freq=RiskGLM(family="poisson", link="log"),
         sev=RiskGLM(family="gamma", link="log"),
         exposure_col="exposure",
         claim_count_col="claim_count",
         claim_amount_col="claim_amount",
-    ).fit(df)
+    ).fit(df, y_rate)
     pred = fs.predict(df)
     assert pred.shape == (len(df),)
     assert np.all(np.isfinite(pred))
     assert np.all(pred >= 0)
     # Severity backend was fit on a strict subset of rows with claim_count > 0.
     assert fs.sev_positive_rows_ == int((df["claim_count"] > 0).sum())
-    s = fs.score(df, df["claim_amount"].to_numpy())
+    s = fs.score(df, y_rate)
     assert np.isfinite(s)
+
+
+def test_freq_severity_fit_rejects_aggregate_or_mismatched_target() -> None:
+    df = _df(n=200)
+    rate = (df["claim_amount"] / df["exposure"]).to_numpy()
+    model = FrequencySeverityModel(
+        freq=RiskGLM(family="poisson", link="log"),
+        sev=RiskGLM(family="gamma", link="log"),
+    )
+    for invalid in (df["claim_amount"].to_numpy(), rate + 1.0):
+        with pytest.raises(ValueError, match="claim_amount / exposure"):
+            model.fit(df, invalid)
+
+
+def test_freq_severity_fit_rejects_nonfinite_target() -> None:
+    df = _df(n=200)
+    rate = (df["claim_amount"] / df["exposure"]).to_numpy()
+    rate[0] = np.inf
+    model = FrequencySeverityModel(
+        freq=RiskGLM(family="poisson", link="log"),
+        sev=RiskGLM(family="gamma", link="log"),
+    )
+    with pytest.raises(ValueError, match="finite"):
+        model.fit(df, rate)
+
+
+def test_freq_severity_fit_rejects_wrong_target_shape() -> None:
+    df = _df(n=200)
+    rate = (df["claim_amount"] / df["exposure"]).to_numpy()
+    model = FrequencySeverityModel(
+        freq=RiskGLM(family="poisson", link="log"),
+        sev=RiskGLM(family="gamma", link="log"),
+    )
+    for invalid in (rate[:, None], rate[:-1]):
+        with pytest.raises(ValueError, match="one-dimensional"):
+            model.fit(df, invalid)
 
 
 def test_freq_severity_severity_fit_is_filtered() -> None:
@@ -380,14 +417,25 @@ def test_freq_severity_score_compares_rates_with_exposure_weights() -> None:
         freq=RiskGLM(family="poisson", link="log"),
         sev=RiskGLM(family="gamma", link="log"),
     ).fit(df)
-    observed_amount = df["claim_amount"].to_numpy()
+    observed_rate = (df["claim_amount"] / df["exposure"]).to_numpy()
     expected = d2_tweedie_score(
-        observed_amount / df["exposure"].to_numpy(),
+        observed_rate,
         model.predict(df),
         power=1.5,
         sample_weight=df["exposure"].to_numpy(),
     )
-    assert model.score(df, observed_amount) == pytest.approx(expected)
+    assert model.score(df, observed_rate) == pytest.approx(expected)
+
+    explicit_weight = np.linspace(1.0, 2.0, len(df))
+    expected_explicit = d2_tweedie_score(
+        observed_rate,
+        model.predict(df),
+        power=1.5,
+        sample_weight=explicit_weight,
+    )
+    assert model.score(df, observed_rate, sample_weight=explicit_weight) == pytest.approx(
+        expected_explicit
+    )
 
 
 def test_m3_acceptance_freq_sev_approximates_direct_tweedie() -> None:

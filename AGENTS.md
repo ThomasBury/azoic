@@ -74,6 +74,10 @@ examples/fremtpl2.qmd  # Quarto source; linked, not restyled, by Zensical
 - **sklearn API** — `fit`/`transform`/`predict`, fitted attrs end in `_`, no
   logic in `__init__`, params explicit **never** `**kwargs` (LightGBM kwargs
   break `get_params`).
+- **Estimator units** — every estimator takes pure-premium rate targets in
+  `fit`/`score` and predicts rates. `FrequencySeverityModel.fit(X)` may
+  derive its components from the outcomes inside `X`; when `y` is supplied,
+  it must equal `claim_amount / exposure`.
 - **No `utils.py` / dead scaffolding** — write code when it's used, not "for
   later".
 - **pandas in/out at module boundaries; numpy inside**; add a Polars ingest extra
@@ -92,7 +96,8 @@ examples/fremtpl2.qmd  # Quarto source; linked, not restyled, by Zensical
 ## Actuarial rules (do not violate; full context in PRD.md sections 4-5)
 
 1. Exposure is a **weight** for pure premium: `y = claim_amount/exposure`,
-   `sample_weight=exposure`. Use `offset=log(exposure)` ONLY when
+   `sample_weight=exposure`. Estimator targets, scores, and predictions use
+   this rate unit. Use `offset=log(exposure)` ONLY when
    `y = claim_amount` (aggregate). Never mix.
 2. Frequency: `y = claim_count / exposure`, `sample_weight=exposure`, Poisson.
 3. Severity: fit on `claim_count > 0` only (Gamma needs `y > 0`). The filter

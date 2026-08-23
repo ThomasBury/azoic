@@ -67,7 +67,7 @@ returned only when requested.
 
 ```bash
 azoic profile --data portfolio.parquet --target claim_amount --exposure exposure
-azoic fit --config experiment.yaml --out model-card.md --out-html model-card.html
+azoic fit --config experiment.yaml --out model-card.md
 azoic compare baseline.yaml candidate.yaml --out comparison.csv
 azoic tune --config experiment.yaml --trials 20 --out tuned-card.md
 azoic export-tariff --config experiment.yaml --model tweedie-glm --out tariff.xlsx

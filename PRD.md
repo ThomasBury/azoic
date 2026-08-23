@@ -81,6 +81,12 @@ sklearn's `GridSearchCV`/`cross_val_score` will not forward
 
 This keeps full sklearn compatibility (pipelines, grid search, CV).
 
+### Estimator response units
+Every estimator takes pure-premium rate targets in `fit` and `score` and
+returns rates from `predict`. `FrequencySeverityModel.fit(X)` may omit `y`
+because its outcome columns travel inside `X`; a supplied `y` must be a
+finite one-dimensional rate equal to `claim_amount / exposure`.
+
 ### Backend wrappers expose explicit params (no `**kwargs`)
 LightGBM `**kwargs` break `get_params`/sklearn (per LightGBM docs). `RiskGBM`
 declares each used param explicitly.
@@ -89,7 +95,8 @@ declares each used param explicitly.
 
 1. **Exposure is a weight, not an offset** when modelling pure premium.
    Pure premium GLM: `y = claim_amount / exposure`, `sample_weight=exposure`.
-   Use log-link with `offset=log(exposure)` ONLY when `y = claim_amount`
+   Estimator targets, scores, and predictions use this rate unit. Use log-link
+   with `offset=log(exposure)` ONLY when `y = claim_amount`
    (aggregate form). Never mix.
 2. **Frequency**: `y = claim_count / exposure`, `sample_weight=exposure`, Poisson.
 3. **Severity**: fit on `claim_count > 0` only (Gamma requires `y > 0`). The

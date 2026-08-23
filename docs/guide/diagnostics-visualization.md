@@ -101,6 +101,10 @@ plot_actual_vs_predicted(
 )
 ```
 
+For `plot_actual_vs_predicted`, `y_true` remains aggregate claim amount.
+The function divides it by exposure before drawing both observed values and
+residuals, so both axes and the residual calculation use pure-premium rates.
+
 Every plot accepts `path=` for direct file output and returns its primary
 matplotlib axes. Standalone one-way and double-lift charts add a lower exposure
 panel; lift uses exposure bars behind the lines. Visual meaning does not depend
@@ -138,8 +142,8 @@ it enough horizontal space.
   and `ax_lim`.
 - Use log axes only when the displayed values are positive and multiplicative
   separation matters. Zero-heavy claim outcomes usually need linear axes.
-- Actual-versus-predicted uses hexbin density rather than an unreadable cloud;
-  with exposure supplied, color intensity represents summed exposure.
+- Actual-versus-predicted rates use hexbin density rather than an unreadable
+  cloud; with exposure supplied, color intensity represents summed exposure.
 
 ## Interpret without over-claiming
 

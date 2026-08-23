@@ -313,6 +313,11 @@ an order that is not present. Both experiments therefore use the same fixed
 random holdout (identical `random_state` and `test_size` on the same data), so
 every model is scored on exactly the same test rows.
 
+Every candidate receives `claim_amount / exposure` as its fit and score
+target and predicts a pure-premium rate. `FrequencySeverityModel` also checks
+that supplied rate against the aggregate outcome and exposure columns carried
+inside `X`.
+
 **Tariff-structured experiment.** Tree bins for driver age, vehicle age, bonus
 malus, and density and similarity groups for region, vehicle brand, vehicle
 power, vehicle gas, and area are learned on the training partition only.
@@ -604,14 +609,15 @@ with azoic_style():
     plt.show()
 ```
 
-### Hexbin density: actual vs predicted, and residuals
+### Hexbin density: observed vs predicted rates, and rate residuals
 
-Per-policy densities for the champion: observed vs predicted on the left
-(y=x dashed reference), residuals vs predicted on the right (zero
-reference). Hex counts are exposure-weighted; the log colour scale
-concentrates on where the portfolio mass actually sits. Most policies have
-zero claims, so the mass hugs the axes — the spread above y=x in the left
-panel is where the model under-prices the few large losses.
+Per-policy densities for the champion: observed pure-premium rate versus
+predicted rate on the left (y=x dashed reference), and
+`observed rate - predicted rate` versus predicted rate on the right (zero
+reference). The plot converts aggregate `y_test` to rates with `w_test`
+before drawing either panel. Hex counts are exposure-weighted; the log colour
+scale concentrates on where the portfolio mass actually sits. Most policies
+have zero claims, so the scatter remains sparse at individual-policy level.
 
 ```{python}
 with azoic_style():

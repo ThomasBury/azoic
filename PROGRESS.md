@@ -46,7 +46,7 @@ Legend: ☐ pending · ◐ in progress · ☑ done
   path; five focused guides; comprehensive configuration/CLI reference;
   top-level freMTPL2 tutorial; official MathJax integration; runnable checkout
   YAML.
-- ☐ **M9 — contract and residual correctness (v0.4.1)** — standardize estimator
+- ☑ **M9 — contract and residual correctness (v0.4.1)** — standardize estimator
   and residual rate contracts; reconcile CLI/reporting documentation.
 - ☐ **M10 — configuration-driven tuning** — typed optional trial settings and
   per-model parameter distributions with defaults preserved.
@@ -59,6 +59,6 @@ Legend: ☐ pending · ◐ in progress · ☑ done
 
 ## Current focus
 
-- M9 is the sole next milestone.
-- M10 must not begin until M9 is marked complete.
+- M10 is the sole next milestone.
+- M11 must not begin until M10 is marked complete.
 - Demand-gated items are not implementation work without new evidence.

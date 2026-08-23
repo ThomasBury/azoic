@@ -245,10 +245,10 @@ models:
 
 | Command | Required input | Main options | Output |
 |---|---|---|---|
-| `azoic profile` | `--data`, `--target`, `--exposure` | `--claim-count`, `--time-col`, `--id-col`, `--out` | Screening table to stdout or CSV |
-| `azoic fit` | `--config` | `--out`, `--out-html`, `--quiet` | Model card to stdout, Markdown, and/or HTML |
-| `azoic compare` | One or more config paths | `--out`, `--out-html` | Comparison table to stdout/CSV or Plotly dashboard |
-| `azoic tune` | `--config` | `--trials 20`, `--calibration-penalty 1.0`, `--out`, `--out-html`, `--quiet` | Best parameters plus model card |
+| `azoic profile` | `--data`, `--target`, `--exposure` | `--claim-count`, `--time-col`, `--out` | Screening table to stdout or CSV |
+| `azoic fit` | `--config` | `--out`, `--quiet` | Markdown model card to stdout and/or a file |
+| `azoic compare` | One or more config paths | `--out` | Comparison table to stdout or CSV |
+| `azoic tune` | `--config` | `--trials 20`, `--calibration-penalty 1.0`, `--out`, `--quiet` | Best parameters plus Markdown model card |
 | `azoic export-tariff` | `--config`, `--model`, `--out` | `--distill`, `--recalibrate/--no-recalibrate` | Three-sheet xlsx tariff |
 
 Run `azoic COMMAND --help` for Typer's current option spellings.
@@ -261,8 +261,8 @@ Run `azoic COMMAND --help` for Typer's current option spellings.
 | `ModelResult` | Model kind, effective YAML parameters, diagnostic metrics, and held-out calibration table |
 | Metrics | `gini_train`, `gini_test`, `op_ratio_test`, and exposure-weighted Tweedie `deviance_test` at fixed power 1.5 |
 | Optional estimator mapping | Returned by `run_experiment(..., return_estimators=True)` |
-| Model card | Markdown or minimal standalone HTML |
-| Comparison | pandas table or optional Plotly HTML dashboard |
+| Model card | Markdown |
+| Comparison | pandas table; `comparison_dashboard(runs)` optionally returns standalone Plotly HTML from Python |
 | Tariff | `base_rate`, `factors`, and `mappings` workbook sheets |
 
 ## Validation rules

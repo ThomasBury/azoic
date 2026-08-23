@@ -272,7 +272,31 @@ def test_plot_actual_vs_predicted_unweighted(tmp_path) -> None:
     fig = ax.get_figure()
     panel_axes = [a for a in fig.axes if a.get_title() and "Actual vs predicted" in a.get_title()]
     assert len(panel_axes) == 2
-    assert ax.get_xlabel() == "observed"
+    assert ax.get_xlabel() == "observed pure-premium rate"
+
+
+def test_plot_actual_vs_predicted_uses_rate_units(monkeypatch) -> None:
+    claim_amount = np.array([2.0, 6.0, 12.0, 20.0])
+    exposure = np.array([1.0, 2.0, 3.0, 4.0])
+    predicted_rate = np.array([1.5, 2.5, 4.5, 5.5])
+    calls = []
+    original_hexbin = plt.Axes.hexbin
+
+    def capture_hexbin(self, *args, **kwargs):
+        calls.append((np.asarray(kwargs["x"]), np.asarray(kwargs["y"])))
+        return original_hexbin(self, *args, **kwargs)
+
+    monkeypatch.setattr(plt.Axes, "hexbin", capture_hexbin)
+    ax = plot_actual_vs_predicted(claim_amount, predicted_rate, exposure)
+
+    observed_rate = claim_amount / exposure
+    assert len(calls) == 2
+    np.testing.assert_allclose(calls[0][0], observed_rate)
+    np.testing.assert_allclose(calls[0][1], predicted_rate)
+    np.testing.assert_allclose(calls[1][0], predicted_rate)
+    np.testing.assert_allclose(calls[1][1], observed_rate - predicted_rate)
+    assert ax.get_ylabel() == "predicted pure-premium rate"
+    assert ax.get_figure().axes[1].get_ylabel() == "rate residual (observed − predicted)"
 
 
 def test_plot_actual_vs_predicted_exposure_weighted() -> None:

@@ -93,6 +93,10 @@ def _categorize_strings(X):
 class RiskGLM(RegressorMixin, BaseEstimator):
     """Generalized linear model on top of ``glum.GeneralizedLinearRegressor``.
 
+    ``fit`` and ``score`` take per-exposure rate targets; ``predict`` returns
+    rates. When ``exposure_col`` is set, exposure supplies the default sample
+    weight and is excluded from the backend features.
+
     Parameters
     ----------
     family : str
@@ -199,6 +203,10 @@ class RiskGLM(RegressorMixin, BaseEstimator):
 
 class RiskGBM(RegressorMixin, BaseEstimator):
     """Gradient boosted tree model on top of ``lightgbm.LGBMRegressor``.
+
+    ``fit`` and ``score`` take per-exposure rate targets; ``predict`` returns
+    rates. When ``exposure_col`` is set, exposure supplies the default sample
+    weight and is excluded from the backend features.
 
     Parameters
     ----------
@@ -416,6 +424,11 @@ class FrequencySeverityModel(RegressorMixin, BaseEstimator):
     rows where ``claim_count > 0`` (Gamma needs y > 0). The filter lives here
     per AGENTS.md rule 3, never in user code.
 
+    ``fit(X, y)`` accepts the same pure-premium rate target as ``RiskGLM``
+    and ``RiskGBM`` and validates it against ``claim_amount / exposure``.
+    ``y`` may be omitted because the outcome columns already travel inside
+    ``X``. ``predict`` returns rates and ``score`` compares rate targets.
+
     Sub-estimators are duck-typed: anything exposing
     ``fit(X, y, sample_weight=...)`` and ``predict(X)`` works -- ``RiskGLM``,
     ``RiskGBM``, sklearn's own GLM estimators, etc.
@@ -483,11 +496,24 @@ class FrequencySeverityModel(RegressorMixin, BaseEstimator):
         if self.freq is None or self.sev is None:
             raise ValueError("FrequencySeverityModel requires both `freq` and `sev`.")
         self._require_specials(X)
-        _store_fit_meta(self, X)
 
         exposure = X[self.exposure_col].to_numpy(dtype=float)
         cc = X[self.claim_count_col].to_numpy(dtype=float)
         ca = X[self.claim_amount_col].to_numpy(dtype=float)
+        if y is not None:
+            y_rate = np.asarray(y, dtype=float)
+            if y_rate.ndim != 1 or len(y_rate) != len(X):
+                raise ValueError(
+                    "y must be a one-dimensional pure-premium rate with one value per X row"
+                )
+            if not np.isfinite(y_rate).all():
+                raise ValueError("y pure-premium rate must contain only finite values")
+            with np.errstate(divide="ignore", invalid="ignore"):
+                observed_rate = ca / exposure
+            if not np.allclose(y_rate, observed_rate):
+                raise ValueError("y must equal claim_amount / exposure (pure-premium rate)")
+
+        _store_fit_meta(self, X)
         X_features = _categorize_strings(self._strip_specials(X))
 
         with np.errstate(divide="ignore", invalid="ignore"):
@@ -539,7 +565,8 @@ class FrequencySeverityModel(RegressorMixin, BaseEstimator):
     def score(self, X, y, sample_weight=None):
         """D^2 (Tweedie, p=1.5) on pure-premium rates, weighted by exposure.
 
-        ``y`` is claim_amount (aggregate per row); exposition from PRD section 5.
+        ``y`` is the pure-premium rate target. Exposure from ``X`` is the
+        default weight; an explicit ``sample_weight`` overrides it.
         """
         check_is_fitted(self, "freq_")
         if not isinstance(X, pd.DataFrame):
@@ -548,9 +575,8 @@ class FrequencySeverityModel(RegressorMixin, BaseEstimator):
         y = np.asarray(y, dtype=float)
         if sample_weight is None:
             sample_weight = exposure
-        observed_rate = y / exposure
         return d2_tweedie_score(
-            observed_rate,
+            y,
             self.predict(X),
             power=1.5,
             sample_weight=sample_weight,
