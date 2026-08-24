@@ -54,10 +54,10 @@ Legend: ☐ pending · ◐ in progress · ☑ done
   O/P, Gini, deviance, and \(D^2\) with full-input reconciliation.
 - ☑ **M12 — protected-group audit** — prevent protected-column leakage and retain
   held-out subgroup calibration evidence.
-- ☐ **M13 — interpretation recipes** — sklearn PDP/ICE and LightGBM native
+- ☑ **M13 — interpretation recipes** — sklearn PDP/ICE and LightGBM native
   contribution examples without new wrappers or explanation dependencies.
 
 ## Current focus
 
-- M13 is the sole next milestone.
+- All defined milestones are complete.
 - Demand-gated items are not implementation work without new evidence.
