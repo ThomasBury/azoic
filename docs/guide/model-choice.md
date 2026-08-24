@@ -65,6 +65,99 @@ constraints may be a sequence in post-exposure feature order or a mapping from
 numeric feature name to `-1`, `0`, or `1`. Categorical features cannot carry a
 non-zero constraint.
 
+## Inspect feature effects with PDP and ICE
+
+Partial dependence (PDP) averages predictions while varying one feature.
+Individual conditional expectation (ICE) keeps one curve per sampled row, so it
+can reveal effects hidden by the average. Pass a fitted Azoic estimator directly;
+a fitted pipeline returned by `run_experiment(..., return_estimators=True)` works
+the same way.
+
+```python
+from sklearn.inspection import PartialDependenceDisplay
+
+explanation_features = ["driver_age", "vehicle_age"]
+X_explain = X_train.copy()
+X_explain[explanation_features] = X_explain[explanation_features].astype(float)
+
+fitted_estimator = gbm  # A workflow-returned pipeline can be used here instead.
+display = PartialDependenceDisplay.from_estimator(
+    fitted_estimator,
+    X_explain,
+    features=explanation_features,
+    kind="both",
+    method="brute",
+    sample_weight=X_explain["exposure"],
+    subsample=200,
+    random_state=42,
+    ice_lines_kw={"alpha": 0.15},
+    pd_line_kw={"linewidth": 2},
+)
+display.figure_.tight_layout()
+```
+
+Convert explained integer columns to floats because scikit-learn writes the
+PDP grid values into working copies of those columns.
+
+For a pipeline, name `features` with the original input columns; fitted
+preprocessing runs inside the pipeline for every grid value. The exposure
+weights affect the PDP average. They do not alter an individual ICE curve, and
+`subsample` limits only the displayed ICE rows; `random_state` makes that choice
+repeatable.
+
+## Inspect LightGBM native contributions
+
+`RiskGBM.backend_` exposes LightGBM's native feature contributions. A workflow
+pipeline must transform the original columns before the backend call. Exposure
+then comes out because it weighted fitting but was not a backend feature.
+
+```python
+import numpy as np
+import pandas as pd
+from sklearn.pipeline import Pipeline
+
+fitted_estimator = gbm  # Or a fitted workflow pipeline ending in RiskGBM.
+if isinstance(fitted_estimator, Pipeline):
+    model = fitted_estimator[-1]
+    X_backend = fitted_estimator[:-1].transform(X_explain)
+else:
+    model = fitted_estimator
+    X_backend = X_explain
+
+X_backend = X_backend.drop(columns=model.exposure_col).copy()
+categorical_columns = X_backend.select_dtypes(include=["object", "string"]).columns
+X_backend[categorical_columns] = X_backend[categorical_columns].astype("category")
+
+values = model.backend_.predict(X_backend, pred_contrib=True)
+contributions = pd.DataFrame(
+    values,
+    columns=[*model.backend_.feature_name_, "expected_value"],
+    index=X_explain.index,
+)
+
+raw_score = model.backend_.predict(X_backend, raw_score=True)
+np.testing.assert_allclose(contributions.sum(axis=1), raw_score)
+np.testing.assert_allclose(
+    np.exp(raw_score),
+    fitted_estimator.predict(X_explain),
+)
+contributions.head()
+```
+
+The final `expected_value` column is the backend's expected output. Adding it to
+the feature contributions reproduces the raw LightGBM score. For this Tweedie
+model the raw score is on the log scale, so exponentiating it reproduces the
+public pure-premium prediction.
+
+!!! warning "Interpretation boundaries"
+
+    - Correlated features can make PDP evaluate implausible feature combinations.
+    - ICE shows heterogeneity in the fitted model, not prediction uncertainty.
+    - Native contributions are model-specific associations on the raw score
+      scale. They are not causal effects or additive premium amounts.
+    - These views do not replace held-out Gini, calibration, O/P, and stability
+      checks.
+
 ## Fit frequency times severity
 
 The meta-estimator owns the actuarial split: frequency uses every row, while

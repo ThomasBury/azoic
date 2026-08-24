@@ -364,6 +364,92 @@ def test_run_experiment_returns_estimators_when_requested(tmp_path: Path) -> Non
     assert hasattr(ests["gbm-tweedie"], "predict")
 
 
+def test_interpretation_recipes_run_for_direct_gbm_and_workflow_pipeline(
+    tmp_path: Path,
+) -> None:
+    import matplotlib
+
+    matplotlib.use("Agg")
+
+    import matplotlib.pyplot as plt
+    from sklearn.inspection import PartialDependenceDisplay
+    from sklearn.pipeline import Pipeline
+
+    from azoic.models import RiskGBM
+
+    df = make_synthetic_portfolio(n=300, seed=13)
+    data = tmp_path / "interpretation.parquet"
+    df.to_parquet(data)
+    features = ["driver_age", "vehicle_age", "region", "vehicle_brand"]
+    model_params = {
+        "objective": "tweedie",
+        "tweedie_variance_power": 1.5,
+        "n_estimators": 10,
+        "num_leaves": 7,
+        "min_child_samples": 5,
+        "random_state": 42,
+    }
+    config = ExperimentConfig(
+        name="interpretation",
+        data_path=str(data),
+        spec={
+            "target": "claim_amount",
+            "exposure": "exposure",
+            "claim_count": "claim_count",
+        },
+        features=features,
+        preprocessing={"binner": {"cols": ["driver_age"], "max_bins": 4}},
+        models={"gbm": ModelSpec(kind="gbm", params=model_params)},
+    )
+    _, estimators = run_experiment(config, return_estimators=True)
+    pipeline = estimators["gbm"]
+    assert isinstance(pipeline, Pipeline)
+
+    X = df[[*features, "exposure"]]
+    y = df["claim_amount"] / df["exposure"]
+    direct = RiskGBM(exposure_col="exposure", **model_params).fit(X, y)
+    X_explain = X.iloc[:40].copy()
+    explanation_features = ["driver_age", "vehicle_age"]
+    X_explain[explanation_features] = X_explain[explanation_features].astype(float)
+    exposure = X_explain["exposure"].to_numpy()
+
+    for fitted_estimator in (direct, pipeline):
+        display = PartialDependenceDisplay.from_estimator(
+            fitted_estimator,
+            X_explain,
+            features=explanation_features,
+            kind="both",
+            method="brute",
+            sample_weight=exposure,
+            grid_resolution=5,
+            subsample=20,
+            random_state=42,
+        )
+        display.figure_.canvas.draw()
+        for result in display.pd_results:
+            np.testing.assert_allclose(
+                result.average[0],
+                np.average(result.individual[0], axis=0, weights=exposure),
+            )
+        plt.close(display.figure_)
+
+        if isinstance(fitted_estimator, Pipeline):
+            model = fitted_estimator[-1]
+            X_backend = fitted_estimator[:-1].transform(X_explain)
+        else:
+            model = fitted_estimator
+            X_backend = X_explain
+        X_backend = X_backend.drop(columns=model.exposure_col).copy()
+        categorical = X_backend.select_dtypes(include=["object", "string"]).columns
+        X_backend[categorical] = X_backend[categorical].astype("category")
+
+        contributions = np.asarray(model.backend_.predict(X_backend, pred_contrib=True))
+        raw_score = np.asarray(model.backend_.predict(X_backend, raw_score=True))
+        assert contributions.shape[1] == len(model.backend_.feature_name_) + 1
+        np.testing.assert_allclose(contributions.sum(axis=1), raw_score)
+        np.testing.assert_allclose(np.exp(raw_score), fitted_estimator.predict(X_explain))
+
+
 def test_preprocessing_and_frequency_severity_run_end_to_end(tmp_path: Path) -> None:
     data = _write_portfolio(tmp_path, n=4000)
     models = """\
