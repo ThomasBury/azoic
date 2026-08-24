@@ -50,15 +50,14 @@ Legend: ☐ pending · ◐ in progress · ☑ done
   and residual rate contracts; reconcile CLI/reporting documentation.
 - ☑ **M10 — configuration-driven tuning** — typed optional trial settings and
   per-model parameter distributions with defaults preserved.
-- ☐ **M11 — temporal stability diagnostics** — period-level exposure, totals,
+- ☑ **M11 — temporal stability diagnostics** — period-level exposure, totals,
   O/P, Gini, deviance, and \(D^2\) with full-input reconciliation.
-- ☐ **M12 — protected-group audit** — prevent protected-column leakage and retain
+- ☑ **M12 — protected-group audit** — prevent protected-column leakage and retain
   held-out subgroup calibration evidence.
 - ☐ **M13 — interpretation recipes** — sklearn PDP/ICE and LightGBM native
   contribution examples without new wrappers or explanation dependencies.
 
 ## Current focus
 
-- M11 is the sole next milestone.
-- M12 must not begin until M11 is marked complete.
+- M13 is the sole next milestone.
 - Demand-gated items are not implementation work without new evidence.

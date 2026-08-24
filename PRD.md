@@ -47,7 +47,7 @@ src/azoic/
   profile.py       profile_features() -> DataFrame; screen_features() -> keep/drop/review
   preprocessing.py AutoBinner, AutoGrouper (sklearn transformers; mapping_, set_mapping)
   models.py        RiskGLM, RiskGBM, FrequencySeverityModel
-  metrics.py       gini, lorenz, calibration_table, one_way_table, double_lift_table; re-exports sklearn deviances
+  metrics.py       gini, lorenz, calibration_table, stability_table, one_way_table, double_lift_table; re-exports sklearn deviances
   validation.py    make_strata, temporal_split
   plots.py         plot_lorenz, plot_lift, plot_calibration, plot_one_way, plot_double_lift, plot_actual_vs_predicted (matplotlib)
   tariff.py        distill_gbm(); export_tariff(glm_or_pipeline, path) -> xlsx
