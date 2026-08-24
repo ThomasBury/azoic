@@ -13,12 +13,12 @@ short runnable path, start with the
 | `target` | string | required | Aggregate claim amount column |
 | `exposure` | string | required | Positive exposure column used as model and diagnostic weight |
 | `claim_count` | string or null | `null` | Aggregate claim-count column; required for frequency-severity |
-| `earned_premium` | string or null | `null` | Optional premium column retained in the data contract |
 | `time_col` | string or null | `null` | Ordered period used by a temporal split |
-| `id_col` | string or null | `null` | Optional policy or row identifier |
+| `protected_cols` | list of strings | `[]` | Review-only subgroup columns retained for held-out calibration and excluded from features |
 
-`target` and `exposure` must be non-empty. When data loads, every named field
-must exist.
+`target`, `exposure`, and every protected-column name must be non-empty.
+`protected_cols` must be unique and cannot overlap target, exposure, claim count,
+or time. When data loads, every named field must exist.
 
 ## `ExperimentConfig`
 
@@ -36,7 +36,8 @@ must exist.
 | `tuning` | `TuningSpec` or null | `null` | Optional trial settings and per-model scalar search spaces |
 
 Explicit features must exist, be unique, and exclude every named special
-column.
+column, including protected columns. Automatic feature discovery excludes them
+for the same reason.
 
 ## Preprocessing settings
 
@@ -226,6 +227,19 @@ integer test size in Python, use `temporal_split` itself.
     is refit on all outer training rows, and the outer test is evaluated once.
     Custom search spaces do not change this leakage boundary.
 
+## Protected-group audit outputs
+
+Each `ModelResult.protected_calibration` is a mapping from protected-column name
+to a `calibration_table` built only from outer-test predictions for that model.
+Each table keeps the raw subgroup label in `group`, retains missing labels as a
+subgroup, and reports exposure, observed and predicted claim amount, pure
+premiums, and O/P ratio. Multiple protected columns are audited independently,
+not as intersections.
+
+Provide review-ready categorical or pre-banded groups. Azoic does not infer bins
+for continuous protected values. These tables are descriptive evidence for
+review, not a fairness threshold, automated decision, or legal assessment.
+
 ## Complete YAML shape
 
 ```yaml
@@ -237,8 +251,8 @@ spec:
   exposure: exposure
   claim_count: claim_count
   time_col: null
-  earned_premium: null
-  id_col: null
+  protected_cols:
+    - review_group
 
 features:
   - driver_age
@@ -319,7 +333,7 @@ Run `azoic COMMAND --help` for Typer's current option spellings.
 | Object | Contents |
 |---|---|
 | `Run` | Config, SHA-256 data fingerprint, row counts, feature names, and named `ModelResult` objects |
-| `ModelResult` | Model kind, effective YAML parameters, diagnostic metrics, and held-out calibration table |
+| `ModelResult` | Model kind, effective YAML parameters, diagnostic metrics, held-out calibration table, and `protected_calibration` mapping |
 | Metrics | `gini_train`, `gini_test`, `op_ratio_test`, and exposure-weighted Tweedie `deviance_test` at fixed power 1.5 |
 | Optional estimator mapping | Returned by `run_experiment(..., return_estimators=True)` |
 | Model card | Markdown |
@@ -333,7 +347,8 @@ Run `azoic COMMAND --help` for Typer's current option spellings.
 - Data must be non-empty; exposure must be positive and finite; target and claim
   count must be non-negative and finite.
 - Claim-count and target rows must be zero or positive together.
-- Features must exist, be unique, and exclude special columns.
+- Features must exist, be unique, and exclude special columns. Protected columns
+  must be unique, non-empty, present in the data, and distinct from other special columns.
 - Temporal splits reject absent or missing time values and keep timestamp ties
   together.
 - Tweedie LightGBM power outside \([1.0, 2.0)\) fails.

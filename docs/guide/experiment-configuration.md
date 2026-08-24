@@ -24,6 +24,8 @@ spec:
   target: claim_amount
   exposure: exposure
   claim_count: claim_count
+  protected_cols:
+    - review_group
 
 features:
   - driver_age
@@ -44,6 +46,11 @@ models:
       tweedie_power: 1.5
 ```
 
+`protected_cols` names review-only columns that remain available for held-out
+subgroup calibration but never enter preprocessing or model fitting. Provide
+review-ready categorical or pre-banded groups; Azoic preserves their labels and
+does not invent bins or pass/fail thresholds.
+
 Relative `data_path` values resolve from the process working directory. Run the
 example from the repository root.
 
@@ -60,8 +67,9 @@ for name, result in run.models.items():
 ```
 
 A `Run` includes the validated config, data fingerprint, row counts, feature
-names, and per-model metrics and calibration table. Fitted estimators are
-returned only when requested.
+names, and per-model metrics, overall calibration table, and protected-group
+calibration tables when declared. Fitted estimators are returned only when
+requested.
 
 ## Use task-oriented CLI commands
 
