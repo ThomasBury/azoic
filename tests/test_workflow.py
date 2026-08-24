@@ -268,15 +268,34 @@ def test_experiment_config_rejects_extra_fields(tmp_path: Path) -> None:
 
 
 def test_experiment_config_features_default_is_all_non_special(tmp_path: Path) -> None:
-    df = make_synthetic_portfolio(n=20, seed=1)
+    df = make_synthetic_portfolio(n=20, seed=1).assign(review_group="review")
     cfg = ExperimentConfig(
         name="x",
         data_path="ignored",
-        spec={"target": "claim_amount", "exposure": "exposure", "claim_count": "claim_count"},
+        spec={
+            "target": "claim_amount",
+            "exposure": "exposure",
+            "claim_count": "claim_count",
+            "protected_cols": ["review_group"],
+        },
         models={"glm-tweedie": ModelSpec(kind="glm", params={"family": "tweedie"})},
     )
     feats = cfg.feature_columns(df)
     assert set(feats) == {"driver_age", "vehicle_age", "region", "vehicle_brand"}
+
+
+def test_experiment_config_rejects_protected_explicit_feature() -> None:
+    with pytest.raises(ValueError, match="special columns"):
+        ExperimentConfig(
+            data_path="ignored",
+            spec={
+                "target": "claim_amount",
+                "exposure": "exposure",
+                "protected_cols": ["review_group"],
+            },
+            features=["driver_age", "review_group"],
+            models={"glm": ModelSpec(kind="glm")},
+        )
 
 
 def test_experiment_config_features_missing_raises(tmp_path: Path) -> None:
@@ -320,6 +339,7 @@ def test_run_experiment_basic_returns_run_with_results(tmp_path: Path) -> None:
         assert isinstance(res.calibration_table, pd.DataFrame)
         assert "observed_pure_premium" in res.calibration_table.columns
         assert "o_p_ratio" in res.calibration_table.columns
+        assert res.protected_calibration == {}
     # __getitem__ access.
 
 
@@ -407,6 +427,65 @@ models:
         assert len(actual) == len(unlabeled)
         assert np.isfinite(actual).all()
         assert (actual >= 0).all()
+
+
+def test_protected_audits_use_outer_test_and_never_fit_columns(tmp_path: Path) -> None:
+    n = 1200
+    n_test = int(round(n * 0.2))
+    df = make_synthetic_portfolio(n=n, seed=19).assign(period=np.arange(n))
+    protected_group = np.full(n, "train-only", dtype=object)
+    protected_group[-n_test:] = np.resize(
+        np.array(["review-a", "review-b", None], dtype=object), n_test
+    )
+    df = df.assign(
+        protected_group=protected_group,
+        protected_channel=np.where(np.arange(n) % 2, "broker", "direct"),
+    )
+    path = tmp_path / "protected.parquet"
+    df.to_parquet(path)
+    cfg = ExperimentConfig(
+        name="protected",
+        data_path=str(path),
+        spec={
+            "target": "claim_amount",
+            "exposure": "exposure",
+            "claim_count": "claim_count",
+            "time_col": "period",
+            "protected_cols": ["protected_group", "protected_channel"],
+        },
+        preprocessing={"binner": {"cols": ["driver_age"], "max_bins": 4}},
+        split="temporal",
+        test_size=0.2,
+        models={
+            "glm": ModelSpec(
+                kind="glm",
+                params={"family": "tweedie", "link": "log", "tweedie_power": 1.5},
+            )
+        },
+    )
+
+    run, estimators = run_experiment(cfg, return_estimators=True)
+
+    assert set(run.feature_names) == {"driver_age", "vehicle_age", "region", "vehicle_brand"}
+    result = run.models["glm"]
+    assert set(result.protected_calibration) == {"protected_group", "protected_channel"}
+    group_table = result.protected_calibration["protected_group"]
+    assert "train-only" not in set(group_table["group"].dropna())
+    assert set(group_table["group"].dropna()) == {"review-a", "review-b"}
+    assert group_table["group"].isna().sum() == 1
+
+    held_out = df.tail(n_test)
+    for table in result.protected_calibration.values():
+        assert np.isclose(table["exposure"].sum(), held_out["exposure"].sum())
+        assert np.isclose(table["claim_amount"].sum(), held_out["claim_amount"].sum())
+        assert np.isclose(
+            table["predicted_claim_amount"].sum(),
+            result.calibration_table["predicted_claim_amount"].sum(),
+        )
+
+    pipeline = estimators["glm"]
+    for fitted in (pipeline, pipeline.named_steps["binner"], pipeline.named_steps["model"]):
+        assert not set(cfg.spec.protected_cols) & set(fitted.feature_names_in_)
 
 
 def test_run_experiment_temporal_split_requires_time_col(tmp_path: Path) -> None:

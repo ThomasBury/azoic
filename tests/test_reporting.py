@@ -49,6 +49,41 @@ def test_model_card_md_contains_run_and_model_summary(tmp_path: Path) -> None:
     # Calibration table preview header row + a separator row.
     assert "| group |" in md
     assert "| --- |" in md
+    assert "Protected-group calibration" not in md
+
+
+def test_model_card_includes_descriptive_protected_evidence(tmp_path: Path) -> None:
+    path = tmp_path / "protected.parquet"
+    df = make_synthetic_portfolio(n=2000, seed=43).assign(
+        review_group=np.where(np.arange(2000) % 2, "review-a", "review-b")
+    )
+    df.to_parquet(path)
+    cfg = ExperimentConfig(
+        name="protected",
+        data_path=str(path),
+        spec={
+            "target": "claim_amount",
+            "exposure": "exposure",
+            "claim_count": "claim_count",
+            "protected_cols": ["review_group"],
+        },
+        features=["driver_age", "vehicle_age", "region", "vehicle_brand"],
+        models={
+            "glm": ModelSpec(
+                kind="glm",
+                params={"family": "tweedie", "link": "log", "tweedie_power": 1.5},
+            )
+        },
+    )
+
+    md = model_card(run_experiment(cfg))
+
+    assert "- protected columns: `review_group`" in md
+    assert "Protected-group calibration (outer test)" in md
+    assert "##### `review_group`" in md
+    assert "review-a" in md and "review-b" in md
+    assert "descriptive only" in md
+    assert "not a fairness threshold or legal assessment" in md
 
 
 def test_model_card_md_includes_metrics_values(tmp_path: Path) -> None:
@@ -115,4 +150,3 @@ def test_comparison_table_includes_all_models_and_metrics(tmp_path: Path) -> Non
     for metric in ("gini_train", "gini_test", "op_ratio_test", "deviance_test", "d2_test"):
         assert metric in table.columns
     assert np.isfinite(table.loc[0, "d2_test"])
-

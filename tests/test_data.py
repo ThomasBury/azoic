@@ -29,7 +29,39 @@ def test_dataset_spec_rejects_empty_strings() -> None:
 
 def test_dataset_spec_optional_columns_filter() -> None:
     spec = DatasetSpec(target="claim_amount", exposure="exposure")
+    assert spec.protected_cols == []
     assert spec.required_columns() == ["claim_amount", "exposure"]
+
+
+@pytest.mark.parametrize(
+    ("protected_cols", "message"),
+    [
+        (["region", "region"], "unique"),
+        ([""], "non-empty"),
+        (["   "], "non-empty"),
+    ],
+)
+def test_dataset_spec_rejects_invalid_protected_names(
+    protected_cols: list[str], message: str
+) -> None:
+    with pytest.raises(pydantic.ValidationError, match=message):
+        DatasetSpec(
+            target="claim_amount",
+            exposure="exposure",
+            protected_cols=protected_cols,
+        )
+
+
+@pytest.mark.parametrize("column", ["claim_amount", "exposure", "claim_count", "period"])
+def test_dataset_spec_rejects_protected_special_column_overlap(column: str) -> None:
+    with pytest.raises(pydantic.ValidationError, match="overlaps"):
+        DatasetSpec(
+            target="claim_amount",
+            exposure="exposure",
+            claim_count="claim_count",
+            time_col="period",
+            protected_cols=[column],
+        )
 
 
 def test_load_data_roundtrip(tmp_path) -> None:
@@ -53,6 +85,19 @@ def test_load_data_missing_columns_raises(tmp_path) -> None:
     spec = DatasetSpec(target="claim_amount", exposure="exposure")
     with pytest.raises(ValueError, match="missing required columns"):
         load_data(p, spec=spec)
+
+
+def test_load_data_requires_declared_protected_columns(tmp_path) -> None:
+    path = tmp_path / "missing-protected.parquet"
+    pd.DataFrame({"claim_amount": [0.0], "exposure": [1.0]}).to_parquet(path)
+    spec = DatasetSpec(
+        target="claim_amount",
+        exposure="exposure",
+        protected_cols=["review_group"],
+    )
+
+    with pytest.raises(ValueError, match="review_group"):
+        load_data(path, spec=spec)
 
 
 def test_load_data_without_spec(tmp_path) -> None:

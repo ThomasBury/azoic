@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from azoic.metrics import (
     calibration_table,
@@ -15,6 +16,7 @@ from azoic.metrics import (
     mean_tweedie_deviance,
     one_way_table,
     op_ratio,
+    stability_table,
 )
 from tests.conftest import make_synthetic_portfolio
 
@@ -137,12 +139,136 @@ def test_calibration_table_custom_groups() -> None:
     assert np.allclose(tbl["predicted_pure_premium"], portfolio_pp)
 
 
+def test_calibration_table_custom_groups_keep_missing_values() -> None:
+    claims = np.array([1.0, 2.0, 3.0, 4.0])
+    predictions = np.array([1.0, 1.0, 1.0, 1.0])
+    exposure = np.array([1.0, 2.0, 3.0, 4.0])
+    table = calibration_table(
+        claims,
+        predictions,
+        exposure,
+        groups=np.array(["review", None, "review", None], dtype=object),
+    )
+
+    assert pd.isna(table["group"]).sum() == 1
+    assert np.isclose(table["exposure"].sum(), exposure.sum())
+    assert np.isclose(table["claim_amount"].sum(), claims.sum())
+    assert np.isclose(table["predicted_claim_amount"].sum(), np.dot(predictions, exposure))
+
+
 def test_op_ratio_value() -> None:
     df = make_synthetic_portfolio(n=2000, seed=9)
     y_true = df["claim_amount"].to_numpy()
     y_pred = df["claim_amount"].to_numpy() / df["exposure"].to_numpy()
     w = df["exposure"].to_numpy()
     assert np.isclose(op_ratio(y_true, y_pred, w), 1.0)
+
+
+def test_stability_table_matches_period_metrics_and_reconciles() -> None:
+    df = make_synthetic_portfolio(n=2400, seed=18)
+    y_true = df["claim_amount"].to_numpy()
+    exposure = df["exposure"].to_numpy()
+    y_pred = y_true / exposure + 0.25
+    chronological = pd.period_range("2024-01", periods=4, freq="M")
+    periods = np.resize(chronological.to_numpy()[[2, 0, 3, 1]], len(df))
+
+    table = stability_table(y_true, y_pred, exposure, periods=periods)
+
+    assert list(table.columns) == [
+        "period",
+        "exposure",
+        "claim_amount",
+        "predicted_claim_amount",
+        "o_p_ratio",
+        "gini",
+        "deviance",
+        "d2",
+    ]
+    assert table["period"].tolist() == chronological.tolist()
+    assert np.isfinite(table.drop(columns="period").to_numpy(dtype=float)).all()
+
+    for row in table.itertuples(index=False):
+        mask = periods == row.period
+        observed_rate = y_true[mask] / exposure[mask]
+        expected_deviance = mean_tweedie_deviance(
+            observed_rate,
+            y_pred[mask],
+            sample_weight=exposure[mask],
+            power=1.5,
+        )
+        null_prediction = np.full(
+            mask.sum(),
+            y_true[mask].sum() / exposure[mask].sum(),
+        )
+        null_deviance = mean_tweedie_deviance(
+            observed_rate,
+            null_prediction,
+            sample_weight=exposure[mask],
+            power=1.5,
+        )
+        assert np.isclose(row.o_p_ratio, op_ratio(y_true[mask], y_pred[mask], exposure[mask]))
+        assert np.isclose(row.gini, gini(y_true[mask], y_pred[mask], exposure[mask]))
+        assert np.isclose(row.deviance, expected_deviance)
+        assert np.isclose(row.d2, 1.0 - expected_deviance / null_deviance)
+
+    assert np.isclose(table["exposure"].sum(), exposure.sum())
+    assert np.isclose(table["claim_amount"].sum(), y_true.sum())
+    assert np.isclose(table["predicted_claim_amount"].sum(), np.dot(y_pred, exposure))
+
+
+def test_stability_table_rejects_missing_periods() -> None:
+    with pytest.raises(ValueError, match="missing"):
+        stability_table(
+            [1.0, 2.0],
+            [1.0, 1.0],
+            [1.0, 1.0],
+            periods=["2024-01", None],
+        )
+
+
+@pytest.mark.parametrize(
+    ("y_true", "y_pred", "sample_weight", "periods", "message"),
+    [
+        ([], [], [], [], "non-empty"),
+        ([[1.0]], [1.0], [1.0], ["2024-01"], "one-dimensional"),
+        ([1.0], [1.0], [1.0], [["2024-01"]], "one-dimensional"),
+        ([1.0, 2.0], [1.0], [1.0, 1.0], ["a", "b"], "same length"),
+        ([1.0, 2.0], [1.0, 1.0], [1.0, 1.0], ["a"], "same length"),
+        ([1.0, 2.0], [1.0, 1.0], [1.0, 1.0], [1.0, np.inf], "finite"),
+        ([np.nan], [1.0], [1.0], ["a"], "non-negative finite"),
+        ([-1.0], [1.0], [1.0], ["a"], "non-negative finite"),
+        ([1.0], [np.inf], [1.0], ["a"], "positive finite"),
+        ([1.0], [0.0], [1.0], ["a"], "positive finite"),
+        ([1.0], [1.0], [np.nan], ["a"], "positive finite"),
+        ([1.0], [1.0], [0.0], ["a"], "positive finite"),
+    ],
+)
+def test_stability_table_rejects_invalid_inputs(
+    y_true,
+    y_pred,
+    sample_weight,
+    periods,
+    message,
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        stability_table(y_true, y_pred, sample_weight, periods=periods)
+
+
+def test_stability_table_zero_null_deviance_has_nan_d2() -> None:
+    exposure = np.array([1.0, 2.0, 3.0])
+    predictions = np.array([1.5, 2.0, 2.5])
+    for claims in (np.zeros_like(exposure), 2.0 * exposure):
+        table = stability_table(
+            claims,
+            predictions,
+            exposure,
+            periods=np.repeat("2024-01", len(exposure)),
+        )
+
+        assert np.isnan(table.loc[0, "d2"])
+        assert np.isfinite(
+            table.loc[0, ["o_p_ratio", "gini", "deviance"]].to_numpy(dtype=float)
+        ).all()
 
 
 def test_deviances_reexported() -> None:
