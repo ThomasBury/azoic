@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class DatasetSpec(BaseModel):
@@ -24,6 +24,7 @@ class DatasetSpec(BaseModel):
     exposure: str
     claim_count: str | None = None
     time_col: str | None = None
+    protected_cols: list[str] = Field(default_factory=list)
 
     @field_validator("target", "exposure")
     @classmethod
@@ -32,11 +33,30 @@ class DatasetSpec(BaseModel):
             raise ValueError("column name must be non-empty")
         return v
 
+    @field_validator("protected_cols")
+    @classmethod
+    def _valid_protected_cols(cls, values: list[str]) -> list[str]:
+        if any(not name or not name.strip() for name in values):
+            raise ValueError("protected column names must be non-empty")
+        duplicates = sorted({name for name in values if values.count(name) > 1})
+        if duplicates:
+            raise ValueError(f"protected_cols must be unique; duplicates: {duplicates}")
+        return values
+
+    @model_validator(mode="after")
+    def _protected_cols_are_not_outcomes(self):
+        special = {self.target, self.exposure, self.claim_count, self.time_col}
+        overlap = sorted(set(self.protected_cols) & special)
+        if overlap:
+            raise ValueError(f"protected_cols overlaps other special columns: {overlap}")
+        return self
+
     def required_columns(self) -> list[str]:
         cols = [self.target, self.exposure]
         for opt in (self.claim_count, self.time_col):
             if opt:
                 cols.append(opt)
+        cols.extend(self.protected_cols)
         return cols
 
 
