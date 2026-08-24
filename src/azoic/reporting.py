@@ -79,6 +79,12 @@ def _render_markdown(run: Run) -> str:
         f"- features ({len(run.feature_names)}): " + ", ".join(f"`{c}`" for c in run.feature_names),
         "",
     ]
+    if cfg.spec.protected_cols:
+        lines.insert(
+            -1,
+            "- protected columns: " + ", ".join(f"`{c}`" for c in cfg.spec.protected_cols),
+        )
+
     for name, res in run.models.items():
         lines.append(_metrics_block_md(name, res.kind, res.params, res.metrics))
         lines.append("")
@@ -86,6 +92,15 @@ def _render_markdown(run: Run) -> str:
         lines.append("")
         lines.append(_df_preview_md(res.calibration_table))
         lines.append("")
+        if res.protected_calibration:
+            lines.append("#### Protected-group calibration (outer test)")
+            lines.append("")
+            lines.append(
+                "This held-out subgroup evidence is descriptive only; it is not a fairness "
+                "threshold or legal assessment."
+            )
+            for column, table in res.protected_calibration.items():
+                lines.extend(["", f"##### `{column}`", "", _df_preview_md(table), ""])
     return "\n".join(lines)
 
 
