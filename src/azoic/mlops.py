@@ -9,8 +9,6 @@ everything worth logging -- the config fingerprint (top-level), per-model
 params, per-model metrics, and the calibration tables (CLI can persist those
 as artifacts before calling ``log_run``).
 
-ponytail: ceiling -- no fluent API, no custom logger classes; if cross-run
-comparison / autolog / model registry wiring lands at v0.3, add then.
 """
 
 from __future__ import annotations
