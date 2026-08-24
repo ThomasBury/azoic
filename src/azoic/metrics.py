@@ -1,4 +1,4 @@
-"""Actuarial diagnostics: exposure-weighted Gini, Lorenz, calibration, one-way, double-lift.
+"""Actuarial diagnostics: ranking, calibration, stability, one-way, and double-lift.
 
 Pure-premium convention (see PRD.md section 5):
     y_true  = claim_amount (aggregate)
@@ -36,6 +36,7 @@ __all__ = [
     "lorenz",
     "Lorenz",
     "calibration_table",
+    "stability_table",
     "one_way_table",
     "double_lift_table",
     "op_ratio",
@@ -134,6 +135,109 @@ def op_ratio(y_true, y_pred, sample_weight=None) -> float:
     return float(observed_pp / pred_pp)
 
 
+def stability_table(y_true, y_pred, sample_weight, *, periods) -> pd.DataFrame:
+    """Return exposure-weighted diagnostics for each naturally sorted period.
+
+    ``y_true`` is aggregate claim amount, ``y_pred`` is predicted pure premium,
+    and ``sample_weight`` is exposure. The fixed-power Tweedie deviance and
+    period-relative :math:`D^2` use ``power=1.5``. ``D^2`` is ``NaN`` when the
+    period's exposure-weighted observed-mean prediction has zero deviance.
+
+    All inputs must be non-empty, one-dimensional, equal-length arrays without
+    missing periods. Claim amounts must be non-negative and finite; predictions
+    and exposures must be positive and finite.
+    """
+    y_true = np.asarray(y_true, dtype=float)
+    y_pred = np.asarray(y_pred, dtype=float)
+    sample_weight = np.asarray(sample_weight, dtype=float)
+    periods = np.asarray(periods)
+
+    if any(values.ndim != 1 for values in (y_true, y_pred, sample_weight, periods)):
+        raise ValueError("stability_table inputs must be one-dimensional")
+    if len(y_true) == 0:
+        raise ValueError("stability_table inputs must be non-empty")
+    if len({len(y_true), len(y_pred), len(sample_weight), len(periods)}) != 1:
+        raise ValueError("stability_table inputs must have the same length")
+    if pd.isna(periods).any():
+        raise ValueError("periods must not contain missing values")
+    if pd.api.types.is_numeric_dtype(periods) and not np.isfinite(periods).all():
+        raise ValueError("numeric periods must contain only finite values")
+    if not np.isfinite(y_true).all() or np.any(y_true < 0):
+        raise ValueError("y_true must contain only non-negative finite claim amounts")
+    if not np.isfinite(y_pred).all() or np.any(y_pred <= 0):
+        raise ValueError("y_pred must contain only positive finite predictions")
+    if not np.isfinite(sample_weight).all() or np.any(sample_weight <= 0):
+        raise ValueError("sample_weight must contain only positive finite exposures")
+
+    frame = pd.DataFrame(
+        {
+            "period": periods,
+            "claim_amount": y_true,
+            "prediction": y_pred,
+            "exposure": sample_weight,
+        }
+    )
+    rows = []
+    for period, group in frame.groupby("period", observed=True, sort=True):
+        claims = group["claim_amount"].to_numpy()
+        predictions = group["prediction"].to_numpy()
+        exposure = group["exposure"].to_numpy()
+        observed_rate = claims / exposure
+        exposure_total = float(exposure.sum())
+        claim_total = float(claims.sum())
+        predicted_total = float(np.dot(predictions, exposure))
+        deviance = float(
+            mean_tweedie_deviance(
+                observed_rate,
+                predictions,
+                sample_weight=exposure,
+                power=1.5,
+            )
+        )
+        null_deviance = 0.0
+        if claim_total > 0:
+            null_prediction = np.full_like(predictions, claim_total / exposure_total)
+            null_deviance = float(
+                mean_tweedie_deviance(
+                    observed_rate,
+                    null_prediction,
+                    sample_weight=exposure,
+                    power=1.5,
+                )
+            )
+        rows.append(
+            {
+                "period": period,
+                "exposure": exposure_total,
+                "claim_amount": claim_total,
+                "predicted_claim_amount": predicted_total,
+                "o_p_ratio": op_ratio(claims, predictions, exposure),
+                "gini": gini(claims, predictions, exposure),
+                "deviance": deviance,
+                "d2": 1.0 - deviance / null_deviance if null_deviance > 0 else float("nan"),
+            }
+        )
+
+    out = pd.DataFrame.from_records(
+        rows,
+        columns=[
+            "period",
+            "exposure",
+            "claim_amount",
+            "predicted_claim_amount",
+            "o_p_ratio",
+            "gini",
+            "deviance",
+            "d2",
+        ],
+    )
+    totals = out[["exposure", "claim_amount", "predicted_claim_amount"]].sum().to_numpy()
+    expected = np.array([sample_weight.sum(), y_true.sum(), np.dot(y_pred, sample_weight)])
+    if not np.allclose(totals, expected):
+        raise RuntimeError("period totals do not reconcile with the complete input")
+    return out
+
+
 def calibration_table(
     y_true,
     y_pred,
@@ -162,7 +266,7 @@ def calibration_table(
         {"y_true": y_true, "y_pred": y_pred, "exposure": w, "group": np.asarray(groups)}
     )
     df["predicted_claim_amount"] = df["y_pred"] * df["exposure"]
-    grouped = df.groupby("group", observed=True)
+    grouped = df.groupby("group", observed=True, dropna=False)
     out = grouped.agg(
         exposure=("exposure", "sum"),
         claim_amount=("y_true", "sum"),
