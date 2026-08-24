@@ -42,9 +42,51 @@ double_lift = double_lift_table(
 | `one_way_table` | Actual categorical levels; numeric values or exposure-balanced numeric bins | Segment calibration across one feature |
 | `double_lift_table` | Exposure-balanced bins of `pred_a / pred_b` | Where two models disagree and which ordering outcomes support |
 | `lorenz` | Tied prediction blocks ordered low to high | Cumulative exposure and claim shares plus concentration Gini |
+| `stability_table` | Genuine ordered portfolio periods | Exposure, observed and predicted totals, O/P, Gini, deviance, and period-relative \(D^2\) through time |
 
 Pass aggregate claim amount as `y_true`, predicted pure-premium rate as
 `y_pred`, and exposure as `sample_weight` for these actuarial tables.
+
+## Check stability through real time
+
+Assume `test["period"]` is a real portfolio period carried from the source,
+stored as a naturally ordered value such as `pandas.Period`, a datetime, or an
+integer year-month. Reuse the same held-out claims, predictions, and exposures
+as the other diagnostics:
+
+```python
+import numpy as np
+
+from azoic.metrics import stability_table
+
+stability = stability_table(
+    y_true,
+    pred_glm,
+    exposure,
+    periods=test["period"].to_numpy(),
+)
+
+assert np.isclose(stability["exposure"].sum(), exposure.sum())
+assert np.isclose(stability["claim_amount"].sum(), y_true.sum())
+assert np.isclose(
+    stability["predicted_claim_amount"].sum(),
+    np.dot(pred_glm, exposure),
+)
+```
+
+Each naturally sorted row reports exposure, observed and predicted claim
+totals, O/P, concentration Gini, exposure-weighted Tweedie deviance at
+`power=1.5`, and \(D^2\) against that period's observed-mean null model. The
+function rejects a missing period and checks that exposure, observed claims,
+and predicted claims reconcile to the complete input; the assertions keep
+that contract visible in a downstream report.
+
+!!! warning "Period means time"
+
+    Do not manufacture periods from row order or substitute an unordered label
+    such as region. String labels also sort lexically, so use a semantic period
+    or datetime type when chronological order matters. Without a genuine
+    ordered period, report non-temporal held-out diagnostics instead.
 
 ## Render every diagnostic
 
