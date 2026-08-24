@@ -212,6 +212,19 @@ Each is independently shippable. Done-when = acceptance check.
   correlated-feature and causal-interpretation limits. Add no Azoic wrapper and
   no DALEX/SHAP dependency. *Done when examples run on synthetic data and the
   strict docs build passes.*
+- **M14 — documentation parity and release hardening**: document temporal
+  stability diagnostics alongside the existing task recipes, remove obsolete
+  roadmap language from generated API documentation, and separate release
+  validation from trusted publication. Build, check, and smoke-test both
+  distributions before handing the exact artifacts to the least-privilege
+  publishing job. Add no second tutorial, dependency, or Python interface.
+  *Done when `just check`, `just docs-build`, `uv build`, and isolated wheel and
+  source-distribution CLI smoke tests pass and the Pages deployment is green.*
+- **M15 — first public release**: publish the validated `azoic==0.4.1`
+  distributions through PyPI trusted publishing from a `v0.4.1` GitHub release.
+  *Done when PyPI exposes the release, a fresh isolated install reports version
+  `0.4.1` and all five CLI commands, and the release and documentation workflows
+  are green.*
 
 ## 7. Later iterations (optional, none blocking)
 

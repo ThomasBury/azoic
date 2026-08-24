@@ -56,8 +56,14 @@ Legend: ☐ pending · ◐ in progress · ☑ done
   held-out subgroup calibration evidence.
 - ☑ **M13 — interpretation recipes** — sklearn PDP/ICE and LightGBM native
   contribution examples without new wrappers or explanation dependencies.
+- ☑ **M14 — documentation parity and release hardening** — document temporal
+  stability, remove obsolete MLflow roadmap language, and validate wheel and
+  source distributions before a least-privilege publish job.
+- ☐ **M15 — first public release** — publish and verify `azoic==0.4.1` through
+  GitHub Releases and PyPI trusted publishing.
 
 ## Current focus
 
-- All defined milestones are complete.
-- Demand-gated items are not implementation work without new evidence.
+- M14 is complete; M15 remains pending.
+- No M16 is defined without concrete evidence from usage, issues, or a real
+  portfolio.
