@@ -303,6 +303,7 @@ class ModelResult(BaseModel):
     params: dict[str, Any]
     metrics: dict[str, float]
     calibration_table: pd.DataFrame
+    protected_calibration: dict[str, pd.DataFrame] = Field(default_factory=dict)
 
 
 class Run(BaseModel):
@@ -459,6 +460,15 @@ def _evaluate_split(
             1.0 - metrics["deviance_test"] / null_dev if null_dev > 0 else float("nan")
         )
         cal = calibration_table(obs_test_agg, pred_test, exp_test, n_bins=10)
+        protected_calibration = {
+            column: calibration_table(
+                obs_test_agg,
+                pred_test,
+                exp_test,
+                groups=test_df[column].to_numpy(),
+            )
+            for column in config.spec.protected_cols
+        }
         params = dict(spec.params)
         if spec.kind == "frequency_severity":
             if spec.frequency is None or spec.severity is None:
@@ -470,6 +480,7 @@ def _evaluate_split(
             params=params,
             metrics=metrics,
             calibration_table=cal,
+            protected_calibration=protected_calibration,
         )
         estimators[name] = estimator
 
