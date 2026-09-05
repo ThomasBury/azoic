@@ -8,12 +8,12 @@ Pure-premium convention (see PRD.md section 5):
 Deviances are re-exported from sklearn (never reimplemented) -- they already
 accept `sample_weight`.
 
-Lorenz / Gini are reported in the actuarial convention: policies are ordered
-from safest to riskiest (ascending `y_pred`), the concentration curve sits
-below the diagonal, and a positive Gini means the model concentrates claims
-in the high-predicted-risk tail. The numeric value equals both ``2*area - 1``
-on the mirrored (above-diagonal) curve and the Frees-Meyers-Cummings midrank
-closed form on the tie-aggregated blocks.
+Concentration curves order policies by ascending predicted rate. Gini is twice
+the signed area from the curve to the diagonal: positive when claims tend to
+concentrate at higher predictions, negative for the reverse. Tied-score blocks
+are integrated, equivalently the Frees-Meyers-Cummings midrank formula. This is
+a prediction-ordered measure. Observed-rate ordering recovers the corresponding
+exposure-weighted pairwise inequality Gini.
 """
 
 from __future__ import annotations
@@ -61,8 +61,8 @@ def _concentration_curve(y_true, y_pred, sample_weight):
 
     Policies are ordered by ascending ``y_pred``; tied scores are aggregated
     into a single block before integration so the curve is permutation
-    invariant. The curve starts at (0, 0) and ends at (1, 1) and sits below
-    the diagonal for any model that ranks risk better than random.
+    invariant. The curve starts at (0, 0) and ends at (1, 1); it can cross
+    the diagonal even when its overall concentration Gini is positive.
     """
     total_w = sample_weight.sum()
     total_o = y_true.sum()
@@ -82,15 +82,21 @@ def _concentration_curve(y_true, y_pred, sample_weight):
 def gini(y_true, y_pred, sample_weight=None) -> float:
     """Exposure-weighted concentration Gini (actuarial low-to-high convention).
 
-    Ranks policies by ascending ``y_pred`` (safest to riskiest) and plots
-    cumulative claim share against cumulative exposure share. A good model
-    concentrates claims in the high-predicted-risk tail, so the curve sits
-    *below* the diagonal and ``gini = 1 - 2*area`` is positive. Range
-    ~[-1, 1]: 0 = random, 1 = perfect ranking, negative = inverse ranking.
-    The numeric value is also the Frees-Meyers-Cummings midrank closed form
-    on the tie-aggregated blocks. Equal prediction scores are aggregated
-    before integration, making ties independent of row order. Returns 0 when
-    total claims or total exposure is 0 (no signal).
+    ``y_true`` is aggregate claim amount, ``y_pred`` is predicted rate, and
+    ``sample_weight`` is exposure (unit exposure when omitted). Order by
+    ascending prediction and integrate cumulative claim share ``C(u)`` against
+    cumulative exposure share ``u``: ``G = 1 - 2 * integral(C(u), u=0..1)``.
+    This is twice the signed area from the curve to the diagonal, within
+    [-1, 1] for non-negative claims and positive exposure. Negative values
+    indicate claims concentrated toward lower predictions; zero need not
+    imply random predictions. Observed-rate ordering gives a hindsight upper
+    bound, generally below one, equal to exposure-weighted inequality Gini.
+
+    Pairwise absolute-difference inequality Gini measures observed-rate
+    dispersion independently of predictions. This implementation instead
+    integrates tied-score blocks, equivalently the Frees-Meyers-Cummings
+    midrank formula. Ties are independent of row order; positive scaling
+    preserves Gini. Returns 0 when total claims or total exposure is 0.
     """
     y_true, y_pred, w = _as_arrays(y_true, y_pred, sample_weight)
     cum_w, cum_o = _concentration_curve(y_true, y_pred, w)
@@ -105,9 +111,10 @@ def lorenz(y_true, y_pred, sample_weight=None) -> Lorenz:
     """Return the ascending concentration curve plus the Gini.
 
     ``exposure_pct`` and ``claims_pct`` both start at 0.0 and end at 1.0,
-    suitable for direct plotting. The curve is below the diagonal for any
-    informative model; a good model pushes it further down the more the
-    predictions are rank-correlated with losses.
+    suitable for direct plotting. Policies are ordered by predicted rate,
+    with equal scores aggregated before integration. The curve may cross the
+    diagonal; Gini is twice its signed area to that diagonal. A lower curve
+    dominates another only when it is nowhere above it.
     """
     y_true, y_pred, w = _as_arrays(y_true, y_pred, sample_weight)
     cum_w, cum_o = _concentration_curve(y_true, y_pred, w)
@@ -288,7 +295,7 @@ def one_way_table(
     y_pred,
     sample_weight=None,
     *,
-    n_bins: int = 10,
+    n_bins: int | None = 10,
 ) -> pd.DataFrame:
     """Per-level observed vs predicted pure premium for one feature.
 
@@ -312,7 +319,9 @@ def one_way_table(
     human-readable label (bin interval ``[a, b]`` for quantiled numeric, the
     actual level otherwise). ``level_center`` is the exposure-weighted mean
     of the raw feature within the bin (quantiled numeric only); the raw
-    value itself in unique-value mode; ``NaN`` for categorical.
+    value itself in unique-value mode; ``NaN`` for categorical or missing
+    values. Numeric missing rows retain their totals as ``Missing`` with
+    an undefined centre, and their exposure does not affect bin boundaries.
     """
     if feature not in X.columns:
         raise ValueError(f"feature {feature!r} not in X.columns")
@@ -336,7 +345,7 @@ def one_way_table(
     elif is_numeric:
         raw = values.to_numpy(dtype=float)
         levels = raw
-        labels = np.array(["nan" if np.isnan(v) else f"{v:g}" for v in raw], dtype=object)
+        labels = np.array(["Missing" if np.isnan(v) else f"{v:g}" for v in raw], dtype=object)
         centers = raw
         codes = pd.factorize(pd.Series(raw), use_na_sentinel=False)[0].astype(int)
     else:
@@ -357,7 +366,7 @@ def one_way_table(
         }
     )
     df["predicted_claim_amount"] = df["y_pred"] * df["exposure"]
-    grouped = df.groupby("level", observed=True, sort=True)
+    grouped = df.groupby("level", observed=True, sort=True, dropna=False)
     out = grouped.agg(
         level_label=("level_label", "first"),
         level_center=("level_center", "first"),
@@ -393,7 +402,7 @@ def _format_numeric_labels(
     """Return a per-row interval label ``[lo, hi]`` for the bin each row belongs to."""
     valid = codes >= 0
     if not valid.any():
-        return np.array([str(c) for c in codes], dtype=object)
+        return np.full(len(raw), "Missing", dtype=object)
     sorted_idx = np.argsort(codes[valid])
     sorted_codes = codes[valid][sorted_idx]
     sorted_raw = raw[valid][sorted_idx]
@@ -404,7 +413,7 @@ def _format_numeric_labels(
     labels = np.empty(len(raw), dtype=object)
     for i, code in enumerate(codes):
         if code < 0:
-            labels[i] = "nan"
+            labels[i] = "Missing"
         else:
             lo, hi = bounds[code]
             labels[i] = f"[{lo:g}, {hi:g}]"
@@ -427,12 +436,13 @@ def double_lift_table(
     """Per-decile observed pure premium ordered by the ``pred_a / pred_b`` ratio.
 
     Policies are bucketed into exposure-weighted deciles of the ratio (high
-    ratio = A likes this row more than B), and per decile the table reports
+    ratio = A predicts a higher rate relative to B), and per decile the table reports
     mean ratio, exposure, observed pure premium, and predicted pure premium
-    for both A and B. Endpoints are anchored by construction (the lowest- and
-    highest-ratio deciles are defined by the extremes of the ratio); the
-    middle deciles carry the most diagnostic signal. Use
-    ``azoic.plots.plot_double_lift`` to render.
+    for both A and B. Compare each predicted rate with observations within
+    each ratio group; rising observations alone cannot select a model. Extreme
+    ratio groups contain the largest relative disagreements, whose credibility
+    depends on exposure and claims. Rates are absolute, not normalized by
+    portfolio means. Use ``azoic.plots.plot_double_lift`` to render.
 
     Both predictions are floored at ``_RATIO_EPS`` to avoid division-by-zero
     when a GBM objective returns exact zeros (Poisson on never-claimed rows).

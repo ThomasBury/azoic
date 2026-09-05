@@ -87,7 +87,8 @@ class AutoBinner(TransformerMixin, BaseEstimator):
 
     Binned columns become ordered interval categoricals (DataFrame input) or
     integer bin codes (ndarray input). Non-target columns pass through
-    unchanged. NaN is assigned to a reserved ``"Missing"`` category.
+    unchanged. Finite bin edges are lower-inclusive and upper-exclusive.
+    NaN is assigned to a reserved ``"Missing"`` category.
 
     Parameters
     ----------
@@ -291,11 +292,11 @@ class AutoBinner(TransformerMixin, BaseEstimator):
             elif n == 0:
                 labels[i] = "(-inf, inf)"
             elif c == 0:
-                labels[i] = f"(-inf, {edge_labels[0]}]"
+                labels[i] = f"(-inf, {edge_labels[0]})"
             elif c >= n:
-                labels[i] = f"({edge_labels[-1]}, inf)"
+                labels[i] = f"[{edge_labels[-1]}, inf)"
             else:
-                labels[i] = f"({edge_labels[c - 1]}, {edge_labels[c]}]"
+                labels[i] = f"[{edge_labels[c - 1]}, {edge_labels[c]})"
         return labels
 
     @staticmethod
@@ -328,10 +329,11 @@ class AutoGrouper(TransformerMixin, BaseEstimator):
     Strategies
     ----------
     "rare"        Levels below ``min_exposure`` / ``min_claims`` -> ``other_label``.
-    "similarity"  Nominal levels are risk-sorted before grouping. Ordered
-                  categoricals merge only adjacent levels, choosing the
-                  closest exposure-weighted pure premium and breaking ties
-                  to the left.
+    "similarity"  Nominal levels are stably risk-sorted; ordered categoricals
+                  retain their declared order. Under-credible groups merge
+                  with their nearest-risk neighbour, then the closest adjacent
+                  pairs merge until ``max_groups`` is met. Risks are aggregate
+                  claims / exposure, recomputed after each merge; ties go left.
 
     ``mapping_`` is ``{col: {original_level: group_label}}``. Unknown levels at
     transform time map to ``other_label``.
@@ -432,9 +434,9 @@ class AutoGrouper(TransformerMixin, BaseEstimator):
             stats = stats.reindex([level for level in ordered_levels if level in stats.index])
         if self.strategy == "rare":
             return self._rare_mapping(stats)
-        if ordered_levels is not None:
-            return self._ordered_similarity_mapping(stats)
-        return self._similarity_mapping(stats)
+        if ordered_levels is None:
+            stats = stats.sort_values("pp", kind="stable")
+        return self._adjacent_similarity_mapping(stats)
 
     def _rare_mapping(self, stats):
         mp = {}
@@ -447,37 +449,7 @@ class AutoGrouper(TransformerMixin, BaseEstimator):
             mp[lvl] = lvl if keep else self.other_label
         return mp
 
-    def _similarity_mapping(self, stats):
-        order = stats.sort_values("pp", kind="stable").index.tolist()
-        floor_exp = self.min_exposure or 0.0
-        floor_cc = self.min_claims or 0.0
-        has_cc = "cc" in stats.columns
-        groups, cur, cur_exp, cur_cc = [], [], 0.0, 0.0
-        for lvl in order:
-            r = stats.loc[lvl]
-            cur.append(lvl)
-            cur_exp += float(r["exp"])
-            if has_cc:
-                cur_cc += float(r["cc"])
-            if cur_exp >= floor_exp and cur_cc >= floor_cc:
-                groups.append(cur)
-                cur, cur_exp, cur_cc = [], 0.0, 0.0
-        if cur:
-            if groups:
-                groups[-1].extend(cur)
-            else:
-                groups.append(cur)
-        if self.max_groups and len(groups) > self.max_groups:
-            while len(groups) > self.max_groups:
-                groups[-2].extend(groups.pop())
-        mp = {}
-        for i, grp in enumerate(groups):
-            label = grp[0] if len(grp) == 1 else f"group_{i}"
-            for lvl in grp:
-                mp[lvl] = label
-        return mp
-
-    def _ordered_similarity_mapping(self, stats):
+    def _adjacent_similarity_mapping(self, stats):
         groups = [[level] for level in stats.index]
         floor_exp = self.min_exposure or 0.0
         floor_cc = self.min_claims or 0.0

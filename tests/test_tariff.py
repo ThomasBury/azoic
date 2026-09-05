@@ -462,6 +462,56 @@ def test_apply_tariff_rejects_nonfinite_numeric_input() -> None:
         apply_tariff(tariff, X)
 
 
+def test_exported_intervals_independently_reproduce_boundary_premiums(tmp_path: Path) -> None:
+    from sklearn.pipeline import Pipeline
+
+    from azoic.preprocessing import AutoBinner
+
+    training = pd.DataFrame({"age": [0.0, 30.0, 60.0, 90.0] * 10, "exposure": 1.0})
+    model = Pipeline(
+        [
+            ("binner", AutoBinner(cols=["age"], max_bins=3)),
+            ("model", RiskGLM(family="poisson", link="log", alpha=0.01, exposure_col="exposure")),
+        ]
+    ).fit(training, np.tile([1.0, 10.0, 100.0, 100.0], 10))
+    out = export_tariff(model, tmp_path / "boundaries.xlsx", recalibrate=False)
+    sheets = pd.read_excel(out, sheet_name=None)
+    factors = sheets["factors"]
+    assert factors["feature"].unique().tolist() == ["age"]
+    assert not sheets["base_rate"].loc[0, "recalibrated"]
+    base_rate = float(sheets["base_rate"].loc[0, "base_rate"])
+    bins = sheets["mappings"].query("role == 'binned'").iloc[0]
+    edges = [float(value) for value in bins["mapping"].split(", ")]
+    values = np.array(
+        [-1e6]
+        + [
+            value
+            for edge in edges
+            for value in (np.nextafter(edge, -np.inf), edge, np.nextafter(edge, np.inf))
+        ]
+        + [1e6, np.nan]
+    )
+    rates = np.zeros(len(values))
+    matches = np.zeros(len(values), dtype=int)
+    for row in factors.itertuples():
+        label = row.level
+        assert label in bins["levels"]
+        if label == "Missing":
+            mask = np.isnan(values)
+        else:
+            lower, upper = map(float, label[1:-1].split(", "))
+            above = values >= lower if label[0] == "[" else values > lower
+            below = values <= upper if label[-1] == "]" else values < upper
+            mask = above & below
+        matches += mask
+        rates[mask] = base_rate * row.multiplicative_factor
+
+    np.testing.assert_array_equal(matches, np.ones(len(values), dtype=int))
+    predictions = model.predict(pd.DataFrame({"age": values, "exposure": 1.0}))
+    assert np.unique(np.round(predictions[np.isfinite(values)], 5)).size == 3
+    np.testing.assert_allclose(rates, predictions, rtol=1e-10)
+
+
 def test_export_tariff_unwraps_preprocessing_pipeline(tmp_path: Path) -> None:
     from azoic.workflow import ExperimentConfig, ModelSpec, run_experiment
 

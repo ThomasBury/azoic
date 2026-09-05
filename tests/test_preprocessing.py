@@ -54,6 +54,19 @@ def test_autobinner_weighted_quantile_uses_exposure() -> None:
     assert np.all(np.diff(edges) > 0)
 
 
+def test_autobinner_quantiles_ignore_missing_exposure() -> None:
+    observed = pd.DataFrame({"value": [10, 20, 20, 30, 40, 50], "exposure": [1, 2, 3, 1, 2, 1]})
+    extended = pd.concat(
+        [observed, pd.DataFrame({"value": [np.nan], "exposure": [1e9]})], ignore_index=True
+    )
+    baseline = AutoBinner(cols=["value"], max_bins=3, exposure_col="exposure").fit(observed)
+    binner = AutoBinner(cols=["value"], max_bins=3, exposure_col="exposure").fit(extended)
+    np.testing.assert_array_equal(baseline.mapping_["value"], [20, 30])
+    np.testing.assert_array_equal(binner.mapping_["value"], baseline.mapping_["value"])
+    pd.testing.assert_frame_equal(binner.transform(observed), baseline.transform(observed))
+    assert binner.transform(extended)["value"].iloc[-1] == "Missing"
+
+
 def test_autobinner_tree_strategy_targets_pure_premium() -> None:
     df = _df()
     binner = AutoBinner(
@@ -113,7 +126,40 @@ def test_autobinner_set_mapping_roundtrip() -> None:
     assert np.allclose(binner.mapping_["driver_age"], custom["driver_age"])
     out = binner.transform(df)
     assert out["driver_age"].nunique() <= 4
-    assert "(-inf, 25.0]" in out["driver_age"].cat.categories
+    assert "(-inf, 25.0)" in out["driver_age"].cat.categories
+
+
+@pytest.mark.parametrize(
+    ("training", "edges", "labels"),
+    [
+        ([np.nan, np.nan], [], ["(-inf, inf)"]),
+        ([0.0, 60.0], [30.0], ["(-inf, 30.0)", "[30.0, inf)"]),
+        (
+            [0.0, 30.0, 60.0, 90.0],
+            [30.0, 60.0],
+            ["(-inf, 30.0)", "[30.0, 60.0)", "[60.0, inf)"],
+        ),
+    ],
+)
+def test_autobinner_interval_boundaries_and_mapping_roundtrip(training, edges, labels) -> None:
+    binner = AutoBinner(cols=["x"], max_bins=max(2, len(edges) + 1)).fit(
+        pd.DataFrame({"x": training})
+    )
+    np.testing.assert_array_equal(binner.mapping_["x"], edges)
+    values, expected = [-1e6], [labels[0]]
+    for i, edge in enumerate(edges):
+        values.extend([np.nextafter(edge, -np.inf), edge, np.nextafter(edge, np.inf)])
+        expected.extend([labels[i], labels[i + 1], labels[i + 1]])
+    values.extend([1e6, np.nan])
+    expected.extend([labels[-1], "Missing"])
+    frame = pd.DataFrame({"x": values})
+
+    for _ in range(2):
+        out = binner.transform(frame)["x"]
+        assert out.tolist() == expected
+        assert out.cat.categories.tolist() == [*labels, "Missing"]
+        assert out.cat.ordered
+        binner.set_mapping({"x": edges})
 
 
 def test_autobinner_reserves_ordered_interval_vocabulary() -> None:
@@ -283,6 +329,88 @@ def test_autogrouper_similarity_groups_meet_floor() -> None:
         assert df.loc[mask, "exposure"].sum() >= floor
     # max_groups respected
     assert len(groups) <= 4
+
+
+@pytest.mark.parametrize("rate_target", [False, True], ids=["aggregate-column", "rate-y"])
+@pytest.mark.parametrize(
+    ("rates", "exposures", "claims", "max_groups", "min_exposure", "min_claims", "groups"),
+    [
+        ([100, 101, 10000], [10, 10, 10], [5, 5, 5], 2, None, None, ["AB", "C"]),
+        ([0, 4, 5, 8.7], [1, 9, 1, 1], [5, 5, 5, 5], 2, None, None, ["ABC", "D"]),
+        ([0, 1, 2.2, 3.6], [10, 10, 10, 10], [5, 5, 5, 5], 2, None, None, ["AB", "CD"]),
+        ([100, 101, 102], [10, 10, 10], [5, 5, 5], 2, None, None, ["AB", "C"]),
+        ([100, 10000, 100], [10, 10, 10], [5, 5, 5], 2, None, None, ["AC", "B"]),
+        ([100, 1000, 1001], [10, 1, 10], [5, 5, 5], 3, 5, None, ["A", "BC"]),
+        ([100, 101, 1000], [10, 1, 10], [5, 5, 5], 3, 5, None, ["AB", "C"]),
+        ([100, 101, 102], [10, 1, 10], [5, 5, 5], 3, 5, None, ["AB", "C"]),
+        ([100, 1000, 1001], [10, 10, 10], [5, 1, 5], 3, None, 3, ["A", "BC"]),
+        ([100, 101, 1000], [1, 1, 1], [1, 1, 1], 3, 5, 5, ["ABC"]),
+    ],
+    ids=[
+        "closest-risk",
+        "aggregate-risk",
+        "recompute",
+        "left-tie",
+        "stable-risk-sort",
+        "exposure-right",
+        "exposure-left",
+        "exposure-tie",
+        "claim-floor",
+        "impossible-floor",
+    ],
+)
+def test_autogrouper_nominal_similarity_merges_nearest_risks(
+    rate_target, rates, exposures, claims, max_groups, min_exposure, min_claims, groups
+) -> None:
+    levels = list("ABCD"[: len(rates)])
+    df = pd.DataFrame(
+        {
+            "segment": levels,
+            "exposure": exposures,
+            "claim_count": claims,
+            "claim_amount": np.multiply(rates, exposures),
+        }
+    )
+    grouper = AutoGrouper(
+        cols=["segment"],
+        strategy="similarity",
+        max_groups=max_groups,
+        min_exposure=min_exposure,
+        min_claims=min_claims,
+        exposure_col="exposure",
+        claim_count_col="claim_count",
+        target_col=None if rate_target else "claim_amount",
+    ).fit(df, rates if rate_target else None)
+
+    mapping = grouper.mapping_["segment"]
+    expected = {
+        level: group[0] if len(group) == 1 else f"group_{i}"
+        for i, group in enumerate(groups)
+        for level in group
+    }
+    assert list(mapping.items()) == list(expected.items())
+    out = grouper.transform(df)
+    assert out["segment"].tolist() == [expected[level] for level in levels]
+    assert not out["segment"].cat.ordered
+    grouper.set_mapping(grouper.mapping_)
+    pd.testing.assert_frame_equal(grouper.transform(df), out)
+
+
+def test_autogrouper_ordered_similarity_keeps_declared_nonmonotonic_order() -> None:
+    df = pd.DataFrame(
+        {
+            "segment": pd.Categorical(["A", "B", "C"], categories=["C", "B", "A"], ordered=True),
+            "exposure": [10, 10, 10],
+            "claim_amount": [1000, 100000, 1010],
+        }
+    )
+    grouper = AutoGrouper(
+        cols=["segment"], max_groups=2, exposure_col="exposure", target_col="claim_amount"
+    ).fit(df)
+    mapping = grouper.mapping_["segment"]
+    assert list(mapping) == ["C", "B", "A"]
+    assert mapping["C"] == mapping["B"] != mapping["A"]
+    assert grouper.transform(df)["segment"].cat.ordered
 
 
 def test_autogrouper_set_mapping_roundtrip() -> None:

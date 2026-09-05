@@ -309,6 +309,66 @@ def test_one_way_table_numeric_bins_matches_calibration_when_perfect() -> None:
     assert (tbl["level_label"].str.startswith("[") & tbl["level_label"].str.endswith("]")).all()
 
 
+@pytest.mark.parametrize("kind", ["calibration", "one_way", "double_lift"])
+def test_diagnostic_quantiles_ignore_missing_exposure(kind) -> None:
+    values = np.array([10, 20, 20, 30, 40, 50], dtype=float)
+    exposure = np.array([1, 2, 3, 1, 2, 1], dtype=float)
+    claims = values * exposure
+    tables = []
+    for missing in [False, True]:
+        v = np.r_[values, np.nan] if missing else values
+        w = np.r_[exposure, 1e9] if missing else exposure
+        amounts = np.r_[claims, 10000] if missing else claims
+        if kind == "calibration":
+            table = calibration_table(amounts, v, w, n_bins=3)
+            table = table.loc[table["group"] >= 0]
+        elif kind == "one_way":
+            table = one_way_table(
+                pd.DataFrame({"value": v}), "value", amounts, np.full(len(v), 100), w, n_bins=3
+            )
+            np.testing.assert_allclose(
+                table[["exposure", "claim_amount", "predicted_claim_amount"]].sum(),
+                [w.sum(), amounts.sum(), 100 * w.sum()],
+            )
+            if missing:
+                assert table.loc[table["level_label"] == "Missing", "claim_amount"].item() == 10000
+            table = table.loc[table["level_center"].notna()]
+        else:
+            table = double_lift_table(amounts, v, np.ones(len(v)), w, n_bins=3)
+        tables.append(table.reset_index(drop=True))
+    assert len(tables[0]) == 3
+    pd.testing.assert_frame_equal(tables[1], tables[0])
+
+
+@pytest.mark.parametrize("n_bins", [None, 10, 1])
+@pytest.mark.parametrize("all_missing", [False, True])
+@pytest.mark.parametrize("dtype", ["float64", "Float64"])
+def test_one_way_table_retains_numeric_missing_segment(n_bins, all_missing, dtype) -> None:
+    values = [np.nan, np.nan, np.nan] if all_missing else [20, 40, np.nan]
+    X = pd.DataFrame({"age": pd.Series(values, dtype=dtype)})
+    claims = np.array([100, 100, 10000])
+    predictions = np.array([80, 60, 1500])
+    exposure = np.array([1, 2, 5])
+    table = one_way_table(X, "age", claims, predictions, exposure, n_bins=n_bins)
+    np.testing.assert_allclose(
+        table[["exposure", "claim_amount", "predicted_claim_amount"]].sum(),
+        [8, 10200, 7700],
+    )
+    missing = table.loc[table["level_label"] == "Missing"]
+    assert len(missing) == 1
+    row = missing.iloc[0]
+    assert np.isnan(row["level_center"])
+    expected = [8, 10200, 7700] if all_missing else [5, 10000, 7500]
+    np.testing.assert_allclose(
+        row[["exposure", "claim_amount", "predicted_claim_amount"]].to_numpy(dtype=float), expected
+    )
+    assert row["observed_pure_premium"] == pytest.approx(expected[1] / expected[0])
+    assert row["predicted_pure_premium"] == pytest.approx(expected[2] / expected[0])
+    assert row["o_p_ratio"] == pytest.approx(expected[1] / expected[2])
+    if all_missing:
+        assert len(table) == 1
+
+
 def test_one_way_table_categorical_passthrough() -> None:
     rng = np.random.default_rng(12)
     n = 2000
@@ -392,3 +452,47 @@ def test_double_lift_table_shape_mismatch_raises() -> None:
     w = rng.uniform(size=n)
     with np.testing.assert_raises(ValueError):
         double_lift_table(y_true, pred_a, pred_b, w)
+
+
+def test_double_lift_rising_observations_can_match_model_b() -> None:
+    observed = np.repeat([10.0, 20.0, 30.0], 4)
+    pred_a = np.repeat([1.0, 20.0, 90.0], 4)
+    table = double_lift_table(observed, pred_a, observed, n_bins=3, label_a="A", label_b="B")
+    np.testing.assert_allclose(table.mean_ratio, [0.1, 1.0, 3.0])
+    np.testing.assert_allclose(table.observed_pure_premium, [10.0, 20.0, 30.0])
+    np.testing.assert_allclose(table.B_pure_premium, table.observed_pure_premium)
+    np.testing.assert_allclose(table.observed_pure_premium - table.A_pure_premium, [9, 0, -60])
+    np.testing.assert_allclose(table.exposure, [4, 4, 4])
+
+
+@pytest.mark.parametrize("multiplicative", [False, True])
+def test_grouped_residual_additive_and_multiplicative_levels(multiplicative) -> None:
+    prediction = np.array([10.0, 20.0, 30.0])
+    rate = 2 * prediction if multiplicative else prediction + 5
+    exposure = np.array([1.0, 2.0, 1.0])
+    factor = op_ratio(rate * exposure, prediction, exposure)
+    table = calibration_table(rate * exposure, prediction, exposure, groups=np.arange(3))
+    residual = table.observed_pure_premium - table.predicted_pure_premium
+    np.testing.assert_allclose(residual, prediction if multiplicative else 5)
+    np.testing.assert_allclose(
+        rate - factor * prediction, [0, 0, 0] if multiplicative else [2.5, 0, -2.5]
+    )
+
+
+def test_concentration_gini_differs_from_inequality_and_is_twice_signed_area() -> None:
+    rate = np.array([1.0, 3.0])
+    exposure = np.array([1.0, 2.0])
+    claims = rate * exposure
+    pairwise = np.sum(
+        exposure[:, None] * exposure[None, :] * abs(rate[:, None] - rate[None, :])
+    ) / (2 * exposure.sum() * claims.sum())
+    curve = lorenz(claims, rate, exposure)
+    np.testing.assert_allclose(curve.exposure_pct, [0, 1 / 3, 1])
+    np.testing.assert_allclose(curve.claims_pct, [0, 1 / 7, 1])
+    area = 1 / 42 + 8 / 21
+    assert area == pytest.approx(17 / 42)
+    assert pairwise == pytest.approx(4 / 21)
+    assert curve.gini == pytest.approx(2 * (0.5 - area))
+    assert gini(claims, rate, exposure) == pytest.approx(pairwise)
+    assert gini(claims, -rate, exposure) == pytest.approx(-pairwise)
+    assert gini(claims, 7 * rate, exposure) == pytest.approx(pairwise)

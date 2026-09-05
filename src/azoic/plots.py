@@ -183,11 +183,14 @@ def plot_lorenz(
 
     ``y_pred`` is a single prediction array or a mapping ``{model_name:
     predictions}``. The diagonal (random ranking) is drawn exactly once; with
-    ``show_oracle=True`` the perfect-ranking curve (``y_pred == y_true``) is
-    overlaid once as a grey dash-dot reference. Curves are sorted from safest
-    to riskiest (ascending prediction) and sit below the diagonal for any
-    model that ranks risk better than random; the Gini per model appears in
-    the legend.
+    ``show_oracle=True`` the oracle ranks by observed rate (aggregate claims
+    divided by exposure; omitted weights mean unit exposure). Aggregate claims
+    and exposure still determine the cumulative shares. This hindsight ranking
+    bound is not a deployable model and need not have Gini one. It is overlaid
+    once as a grey dash-dot reference. Curves are sorted from safest
+    to riskiest (ascending prediction). Gini, shown in the legend, is twice
+    the signed area from each curve to the diagonal; even a positive-Gini
+    curve can cross the diagonal. Shading shows the area, not twice its value.
     """
     with azoic_style():
         if ax is None:
@@ -207,7 +210,10 @@ def plot_lorenz(
             label="random (diagonal)",
         )
         if show_oracle:
-            oracle = lorenz(y_true, np.asarray(y_true, dtype=float), sample_weight)
+            observed_rate = np.asarray(y_true, dtype=float)
+            if sample_weight is not None:
+                observed_rate = observed_rate / np.asarray(sample_weight, dtype=float)
+            oracle = lorenz(y_true, observed_rate, sample_weight)
             ax.plot(
                 oracle.exposure_pct,
                 oracle.claims_pct,
@@ -360,9 +366,10 @@ def plot_one_way(
 
     Use the output of ``azoic.metrics.one_way_table``. With ``n_bins=None``
     the table has one level per unique value (natural numeric axis: driver
-    age has as many points as distinct test values). Observed is the grey
-    ``o-`` line, predicted the model-colored ``s--`` line. Stand-alone
-    (``ax=None``, default ``exposure="panel"``) a bottom exposure-share panel
+    age has as many points as distinct test values). If any centre is missing,
+    all groups use labelled positions so the missing segment remains visible.
+    Observed is the grey ``o-`` line, predicted the model-colored ``s--`` line.
+    Stand-alone (``ax=None``, default ``exposure="panel"``) a bottom exposure-share panel
     is drawn via ``subplot_mosaic``; pass ``exposure="background"`` when
     embedding in a caller grid to underlay translucent exposure bars instead.
     """
@@ -371,7 +378,7 @@ def plot_one_way(
         pred = table["predicted_pure_premium"].to_numpy(dtype=float)
         centers = table.get("level_center", pd.Series(np.nan)).to_numpy(dtype=float)
         labels = table.get("level_label", pd.Series(range(len(obs)))).astype(str).tolist()
-        is_numeric = np.isfinite(centers).any()
+        is_numeric = np.isfinite(centers).all()
         x = centers if is_numeric else np.arange(len(obs))
         share = _exposure_share(table)
         if ax is None:
@@ -430,9 +437,12 @@ def plot_double_lift(
     ``table`` is the output of ``azoic.metrics.double_lift_table``. Three
     lines: observed (grey ``o-``), predicted A (``s--``), predicted B
     (``^:``), one color per model, per ratio decile (mean ratio on tick
-    labels). Rising observed across deciles favours A; falling favours B;
-    the middle deciles carry the most diagnostic signal. Stand-alone draws a
-    bottom exposure panel; embedded grids get background bars.
+    labels). Compare each prediction with observations within each ratio group;
+    observed direction alone cannot select a model. Extreme groups capture
+    the largest relative disagreements; check their exposure and claims
+    credibility. Curves show absolute rates, without normalization by portfolio
+    means. Stand-alone draws a bottom exposure panel; embedded grids get
+    background bars.
     """
     with azoic_style():
         x = np.arange(len(table))
@@ -522,6 +532,18 @@ def plot_actual_vs_predicted(
     rate with a zero reference. Density colouring is exposure-weighted
     (Σ exposure per hex) when supplied, otherwise log counts; the two panels
     get independent colorbars. ``cividis`` by default (CVD-safe).
+
+    Interpret credible exposure-weighted grouped mean residuals, not the
+    densest band in zero-heavy outcomes. A constant non-zero mean residual
+    indicates an additive discrepancy. If observed rate equals ``c * y_pred``,
+    residuals equal ``(c - 1) * y_pred``: a slope can be purely multiplicative
+    and removable by one factor. Review remaining curvature only after level.
+
+    ``logy=True`` uses a log y axis for positive predictions and a symmetric
+    log (``symlog``) y axis for signed residuals, with Matplotlib's default
+    linear threshold of 2 around zero. ``logy=False`` keeps linear y axes.
+    Callers can adjust the axes after plotting. ``bins="log"`` controls density
+    colour independently of the residual axis scale.
     """
     with azoic_style():
         cmap = "cividis" if cmap is None else cmap
@@ -600,11 +622,19 @@ def plot_actual_vs_predicted(
         ax_resid.set_ylabel("rate residual (observed − predicted)")
         ax_resid.set_title(f"{title} — residuals")
         _draw_colorbar(hb2, target_axes=ax_resid, label=cb_label)
+        if logx or logy:
+            # Hexbin offsets are affine; nonlinear scales need vertices in data coordinates.
+            for density in (hb, hb2):
+                density.set_verts(
+                    np.asarray(density.get_paths()[0].vertices)
+                    + np.asarray(density.get_offsets())[:, np.newaxis, :]
+                )
+                density.set_offsets((0, 0))
         if logx:
             ax_scatter.set_xscale("log")
             ax_resid.set_xscale("log")
         if logy:
             ax_scatter.set_yscale("log")
-            ax_resid.set_yscale("log")
+            ax_resid.set_yscale("symlog")
         _save(fig, path)
         return ax_scatter

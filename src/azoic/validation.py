@@ -22,11 +22,19 @@ __all__ = ["make_strata", "temporal_split", "stratified_random_split"]
 
 
 def _weighted_quantile_edges(y, sample_weight, *, n_quantiles: int) -> np.ndarray:
-    """``n_quantiles - 1`` unique weighted-quantile edges of ``y`` (sorted)."""
+    """Up to ``n_quantiles - 1`` sorted edges using observed values and their weights."""
     y = np.asarray(y, dtype=float)
     w = np.asarray(sample_weight, dtype=float)
     if w.shape != y.shape:
         raise ValueError(f"`sample_weight` shape {w.shape} does not match `y` shape {y.shape}")
+    if y.ndim != 1:
+        raise ValueError("`y` and `sample_weight` must be one-dimensional")
+    if not np.isfinite(w).all() or np.any(w < 0):
+        raise ValueError("`sample_weight` must be finite and non-negative")
+    observed = ~np.isnan(y)
+    y, w = y[observed], w[observed]
+    if y.size == 0:
+        return np.array([])
     order = np.argsort(y, kind="stable")
     ys, ws = y[order], w[order]
     cum = np.cumsum(ws)
@@ -46,7 +54,9 @@ def make_strata(y, sample_weight=None, *, n_strata: int = 10) -> np.ndarray:
     Discretize into ``n_strata`` quantiles of ``y`` -- exposure-weighted when
     ``sample_weight`` is given (each fold then carries similar portfolio
     adequacy, the actuarial CV convention) -- and feed the codes back to the
-    splitter as the stratification target.
+    splitter as the stratification target. Missing values and their exposure
+    do not affect weighted boundaries. Weights must be finite and non-negative;
+    zero total observed weight assigns observed rows to group 0.
 
     Returns
     -------
@@ -65,8 +75,6 @@ def make_strata(y, sample_weight=None, *, n_strata: int = 10) -> np.ndarray:
         return codes.fillna(-1).astype(int).to_numpy()
     w = np.asarray(sample_weight, dtype=float)
     edges = _weighted_quantile_edges(y, w, n_quantiles=n_strata)
-    if edges.size == 0:
-        return np.zeros(len(y), dtype=int)
     codes = np.searchsorted(edges, y, side="right")
     return np.where(np.isnan(y), -1, codes).astype(int)
 

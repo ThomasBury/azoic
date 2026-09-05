@@ -7,7 +7,12 @@ import pandas as pd
 import pytest
 from sklearn.model_selection import StratifiedKFold
 
-from azoic.validation import make_strata, stratified_random_split, temporal_split
+from azoic.validation import (
+    _weighted_quantile_edges,
+    make_strata,
+    stratified_random_split,
+    temporal_split,
+)
 from tests.conftest import make_synthetic_portfolio
 
 
@@ -75,6 +80,62 @@ def test_make_strata_nan_rows_get_minus_one_and_others_have_a_label() -> None:
     labels = sorted(set(non_nan_codes.tolist()))
     assert labels == list(range(len(labels)))
     assert len(labels) <= 4
+
+
+@pytest.mark.parametrize("missing_exposure", [0.0, 1e9])
+def test_weighted_quantiles_ignore_missing_exposure(missing_exposure) -> None:
+    values = np.array([10, 20, 20, 30, 40, 50], dtype=float)
+    weights = np.array([1, 2, 3, 1, 2, 1], dtype=float)
+    expected_edges = np.array([20, 30])
+    expected_codes = np.array([0, 1, 1, 2, 2, 2])
+    np.testing.assert_array_equal(
+        _weighted_quantile_edges(values, weights, n_quantiles=3), expected_edges
+    )
+    np.testing.assert_array_equal(make_strata(values, weights, n_strata=3), expected_codes)
+    values = np.r_[values, np.nan]
+    weights = np.r_[weights, missing_exposure]
+    np.testing.assert_array_equal(
+        _weighted_quantile_edges(values, weights, n_quantiles=3), expected_edges
+    )
+    np.testing.assert_array_equal(
+        make_strata(values, weights, n_strata=3), np.r_[expected_codes, -1]
+    )
+
+
+@pytest.mark.parametrize(
+    ("values", "weights", "edges", "codes"),
+    [
+        ([], [], [], []),
+        ([np.nan, np.nan], [1, 1e9], [], [-1, -1]),
+        ([7, np.nan], [1, 1e9], [7], [1, -1]),
+        ([7, 7, np.nan], [1, 2, 1e9], [7], [1, 1, -1]),
+        ([10, 20, np.nan], [0, 0, 1e9], [], [0, 0, -1]),
+        ([10, np.nan], [0, 0], [], [0, -1]),
+    ],
+)
+def test_weighted_quantiles_degenerate_inputs(values, weights, edges, codes) -> None:
+    np.testing.assert_array_equal(_weighted_quantile_edges(values, weights, n_quantiles=3), edges)
+    np.testing.assert_array_equal(make_strata(values, weights, n_strata=3), codes)
+
+
+@pytest.mark.parametrize("bad_weight", [-1, np.nan, np.inf, -np.inf])
+@pytest.mark.parametrize("values", [[10, 20], [10, np.nan], [np.nan, np.nan]])
+def test_weighted_quantiles_reject_invalid_weights(values, bad_weight) -> None:
+    with pytest.raises(ValueError, match="sample_weight.*finite.*non-negative"):
+        _weighted_quantile_edges(values, [1, bad_weight], n_quantiles=3)
+    with pytest.raises(ValueError, match="sample_weight.*finite.*non-negative"):
+        make_strata(values, [1, bad_weight], n_strata=3)
+
+
+@pytest.mark.parametrize(
+    ("values", "weights"),
+    [([10, 20], [1]), ([10, 20], [[1, 2]]), ([10, 20], 1), ([[10, 20]], [[1, 2]])],
+)
+def test_weighted_quantiles_reject_malformed_shapes(values, weights) -> None:
+    with pytest.raises(ValueError, match="shape|one-dimensional"):
+        _weighted_quantile_edges(values, weights, n_quantiles=3)
+    with pytest.raises(ValueError, match="shape|one-dimensional"):
+        make_strata(values, weights, n_strata=3)
 
 
 def test_make_strata_works_with_sklearn_stratifiedkfold() -> None:
@@ -247,9 +308,7 @@ def test_stratified_random_split_rejects_empty_input() -> None:
 def test_stratified_random_split_balances_claim_presence_on_synthetic_portfolio() -> None:
     df = make_synthetic_portfolio(n=2000, seed=42)
     claim_presence = (df["claim_count"].to_numpy() > 0).astype(int)
-    train, test = stratified_random_split(
-        claim_presence, test_size=0.2, random_state=42
-    )
+    train, test = stratified_random_split(claim_presence, test_size=0.2, random_state=42)
     overall_rate = claim_presence.mean()
     assert abs(claim_presence[test].mean() - overall_rate) < 0.01
     assert abs(claim_presence[train].mean() - overall_rate) < 0.01

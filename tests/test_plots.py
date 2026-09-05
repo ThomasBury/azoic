@@ -19,6 +19,7 @@ import pytest  # noqa: E402
 from azoic.metrics import (  # noqa: E402
     calibration_table,
     double_lift_table,
+    lorenz,
     one_way_table,
 )
 from azoic.plots import (  # noqa: E402
@@ -104,7 +105,10 @@ def test_plot_lorenz_multi_model_single_diagonal_and_oracle() -> None:
     assert "random" in diagonal.get_label()
     assert diagonal.get_linestyle() == ":"
     oracle = lines[1]
-    assert "oracle" in oracle.get_label()
+    expected = lorenz(y_true, y_true / w, w)
+    np.testing.assert_allclose(oracle.get_xdata(), expected.exposure_pct)
+    np.testing.assert_allclose(oracle.get_ydata(), expected.claims_pct)
+    assert oracle.get_label() == f"oracle (Gini {expected.gini:.3f})"
     model_lines = lines[2:]
     assert len({line.get_color() for line in model_lines}) == 2
     labels = [line.get_label() for line in model_lines]
@@ -218,6 +222,51 @@ def test_plot_one_way_embedded_background_exposure() -> None:
     assert len(ax.get_lines()) == 2
     assert ax.get_lines()[1].get_color() == "#0072B2"
     assert any(getattr(p, "get_zorder", lambda: 1)() == 0 for p in ax.patches)
+
+
+@pytest.mark.parametrize("embedded", [False, True])
+@pytest.mark.parametrize("all_missing", [False, True])
+def test_plot_one_way_displays_missing_points_labels_and_exposure(embedded, all_missing) -> None:
+    table = pd.DataFrame(
+        {
+            "level_label": ["20", "40", "Missing"],
+            "level_center": [20, 40, np.nan],
+            "observed_pure_premium": [100, 50, 2000],
+            "predicted_pure_premium": [80, 60, 1500],
+            "exposure": [1, 2, 5],
+        }
+    )
+    if all_missing:
+        table = table.iloc[[-1]].reset_index(drop=True)
+    if embedded:
+        fig, ax = plt.subplots()
+        plot_one_way(table, ax=ax, exposure="background")
+        exposure_ax = ax
+    else:
+        ax = plot_one_way(table)
+        fig = ax.get_figure()
+        exposure_ax = fig.axes[1]
+    try:
+        fig.canvas.draw()
+        x = np.arange(len(table))
+        for line, column in zip(
+            ax.get_lines(), ["observed_pure_premium", "predicted_pure_premium"], strict=True
+        ):
+            np.testing.assert_allclose(line.get_xdata(), x)
+            np.testing.assert_allclose(line.get_ydata(), table[column])
+            assert np.isfinite(ax.transData.transform(line.get_xydata())).all()
+        assert [tick.get_text() for tick in exposure_ax.get_xticklabels()] == list(
+            table["level_label"]
+        )
+        bars = exposure_ax.patches
+        np.testing.assert_allclose([bar.get_x() + bar.get_width() / 2 for bar in bars], x)
+        np.testing.assert_allclose(
+            [bar.get_height() for bar in bars], table["exposure"] / table["exposure"].sum()
+        )
+        for bar in bars:
+            assert np.isfinite(bar.get_window_extent().get_points()).all()
+    finally:
+        plt.close(fig)
 
 
 def _double_lift_table(seed: int, n_bins: int):
@@ -339,3 +388,82 @@ def test_all_charts_round_trip_headless(tmp_path) -> None:
 def _close_figures():
     yield
     plt.close("all")
+
+
+@pytest.mark.parametrize(
+    "claims, exposure, expected_gini",
+    [
+        ([100, 20], [1, 0.1], 0.0757575757575758),
+        ([100, 20], None, 1 / 3),
+        ([100, 20], [1, 1], 1 / 3),
+        ([100, 50, 200], [1, 0.5, 1], 6 / 35),
+    ],
+)
+def test_plot_lorenz_oracle_ranks_observed_rates(claims, exposure, expected_gini) -> None:
+    claims = np.asarray(claims, dtype=float)
+    weights = np.ones_like(claims) if exposure is None else np.asarray(exposure)
+    expected = lorenz(claims, claims / weights, weights)
+    assert expected.gini == pytest.approx(expected_gini)
+    ax = plot_lorenz(claims, np.ones_like(claims), exposure, show_oracle=True)
+    oracle = ax.get_lines()[1]
+    np.testing.assert_allclose(oracle.get_xdata(), expected.exposure_pct)
+    np.testing.assert_allclose(oracle.get_ydata(), expected.claims_pct)
+    assert oracle.get_label() == f"oracle (Gini {expected_gini:.3f})"
+    if len(claims) == 3:
+        np.testing.assert_allclose(oracle.get_xdata(), [0, 0.6, 1])
+        np.testing.assert_allclose(oracle.get_ydata(), [0, 3 / 7, 1])
+
+
+@pytest.mark.parametrize("weighted", [False, True])
+@pytest.mark.parametrize("embedded", [False, True])
+@pytest.mark.parametrize("logx", [False, True])
+@pytest.mark.parametrize("logy", [False, True])
+def test_residual_scale_keeps_signed_density_visible(weighted, embedded, logx, logy) -> None:
+    prediction = np.array([110.0, 120.0, 130.0])
+    residual = np.array([-100.0, 0.0, 100.0])
+    exposure = np.array([0.5, 1.0, 2.0]) if weighted else None
+    claims = (prediction + residual) * (exposure if weighted else 1)
+    caller = None
+    if embedded:
+        _, axes = plt.subplots(1, 2, figsize=(11, 4.5))
+        axes[1].remove()
+        caller = axes[0]
+    ax = plot_actual_vs_predicted(
+        claims, prediction, exposure, gridsize=8, bins="log", logx=logx, logy=logy, ax=caller
+    )
+    fig = ax.get_figure()
+    residual_ax = ax.child_axes[0] if embedded else fig.axes[1]
+    fig.canvas.draw()
+    if embedded:
+        assert ax is caller
+    assert ax.get_xscale() == residual_ax.get_xscale() == ("log" if logx else "linear")
+    assert ax.get_yscale() == ("log" if logy else "linear")
+    points = np.column_stack([prediction, residual])
+    displayed = residual_ax.transData.transform(points)
+    assert np.isfinite(displayed).all()
+    assert np.all(np.diff(displayed[:, 1]) > 0)
+    assert all(residual_ax.bbox.contains(*point) for point in displayed)
+    assert all(fig.bbox.contains(*point) for point in displayed)
+    density = residual_ax.collections[0]
+    local_centres = np.array(
+        [
+            (path.vertices.min(axis=0) + path.vertices.max(axis=0)) / 2
+            for path in density.get_paths()
+        ]
+    )
+    centres = local_centres + density.get_offsets()
+    np.testing.assert_allclose(np.sort(centres[:, 1]), residual)
+    assert np.isfinite(density.get_array()).all()
+    assert density.get_array().sum() == pytest.approx(exposure.sum() if weighted else 3)
+    assert isinstance(density.norm, matplotlib.colors.LogNorm)
+    rendered_centres = density.get_transform().transform(local_centres) + (
+        density.get_offset_transform().transform(density.get_offsets())
+    )
+    np.testing.assert_allclose(rendered_centres, residual_ax.transData.transform(centres))
+    assert np.isfinite(rendered_centres).all()
+    assert np.all(np.diff(rendered_centres[np.argsort(centres[:, 1]), 1]) > 0)
+    assert all(residual_ax.bbox.contains(*point) for point in rendered_centres)
+    assert all(fig.bbox.contains(*point) for point in rendered_centres)
+    assert residual_ax.get_yscale() == ("symlog" if logy else "linear")
+    if logy:
+        assert residual_ax.yaxis.get_transform().linthresh == 2
