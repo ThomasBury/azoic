@@ -253,6 +253,86 @@ def test_freq_severity_fit_predict_basics() -> None:
     assert np.isfinite(s)
 
 
+@pytest.mark.parametrize(
+    ("path", "supply_rate"),
+    [
+        ("direct", False),
+        ("direct", True),
+        ("pipeline", False),
+        ("pipeline", True),
+        ("workflow", True),
+    ],
+)
+@pytest.mark.parametrize(
+    ("column", "value", "message"),
+    [
+        ("claim_amount", 1000.0, "zero or positive together"),
+        ("claim_count", 1.0, "zero or positive together"),
+        ("exposure", 0.0, "positive finite"),
+        ("exposure", -1.0, "positive finite"),
+        ("exposure", np.nan, "positive finite"),
+        ("exposure", np.inf, "positive finite"),
+        ("exposure", -np.inf, "positive finite"),
+        ("claim_count", -1.0, "non-negative finite"),
+        ("claim_count", np.nan, "non-negative finite"),
+        ("claim_count", np.inf, "non-negative finite"),
+        ("claim_count", -np.inf, "non-negative finite"),
+        ("claim_amount", -1.0, "non-negative finite"),
+        ("claim_amount", np.nan, "non-negative finite"),
+        ("claim_amount", np.inf, "non-negative finite"),
+        ("claim_amount", -np.inf, "non-negative finite"),
+    ],
+)
+def test_freq_severity_rejects_invalid_outcomes_before_components(
+    tmp_path, monkeypatch, path, supply_rate, column, value, message
+) -> None:
+    from unittest.mock import Mock
+
+    from sklearn.pipeline import Pipeline
+
+    from azoic.workflow import ExperimentConfig, ModelSpec, run_experiment
+
+    df = pd.DataFrame(
+        {
+            "risk": [0.0, 1.0, 2.0, 3.0],
+            "exposure": [0.5, 1.0, 0.25, 1.0],
+            "claim_count": [0.0, 1.0, 2.0, 0.0],
+            "claim_amount": [0.0, 30.0, 40.0, 0.0],
+        }
+    )
+    df.loc[0, column] = value
+    model_spec = ModelSpec(
+        kind="frequency_severity",
+        frequency=ModelSpec(params={"family": "poisson", "link": "log"}),
+        severity=ModelSpec(params={"family": "gamma", "link": "log"}),
+    )
+    config = ExperimentConfig(
+        data_path=str(tmp_path / "invalid.parquet"),
+        spec={"target": "claim_amount", "exposure": "exposure", "claim_count": "claim_count"},
+        models={"freq-sev": model_spec},
+    )
+    model = model_spec.build(config.spec)
+    estimator = Pipeline([("model", model)]) if path == "pipeline" else model
+    with np.errstate(divide="ignore", invalid="ignore"):
+        rate = (df["claim_amount"] / df["exposure"]).to_numpy() if supply_rate else None
+    clone = Mock(side_effect=AssertionError("components must not be cloned for invalid outcomes"))
+    fit = Mock(side_effect=AssertionError("components must not fit invalid outcomes"))
+    monkeypatch.setattr("azoic.models.clone", clone)
+    monkeypatch.setattr(RiskGLM, "fit", fit)
+    df.to_parquet(config.data_path)
+
+    with pytest.raises(ValueError, match=message), np.errstate(divide="raise", invalid="raise"):
+        if path == "workflow":
+            run_experiment(config)
+        else:
+            estimator.fit(df, rate)
+
+    clone.assert_not_called()
+    fit.assert_not_called()
+    assert not hasattr(model, "freq_")
+    assert not hasattr(model, "sev_")
+
+
 def test_freq_severity_fit_rejects_aggregate_or_mismatched_target() -> None:
     df = _df(n=200)
     rate = (df["claim_amount"] / df["exposure"]).to_numpy()
@@ -298,6 +378,9 @@ def test_freq_severity_severity_fit_is_filtered() -> None:
         def fit(self, X, y, sample_weight=None):
             self.fit_n_rows = len(np.asarray(y))
             self.predict_buf = float(np.asarray(X).shape[0])
+            self.fit_X = X.copy()
+            self.fit_y = np.asarray(y).copy()
+            self.fit_weight = np.asarray(sample_weight).copy()
             return self
 
         def predict(self, X):
@@ -320,6 +403,19 @@ def test_freq_severity_severity_fit_is_filtered() -> None:
     expected_pos_rows = int((df["claim_count"] > 0).sum())
     # The severity backend (a clone of the spy) was fit on claim_count > 0 rows.
     assert fs.sev_.fit_n_rows == expected_pos_rows
+    positive = df["claim_count"] > 0
+    features = df.drop(columns=["exposure", "claim_count", "claim_amount"]).astype(
+        {"region": "category", "vehicle_brand": "category"}
+    )
+    pd.testing.assert_frame_equal(fs.freq_.fit_X, features)
+    pd.testing.assert_frame_equal(fs.sev_.fit_X, features.loc[positive])
+    np.testing.assert_allclose(fs.freq_.fit_y, df["claim_count"] / df["exposure"])
+    np.testing.assert_array_equal(fs.freq_.fit_weight, df["exposure"])
+    np.testing.assert_allclose(
+        fs.sev_.fit_y, df.loc[positive, "claim_amount"] / df.loc[positive, "claim_count"]
+    )
+    np.testing.assert_array_equal(fs.sev_.fit_weight, df.loc[positive, "claim_count"])
+    np.testing.assert_array_equal(fs.predict(features), fs.predict(df))
     # Predict returns freq(=1) * sev(=1) = pure premium per exposure unit all ones.
     assert np.allclose(fs.predict(df), 1.0)
 
@@ -464,3 +560,31 @@ def test_m3_acceptance_freq_sev_approximates_direct_tweedie() -> None:
     assert abs(freq_sev_gini - direct_gini) < 0.25
     assert 0.85 <= op_ratio(observed, direct_pred, exposure) <= 1.15
     assert 0.85 <= op_ratio(observed, freq_sev_pred, exposure) <= 1.15
+
+
+@pytest.mark.parametrize(("family", "power"), [("poisson", 1), ("tweedie", 1.5), ("gamma", 2)])
+@pytest.mark.parametrize("varying_feature", [False, True])
+def test_log_glm_mean_target_and_intercept_balance(family, power, varying_feature) -> None:
+    rate = np.array([1.0, 3.0, 2.0, 8.0, 4.0])
+    exposure = np.array([1.0, 2.0, 1.0, 3.0, 2.0])
+    X = pd.DataFrame(
+        {"x": np.arange(-2.0, 3.0) if varying_feature else np.zeros(5), "exposure": exposure}
+    )
+    model = RiskGLM(
+        family=family,
+        tweedie_power=power,
+        link="log",
+        alpha=0,
+        exposure_col="exposure",
+        gradient_tol=1e-9,
+    ).fit(X, rate)
+    prediction = model.predict(X)
+    score = np.average((prediction - rate) * prediction ** (1 - power), weights=exposure)
+    assert abs(score) < 1e-8
+    ratio = np.dot(exposure, rate) / np.dot(exposure, prediction)
+    if not varying_feature:
+        np.testing.assert_allclose(prediction, np.average(rate, weights=exposure), rtol=1e-8)
+    if not varying_feature or power == 1:
+        assert ratio == pytest.approx(1, abs=1e-8)
+    else:
+        assert abs(ratio - 1) > 1e-3

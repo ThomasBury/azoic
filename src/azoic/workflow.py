@@ -307,7 +307,13 @@ class ModelResult(BaseModel):
 
 
 class Run(BaseModel):
-    """The full result of a single ``run_experiment`` invocation."""
+    """The full result of a single ``run_experiment`` invocation.
+
+    ``train_indices`` and ``test_indices`` are immutable positional integer
+    tuples in fit/evaluation order, relative to the fingerprinted input frame.
+    Preserve that frame's row order and use ``df.iloc[list(run.test_indices)]``
+    to recover the holdout. Tuned runs record the final outer partition.
+    """
 
     model_config = ConfigDict(frozen=True, extra="forbid", arbitrary_types_allowed=True)
 
@@ -316,6 +322,8 @@ class Run(BaseModel):
     n_rows: int
     n_train: int
     n_test: int
+    train_indices: tuple[int, ...]
+    test_indices: tuple[int, ...]
     feature_names: list[str]
     models: dict[str, ModelResult]
 
@@ -452,10 +460,12 @@ def _evaluate_split(
             ),
         }
         obs_test_rate = obs_test_agg / exp_test
-        null_pred = np.full_like(obs_test_agg, obs_test_agg.sum() / exp_test.sum())
-        null_dev = mean_tweedie_deviance(
-            obs_test_rate, null_pred, sample_weight=exp_test, power=1.5
-        )
+        null_dev = 0.0
+        if obs_test_agg.sum() > 0:
+            null_pred = np.full_like(obs_test_agg, obs_test_agg.sum() / exp_test.sum())
+            null_dev = mean_tweedie_deviance(
+                obs_test_rate, null_pred, sample_weight=exp_test, power=1.5
+            )
         metrics["d2_test"] = (
             1.0 - metrics["deviance_test"] / null_dev if null_dev > 0 else float("nan")
         )
@@ -490,6 +500,8 @@ def _evaluate_split(
         n_rows=int(len(df)),
         n_train=int(len(train_df)),
         n_test=int(len(test_df)),
+        train_indices=tuple(map(int, train_idx)),
+        test_indices=tuple(map(int, test_idx)),
         feature_names=list(feature_names),
         models=results,
     )

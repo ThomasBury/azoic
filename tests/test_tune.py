@@ -327,7 +327,20 @@ def test_tune_experiment_missing_optuna_raises_helpful_error(
 
 
 @pytest.mark.parametrize("custom_space", [False, True])
-def test_tuning_does_not_inspect_outer_test_outcomes(tmp_path: Path, custom_space: bool) -> None:
+@pytest.mark.parametrize("split", ["random", "temporal"])
+def test_tuning_does_not_inspect_outer_test_outcomes(
+    monkeypatch, tmp_path: Path, custom_space: bool, split: str
+) -> None:
+    from azoic.models import RiskGLM
+
+    fitted_rows = []
+    actual_fit = RiskGLM.fit
+
+    def record_fit(self, X, y):
+        fitted_rows.append(X.index.copy())
+        return actual_fit(self, X, y)
+
+    monkeypatch.setattr(RiskGLM, "fit", record_fit)
     tuning = None
     if custom_space:
         tuning = {
@@ -344,7 +357,16 @@ def test_tuning_does_not_inspect_outer_test_outcomes(tmp_path: Path, custom_spac
         }
     config = _config(tmp_path, models={"glm-tweedie": _glm()}, tuning=tuning)
     df = pd.read_parquet(config.data_path)
-    _, outer_test_idx = _split_indices(config, df)
+    df.index = pd.Index(np.arange(len(df)) * 7 + 10000, name="policy_id")
+    df["period"] = np.arange(len(df)) % 10
+    df.to_parquet(config.data_path)
+    config = config.model_copy(
+        update={
+            "split": split,
+            "spec": config.spec.model_copy(update={"time_col": "period"}),
+        }
+    )
+    outer_train_idx, outer_test_idx = _split_indices(config, df)
     changed = df.copy()
     target_pos = changed.columns.get_loc("claim_amount")
     changed.iloc[outer_test_idx, target_pos] *= 10.0
@@ -353,7 +375,19 @@ def test_tuning_does_not_inspect_outer_test_outcomes(tmp_path: Path, custom_spac
     changed_config = config.model_copy(update={"data_path": str(changed_path)})
 
     original = tune_experiment(config, n_trials=3, random_state=7)
-    modified = tune_experiment(changed_config, n_trials=3, random_state=7)
+    modified = tune_experiment(changed_config, n_trials=3, random_state=7, return_estimators=True)
+
+    assert len(fitted_rows) == 8
+    for result, fit_start in [(original, 0), (modified, 4)]:
+        assert result.run.train_indices == tuple(outer_train_idx)
+        assert result.run.test_indices == tuple(outer_test_idx)
+        expected_train = df.iloc[list(result.run.train_indices)].index
+        expected_test = df.iloc[list(result.run.test_indices)].index
+        pd.testing.assert_index_equal(fitted_rows[fit_start + 3], expected_train)
+        for inner_rows in fitted_rows[fit_start : fit_start + 3]:
+            assert len(inner_rows) < len(expected_train)
+            assert set(inner_rows) < set(expected_train)
+            assert not set(inner_rows) & set(expected_test)
 
     assert original.best_params == modified.best_params
     assert original.best_values == pytest.approx(modified.best_values, rel=1e-12)
@@ -384,3 +418,22 @@ def test_m7_acceptance_tuned_run_apples_to_apples(tmp_path: Path) -> None:
         assert np.isfinite(model_result.metrics["op_ratio_test"])
         assert np.isfinite(model_result.metrics["deviance_test"])
         assert len(model_result.calibration_table) >= 2
+
+
+@pytest.mark.parametrize("return_estimators", [False, True])
+def test_tuning_completes_with_claim_free_inner_and_outer_holdouts(tmp_path, return_estimators):
+    config = _config(tmp_path, models={"glm-tweedie": _glm()})
+    df = pd.read_parquet(config.data_path).assign(period=np.arange(2000))
+    df.loc[1280:, ["claim_amount", "claim_count"]] = 0
+    df.to_parquet(config.data_path)
+    config = config.model_copy(
+        update={"split": "temporal", "spec": config.spec.model_copy(update={"time_col": "period"})}
+    )
+    result = tune_experiment(config, n_trials=2, return_estimators=return_estimators)
+    assert np.isfinite(result.best_values["glm-tweedie"])
+    assert result.run.test_indices == tuple(range(1600, 2000))
+    metrics = result.run.models["glm-tweedie"].metrics
+    assert np.isnan(metrics["d2_test"])
+    assert np.isfinite(metrics["deviance_test"])
+    assert metrics["op_ratio_test"] == 0.0
+    assert bool(result.estimators) == return_estimators

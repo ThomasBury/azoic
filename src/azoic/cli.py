@@ -28,7 +28,7 @@ from azoic.profile import profile_features, screen_features
 from azoic.reporting import comparison_table, model_card
 from azoic.tariff import distill_gbm as _distill_gbm
 from azoic.tariff import export_tariff as _export_tariff
-from azoic.workflow import ExperimentConfig, _split_indices, run_experiment
+from azoic.workflow import ExperimentConfig, _data_fingerprint, run_experiment
 
 app = typer.Typer(
     no_args_is_help=True,
@@ -127,7 +127,7 @@ def export_tariff(
     from azoic.models import RiskGBM, RiskGLM
 
     cfg = ExperimentConfig.from_yaml(config)
-    _, ests = run_experiment(cfg, return_estimators=True)
+    run, ests = run_experiment(cfg, return_estimators=True)
     if model not in ests:
         raise typer.BadParameter(
             f"model {model!r} not in config models {list(ests)}; check the YAML `models:` keys."
@@ -146,11 +146,12 @@ def export_tariff(
         )
 
     df = load_data(cfg.data_path, spec=cfg.spec)
+    if _data_fingerprint(df) != run.data_fingerprint:
+        raise typer.BadParameter("dataset changed since fitting; rerun with an unchanged input")
     X = df[list(est.feature_names_in_)]
     y = df[cfg.spec.target]
     if isinstance(final_est, RiskGBM):
-        train_idx, test_idx = _split_indices(cfg, df)
-        est = _distill_gbm(est, X.iloc[train_idx], X.iloc[test_idx])
+        est = _distill_gbm(est, X.iloc[list(run.train_indices)], X.iloc[list(run.test_indices)])
         metrics = vars(est)["distillation_metrics_"]
         typer.echo(
             "Distillation fidelity: "

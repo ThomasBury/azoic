@@ -422,7 +422,10 @@ class FrequencySeverityModel(RegressorMixin, BaseEstimator):
     sample_weight ``exposure``) and ``sev`` on per-claim severity
     (``claim_amount / claim_count``, sample_weight ``claim_count``) using only
     rows where ``claim_count > 0`` (Gamma needs y > 0). The filter lives here
-    per AGENTS.md rule 3, never in user code.
+    per AGENTS.md rule 3, never in user code. Before deriving rates or fitting
+    either component, exposure must be positive and finite, counts and amounts
+    non-negative and finite, and count and amount zero or positive together.
+    Invalid outcomes raise ``ValueError`` even when ``y`` is omitted.
 
     ``fit(X, y)`` accepts the same pure-premium rate target as ``RiskGLM``
     and ``RiskGBM`` and validates it against ``claim_amount / exposure``.
@@ -500,6 +503,15 @@ class FrequencySeverityModel(RegressorMixin, BaseEstimator):
         exposure = X[self.exposure_col].to_numpy(dtype=float)
         cc = X[self.claim_count_col].to_numpy(dtype=float)
         ca = X[self.claim_amount_col].to_numpy(dtype=float)
+        if not np.isfinite(exposure).all() or np.any(exposure <= 0):
+            raise ValueError("exposure must contain only positive finite values")
+        if not np.isfinite(cc).all() or np.any(cc < 0):
+            raise ValueError("claim_count must contain only non-negative finite values")
+        if not np.isfinite(ca).all() or np.any(ca < 0):
+            raise ValueError("claim_amount must contain only non-negative finite values")
+        if np.any((cc == 0) != (ca == 0)):
+            raise ValueError("claim_count and claim_amount rows must be zero or positive together")
+
         if y is not None:
             y_rate = np.asarray(y, dtype=float)
             if y_rate.ndim != 1 or len(y_rate) != len(X):
@@ -508,16 +520,13 @@ class FrequencySeverityModel(RegressorMixin, BaseEstimator):
                 )
             if not np.isfinite(y_rate).all():
                 raise ValueError("y pure-premium rate must contain only finite values")
-            with np.errstate(divide="ignore", invalid="ignore"):
-                observed_rate = ca / exposure
-            if not np.allclose(y_rate, observed_rate):
+            if not np.allclose(y_rate, ca / exposure):
                 raise ValueError("y must equal claim_amount / exposure (pure-premium rate)")
 
         _store_fit_meta(self, X)
         X_features = _categorize_strings(self._strip_specials(X))
 
-        with np.errstate(divide="ignore", invalid="ignore"):
-            y_freq = np.where(exposure > 0, cc / exposure, 0.0)
+        y_freq = cc / exposure
 
         pos = cc > 0
         if not pos.any():

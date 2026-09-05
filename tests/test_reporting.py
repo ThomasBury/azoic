@@ -2,24 +2,35 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import numpy as np
+import pytest
 
-from azoic.reporting import comparison_table, model_card
+from azoic.reporting import comparison_dashboard, comparison_table, model_card
 from azoic.workflow import ExperimentConfig, ModelSpec, run_experiment
 from tests.conftest import make_synthetic_portfolio
 
 
-def _run(tmp_path: Path):
+def _run(tmp_path: Path, *, test_rate: float | None = None):
     p = tmp_path / "portfolio.parquet"
-    make_synthetic_portfolio(n=2000, seed=42).to_parquet(p)
+    df = make_synthetic_portfolio(n=2000, seed=42).assign(period=np.arange(2000))
+    if test_rate is not None:
+        df.loc[1600:, "claim_amount"] = test_rate * df.loc[1600:, "exposure"]
+        df.loc[1600:, "claim_count"] = int(test_rate > 0)
+    df.to_parquet(p)
     cfg = ExperimentConfig(
         name="smoke",
         data_path=str(p),
-        spec={"target": "claim_amount", "exposure": "exposure", "claim_count": "claim_count"},
+        spec={
+            "target": "claim_amount",
+            "exposure": "exposure",
+            "claim_count": "claim_count",
+            "time_col": "period",
+        },
         features=["driver_age", "vehicle_age", "region", "vehicle_brand"],
-        split="random",
+        split="random" if test_rate is None else "temporal",
         test_size=0.2,
         random_state=42,
         models={
@@ -150,3 +161,30 @@ def test_comparison_table_includes_all_models_and_metrics(tmp_path: Path) -> Non
     for metric in ("gini_train", "gini_test", "op_ratio_test", "deviance_test", "d2_test"):
         assert metric in table.columns
     assert np.isfinite(table.loc[0, "d2_test"])
+
+
+@pytest.mark.parametrize("test_rate", [0.0, 4.0])
+def test_reporting_retains_undefined_test_d2(monkeypatch, tmp_path, test_rate) -> None:
+    run = _run(tmp_path, test_rate=test_rate)
+    table = comparison_table([run])
+    assert np.isnan(table.loc[0, "d2_test"])
+    assert np.isfinite(table.loc[0, "deviance_test"])
+    assert np.isfinite(table.loc[0, "op_ratio_test"])
+    card = model_card(run)
+    assert next(line for line in card.splitlines() if "D² (test):" in line).endswith("nan")
+    assert "Calibration table" in card
+
+    go = pytest.importorskip("plotly.graph_objects")
+    figures = []
+    to_html = go.Figure.to_html
+
+    def capture_html(figure, **kwargs):
+        figures.append(json.loads(figure.to_json()))
+        return to_html(figure, **kwargs)
+
+    monkeypatch.setattr(go.Figure, "to_html", capture_html)
+    html = comparison_dashboard([run])
+    assert "<html>" in html and "Plotly.newPlot" in html
+    metrics_table = figures[0]["data"][0]
+    d2_column = metrics_table["header"]["values"].index("d2_test")
+    assert metrics_table["cells"]["values"][d2_column] == [None]

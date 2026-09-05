@@ -261,7 +261,31 @@ def test_cli_export_tariff_gbm_model_rejected(tmp_path: Path) -> None:
     assert "RiskGLM" in result.output or "GLM" in result.output
 
 
-def test_cli_export_tariff_distills_gbm_with_provenance(tmp_path: Path) -> None:
+@pytest.mark.parametrize("changed_data", [False, True])
+def test_cli_export_tariff_distills_gbm_with_provenance(
+    monkeypatch, tmp_path: Path, changed_data: bool
+) -> None:
+    import azoic.cli as cli
+
+    actual_run = cli.run_experiment
+    actual_distill = cli._distill_gbm
+    runs = []
+    partitions = []
+
+    def record_run(config, **kwargs):
+        run, estimators = actual_run(config.model_copy(update={"random_state": 7}), **kwargs)
+        runs.append(run)
+        if changed_data:
+            frame = pd.read_parquet(config.data_path)
+            frame.iloc[::-1].to_parquet(config.data_path)
+        return run, estimators
+
+    def record_distill(teacher, X_fit, X_valid):
+        partitions.append((X_fit.copy(), X_valid.copy()))
+        return actual_distill(teacher, X_fit, X_valid)
+
+    monkeypatch.setattr(cli, "run_experiment", record_run)
+    monkeypatch.setattr(cli, "_distill_gbm", record_distill)
     data = _write_portfolio(tmp_path, n=2000)
     cfg = _write_yaml(tmp_path, _yaml(str(data)))
     out = tmp_path / "distilled.xlsx"
@@ -280,8 +304,21 @@ def test_cli_export_tariff_distills_gbm_with_provenance(tmp_path: Path) -> None:
         ],
     )
 
+    if changed_data:
+        assert result.exit_code != 0
+        assert "changed since fitting" in result.output
+        assert not partitions
+        assert not out.exists()
+        return
+
     assert result.exit_code == 0, result.output
     assert "Distillation fidelity" in result.output
+    run = runs[0]
+    frame = pd.read_parquet(data)
+    assert len(partitions) == 1
+    fit, valid = partitions[0]
+    pd.testing.assert_frame_equal(fit, frame.iloc[list(run.train_indices)][fit.columns])
+    pd.testing.assert_frame_equal(valid, frame.iloc[list(run.test_indices)][valid.columns])
     sheets = pd.read_excel(out, sheet_name=None)
     assert list(sheets) == ["base_rate", "factors", "mappings"]
     base = sheets["base_rate"].iloc[0]
