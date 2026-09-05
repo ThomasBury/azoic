@@ -161,7 +161,11 @@ public pure-premium prediction.
 ## Fit frequency times severity
 
 The meta-estimator owns the actuarial split: frequency uses every row, while
-severity uses only `claim_count > 0` and weights by claim count.
+severity uses only `claim_count > 0` and weights by claim count. Before
+deriving rates or fitting either component, it rejects non-positive or non-finite
+exposure, negative or non-finite counts and amounts, and rows where count and
+amount are not zero or positive together. This validation also applies when
+`y` is omitted, so a recorded loss with zero claims cannot be silently excluded.
 
 ```python
 from azoic.models import FrequencySeverityModel, RiskGLM

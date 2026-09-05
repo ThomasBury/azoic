@@ -57,8 +57,17 @@ from IPython.display import display
 from sklearn.datasets import fetch_openml
 
 from azoic.data import DatasetSpec
-from azoic.metrics import calibration_table, double_lift_table, gini, one_way_table
+from azoic.metrics import (
+    calibration_table,
+    double_lift_table,
+    gini,
+    lorenz,
+    mean_tweedie_deviance,
+    one_way_table,
+    op_ratio,
+)
 from azoic.mlops import log_run
+from azoic.models import RiskGLM
 from azoic.plots import (
     azoic_style,
     model_colors,
@@ -72,7 +81,6 @@ from azoic.plots import (
 from azoic.profile import profile_features, screen_features
 from azoic.reporting import comparison_dashboard, comparison_table, model_card
 from azoic.tariff import apply_tariff, distill_gbm, export_tariff
-from azoic.validation import stratified_random_split
 from azoic.workflow import (
     ExperimentConfig,
     ModelSpec,
@@ -324,8 +332,11 @@ power, vehicle gas, and area are learned on the training partition only.
 Special outcome and weight columns remain available to supervised preprocessing
 but are excluded from candidate features. Grouping relativities are
 `sum(claim_amount) / sum(exposure)`, and `min_claims` is an aggregate
-claim-count floor; any trailing under-credible similarity group merges into its
-neighbour. Three pipelines share this tariff structure:
+claim-count floor. Nominal levels are stably sorted by risk; ordered categories
+keep their declared order. Under-credible groups merge with their closest-risk
+neighbour, then the closest adjacent pairs merge until the group limit is met.
+Each merge recomputes aggregate risk, with distance ties going left. Three
+pipelines share this tariff structure:
 
 - a direct log-link Tweedie GLM;
 - Poisson-frequency $\times$ Gamma-severity GLMs. Frequency fits
@@ -464,22 +475,27 @@ runs = [glm_run, gbm_run]
 estimators = {**glm_estimators, **gbm_estimators}
 assert set(glm_run.models) == set(glm_config.models)
 assert set(gbm_run.models) == set(gbm_config.models)
-assert glm_run.n_test == gbm_run.n_test
 assert glm_run.data_fingerprint == gbm_run.data_fingerprint
+assert glm_run.train_indices == gbm_run.train_indices
+assert glm_run.test_indices == gbm_run.test_indices
+pd.testing.assert_frame_equal(portfolio, pd.read_parquet(PORTFOLIO_PATH))
 
-train_idx, test_idx = stratified_random_split(
-    (portfolio["claim_count"].to_numpy() > 0).astype(int),
-    test_size=glm_config.test_size,
-    random_state=glm_config.random_state,
-)
+train_idx = np.asarray(glm_run.train_indices, dtype=int)
+test_idx = np.asarray(glm_run.test_indices, dtype=int)
 assert len(train_idx) == glm_run.n_train
 assert len(test_idx) == glm_run.n_test
+assert np.intersect1d(train_idx, test_idx).size == 0
+np.testing.assert_array_equal(
+    np.sort(np.concatenate([train_idx, test_idx])), np.arange(len(portfolio))
+)
 ```
 
 The split happens before pipeline fitting, so the held-out outcomes cannot
-influence the learned bins or groups. Stratifying on claim presence keeps the
-test set's claim-positive share within rounding of the portfolio's, so a rare
-event like a claim is not silently concentrated in train.
+influence the learned bins or groups. The returned positions identify the actual
+random holdout; no second split is made. Positions refer to the exact input
+frame in its original row order, not to index labels or policy IDs. The dataset
+fingerprint and exact partition assertions above establish that both runs use
+the same rows.
 
 ## Held-out ranking, calibration, deviance, and lift
 
@@ -490,28 +506,103 @@ exposure-weighted calibration deciles, and exposure-weighted mean Tweedie devian
 with fixed power 1.5 assess different aspects of fit and must be reviewed alongside
 ranking.
 
-The split is reproduced below so charts can re-predict on the untouched test
-rows. Both `run_experiment` calls are fit on the same permutation, so the test
-partitions match exactly.
+Charts reuse the stored test positions. We calculate a training-only level
+adjustment for every candidate before reviewing raw and adjusted holdout metrics.
+The fitted estimators and their `Run` metrics remain raw.
+
+### Measure calibration for every candidate
+
+Write observed rate as $r_i$, predicted rate as $\mu_i$, and exposure as $w_i$.
+Poisson, Gamma, and Tweedie deviances target conditional means; they do not
+inherently target a rate below the mean. Model restrictions, regularization,
+finite boosting iterations, and numerical convergence affect the achieved fit.
+Neither the GLM label nor a Poisson GBM objective guarantees portfolio balance.
+
+From [glum's deviance derivative and log-link definitions](https://glum.readthedocs.io/en/latest/glm.html),
+$\partial d(r,\mu)/\partial\mu=2(\mu-r)/\mu^p$ and
+$\partial\mu/\partial\beta_0=\mu$. Our derivation for a converged, unpenalized
+log-link GLM with an intercept therefore gives
+
+$$
+\frac{\partial}{\partial\beta_0}\sum_i w_i d(r_i,\mu_i)
+=2\sum_i w_i(\mu_i-r_i)\mu_i^{1-p}=0.
+$$
+
+For Poisson ($p=1$), this implies training total balance,
+$\sum_i w_i\mu_i=\sum_i w_i r_i$. For Gamma ($p=2$) and Tweedie
+($1<p<2$), the extra prediction-dependent factor prevents that conclusion in
+general. None of these training equations guarantees held-out balance, and
+balance of a frequency component does not establish balance of a
+frequency–severity product.
+
+This small network-free example fits each family with just an intercept (the
+feature is zero), then with one varying feature. Every intercept-only fit
+recovers the exposure-weighted mean. The varying-feature Gamma and Tweedie
+fits satisfy their intercept equations while their O/P ratios differ from one;
+the Poisson fit is the control. The assertions allow solver error, rather than
+requiring particular fitted totals.
 
 ```{python}
-metrics = comparison_table(runs)
-display(metrics)
+example_rate = np.array([1.0, 3.0, 2.0, 8.0, 4.0])
+example_exposure = np.array([1.0, 2.0, 1.0, 3.0, 2.0])
+balance_examples = []
+for family, power in [("poisson", 1), ("tweedie", 1.5), ("gamma", 2)]:
+    for varying in [False, True]:
+        example_X = pd.DataFrame({
+            "x": np.arange(-2.0, 3.0) if varying else np.zeros(5),
+            "exposure": example_exposure,
+        })
+        example_model = RiskGLM(
+            family=family, tweedie_power=power, link="log", alpha=0,
+            exposure_col="exposure", gradient_tol=1e-9,
+        ).fit(example_X, example_rate)
+        example_prediction = example_model.predict(example_X)
+        intercept_score = np.average(
+            (example_prediction - example_rate) * example_prediction ** (1 - power),
+            weights=example_exposure,
+        )
+        ratio = op_ratio(
+            example_rate * example_exposure, example_prediction, example_exposure
+        )
+        assert abs(intercept_score) < 1e-8
+        if not varying:
+            np.testing.assert_allclose(
+                example_prediction, np.average(example_rate, weights=example_exposure),
+                rtol=1e-8,
+            )
+        if not varying or power == 1:
+            assert np.isclose(ratio, 1, rtol=0, atol=1e-8)
+        else:
+            assert abs(ratio - 1) > 1e-3
+        balance_examples.append({
+            "family": family, "varying_feature": varying,
+            "training_O/P": ratio, "mean_intercept_score": intercept_score,
+        })
+display(pd.DataFrame(balance_examples))
 ```
 
-### Level recalibration of the boosted models
+### Freeze a training burn-cost adjustment
 
-The boosted Gamma and Tweedie deviances trade level for deviance: their optimum
-sits below the exposure-weighted mean, so the fitted GBMs under-predict the
-portfolio total (the GLM intercept does not have this property, and the
-Poisson-frequency GBM is exactly calibrated). The standard actuarial remedy is
-a multiplicative burn-cost recalibration: multiply each GBM's rates by its
-training observed/predicted ratio. Ranking diagnostics are invariant to the
-scalar, so only level-based diagnostics move. Every chart below uses the
-recalibrated predictions.
+For this tutorial, explicitly multiply **every** GLM and GBM candidate's rates
+by its training observed/predicted ratio:
+
+$$
+c_m = \frac{\sum_{i\in\mathrm{train}}\mathrm{claim\ amount}_i}
+            {\sum_{i\in\mathrm{train}}w_i\mu_{mi}},
+\qquad \mu^{\mathrm{adjusted}}_{mi}=c_m\mu_{mi}.
+$$
+
+The factor uses the stored training positions only and is frozen before we
+inspect holdout outcomes or metrics. It balances training totals; it need not
+improve test deviance, test O/P, or segment calibration. A positive factor
+preserves ranking while changing level diagnostics. The table shows training
+O/P for all five raw candidates and checks their adjusted training totals.
 
 ```{python}
-train_frame = portfolio.iloc[train_idx].reset_index(drop=True)
+train_frame = portfolio.iloc[train_idx].copy()
+pd.testing.assert_index_equal(
+    train_frame.index, portfolio.index.take(glm_run.train_indices)
+)
 y_train = train_frame["claim_amount"].to_numpy()
 w_train = train_frame["exposure"].to_numpy()
 
@@ -519,44 +610,96 @@ raw_predict_columns = [*features, "exposure"]
 special_predict_columns = [*features, "exposure", "claim_amount", "claim_count"]
 
 recalibration_factors = {}
-for name in ["tweedie-lightgbm", "tweedie-lightgbm-tariff", "frequency-severity-gbm"]:
-    columns = raw_predict_columns if name == "tweedie-lightgbm" else special_predict_columns
-    pred_train = np.asarray(estimators[name].predict(train_frame[columns]), dtype=float)
-    recalibration_factors[name] = float(
-        y_train.sum() / (pred_train * w_train).sum()
-    )
-display(pd.Series(recalibration_factors, name="recalibration_factor").to_frame())
+training_rows = []
+for name, estimator in estimators.items():
+    pred_train = np.asarray(estimator.predict(train_frame[raw_predict_columns]), dtype=float)
+    factor = op_ratio(y_train, pred_train, w_train)
+    assert np.isfinite(factor) and factor > 0
+    recalibration_factors[name] = factor
+    adjusted_op = op_ratio(y_train, factor * pred_train, w_train)
+    np.testing.assert_allclose(adjusted_op, 1)
+    training_rows.append({
+        "model": name, "raw_training_O/P": factor,
+        "frozen_factor": factor, "adjusted_training_O/P": adjusted_op,
+    })
+assert set(recalibration_factors) == set(estimators)
+display(pd.DataFrame(training_rows))
 ```
 
 ### Charts on the held-out test rows
 
-Re-predict every fitted model on the same holdout the metrics table saw.
-Each estimator is given exactly the columns it was fitted on (pipelines and
-frequency-severity models carried the special columns; the raw-feature Tweedie
-GBM carried only features plus exposure).
+Re-predict every fitted model on the stored holdout using rating features and
+exposure only, as in outcome-free scoring. Check raw metrics against each run,
+then show raw and training-adjusted results on those same rows. All portfolio
+charts below use the adjusted predictions for every candidate; model cards,
+comparison dashboards, and MLflow retain the raw run metrics.
 
 ```{python}
-test_frame = portfolio.iloc[test_idx].reset_index(drop=True)
+test_frame = portfolio.iloc[test_idx].copy()
+pd.testing.assert_index_equal(
+    test_frame.index, portfolio.index.take(glm_run.test_indices)
+)
+assert not train_frame.index.isin(test_frame.index).any()
 y_test = test_frame["claim_amount"].to_numpy()
 w_test = test_frame["exposure"].to_numpy()
 
+raw_test_predictions: dict[str, np.ndarray] = {}
 test_predictions: dict[str, np.ndarray] = {}
-for name, estimator in estimators.items():
-    columns = raw_predict_columns if name == "tweedie-lightgbm" else special_predict_columns
-    prediction = np.asarray(estimator.predict(test_frame[columns]), dtype=float)
-    if name in recalibration_factors:
-        prediction = prediction * recalibration_factors[name]
-    test_predictions[name] = prediction
+null_deviance = mean_tweedie_deviance(
+    y_test / w_test,
+    np.full(len(y_test), y_test.sum() / w_test.sum()),
+    sample_weight=w_test,
+    power=1.5,
+)
 
+
+def holdout_diagnostics(prediction):
+    deviance = mean_tweedie_deviance(
+        y_test / w_test, prediction, sample_weight=w_test, power=1.5
+    )
+    return {
+        "gini_test": gini(y_test, prediction, w_test),
+        "op_ratio_test": op_ratio(y_test, prediction, w_test),
+        "deviance_test": deviance,
+        "d2_test": 1 - deviance / null_deviance,
+    }
+
+
+holdout_rows = []
+for name, estimator in estimators.items():
+    prediction = np.asarray(estimator.predict(test_frame[raw_predict_columns]), dtype=float)
+    raw_test_predictions[name] = prediction
+    raw_metrics = holdout_diagnostics(prediction)
+    result = (glm_run if name in glm_run.models else gbm_run).models[name]
+    np.testing.assert_allclose(
+        list(raw_metrics.values()), [result.metrics[key] for key in raw_metrics]
+    )
+    pd.testing.assert_frame_equal(
+        calibration_table(y_test, prediction, w_test, n_bins=10),
+        result.calibration_table,
+    )
+    adjusted_prediction = prediction * recalibration_factors[name]
+    test_predictions[name] = adjusted_prediction
+    adjusted_metrics = holdout_diagnostics(adjusted_prediction)
+    np.testing.assert_allclose(adjusted_metrics["gini_test"], raw_metrics["gini_test"])
+    for scale, values in [("raw", raw_metrics), ("training O/P adjusted", adjusted_metrics)]:
+        holdout_rows.append({"model": name, "prediction_scale": scale, **values})
+
+holdout_metrics = pd.DataFrame(holdout_rows)
+display(holdout_metrics)
+metrics = comparison_table(runs).assign(prediction_scale="raw")
 CHAMPION = "tweedie-lightgbm"
 BENCHMARK = "direct-tweedie-glm"
+CHART_SCALE = "training O/P adjusted"
 colors = model_colors(list(estimators))
 ```
 
 Lorenz curves for all five models on one axes — the dotted diagonal (random
-ranking) and the grey dash-dot oracle (perfect ranking) are drawn once, one
-color per model, Gini in the legend. The area between the diagonal and a
-curve is the Gini; a curve dominates only when it does not cross the others.
+ranking) and the grey dash-dot oracle (hindsight ranking by observed rate) are
+drawn once, one color per model, Gini in the legend. The oracle is unavailable
+at prediction time and need not have Gini one. Gini is twice the signed area
+from the concentration curve to the diagonal. A lower curve dominates another
+only if it is nowhere above it; crossing curves do not establish dominance.
 
 ```{python}
 with azoic_style():
@@ -567,7 +710,7 @@ with azoic_style():
         w_test,
         ax=ax,
         show_oracle=True,
-        title="Lorenz curves on the held-out test set",
+        title=f"Held-out Lorenz curves — {CHART_SCALE}",
     )
     fig.savefig(ARTIFACT_DIR / "lorenz.png", bbox_inches="tight")
     plt.show()
@@ -589,7 +732,7 @@ mosaic = [
 ]
 with azoic_style():
     fig, axd = plt.subplot_mosaic(
-        mosaic, figsize=(4 * len(model_names), 8), sharey=True
+        mosaic, figsize=(4 * len(model_names), 8), sharey=True, layout="constrained"
     )
     for name in model_names:
         table = calibration_table(y_test, test_predictions[name], w_test, n_bins=10)
@@ -605,13 +748,14 @@ with azoic_style():
             ax=axd[f"cal:{name}"],
             title=f"Calibration — {name}",
         )
+    fig.suptitle(CHART_SCALE)
     fig.savefig(ARTIFACT_DIR / "lift_calibration.png", bbox_inches="tight")
     plt.show()
 ```
 
 ### Hexbin density: observed vs predicted rates, and rate residuals
 
-Per-policy densities for the champion: observed pure-premium rate versus
+Per-policy densities for the training-adjusted working model: observed pure-premium rate versus
 predicted rate on the left (y=x dashed reference), and
 `observed rate - predicted rate` versus predicted rate on the right (zero
 reference). The plot converts aggregate `y_test` to rates with `w_test`
@@ -625,34 +769,73 @@ with azoic_style():
         y_test,
         test_predictions[CHAMPION],
         w_test,
-        title=CHAMPION,
+        title=f"{CHAMPION} — {CHART_SCALE}",
         path=ARTIFACT_DIR / "hexbin_actual_vs_predicted.png",
     )
     plt.show()
 ```
 
-Gini is invariant to any monotonic increasing transformation of the predictions
-— only the rank order matters. The two computations below print the same number
-(the exponent is scaled by 100 purely to avoid `float` overflow; strict
-monotonicity is what matters).
+### Concentration Gini and inequality Gini
+
+Azoic's prediction-ordered **concentration Gini** is
+
+$$
+G = 1 - 2\int_0^1 C(u)\,du
+  = 2\int_0^1 \bigl(u-C(u)\bigr)\,du,
+$$
+
+where $u$ is cumulative exposure share and $C(u)$ is cumulative claim share,
+ordered by increasing predicted rate. This is twice the **signed** area from
+the curve to the diagonal: it can be negative, and positive area in one part
+can offset negative area elsewhere. Zero Gini does not prove random ranking.
+Azoic integrates tied-score blocks; its result equals the midrank formula,
+but the implementation does not evaluate pairwise differences.
+
+The pairwise absolute-difference **inequality Gini** instead measures dispersion
+of observed rates independently of model predictions. Its exposure-weighted form is
+
+$$
+G_{\mathrm{ineq}}=
+\frac{\sum_i\sum_j w_iw_j|r_i-r_j|}
+     {2(\sum_i w_i)(\sum_i w_i r_i)}.
+$$
+
+It equals the concentration Gini when the ordering score is the observed
+rate itself. Reversing model predictions flips concentration Gini's sign and
+leaves inequality Gini unchanged. With rates $[1,3]$ and exposures $[1,2]$,
+claims are $[1,6]$ and the observed-rate curve passes through
+$(0,0)$, $(1/3,1/7)$, $(1,1)$. Its two trapezoids have areas $1/42$ and
+$8/21$: total $17/42$. Thus $G=2(1/2-17/42)=4/21$, not one even with
+perfect observed-rate ordering.
 
 ```{python}
-raw = test_predictions[CHAMPION]
-print(f"Gini on rates:            {gini(y_test, raw, w_test):.6f}")
-print(f"Gini on exp(rates / 100): {gini(y_test, np.exp(raw / 100), w_test):.6f}")
-np.testing.assert_allclose(
-    gini(y_test, raw, w_test),
-    gini(y_test, np.exp(raw / 100), w_test),
-    rtol=1e-5,
-    atol=1e-6,
-)
+example_rate = np.array([1.0, 3.0])
+example_exposure = np.array([1.0, 2.0])
+example_claims = example_rate * example_exposure
+inequality_gini = np.sum(
+    example_exposure[:, None] * example_exposure[None, :]
+    * abs(example_rate[:, None] - example_rate[None, :])
+) / (2 * example_exposure.sum() * example_claims.sum())
+example_curve = lorenz(example_claims, example_rate, example_exposure)
+np.testing.assert_allclose(example_curve.exposure_pct, [0, 1 / 3, 1])
+np.testing.assert_allclose(example_curve.claims_pct, [0, 1 / 7, 1])
+np.testing.assert_allclose(example_curve.gini, 2 * (0.5 - 17 / 42))
+for score, sign in [(example_rate, 1), (-example_rate, -1)]:
+    np.testing.assert_allclose(gini(example_claims, score, example_exposure), sign * inequality_gini)
+print(f"Inequality: {inequality_gini:.6f}; forward: {example_curve.gini:.6f}; "
+      f"reversed: {gini(example_claims, -example_rate, example_exposure):.6f}")
 ```
+
+Any strictly increasing transformation that preserves the prediction ties
+preserves concentration Gini. In particular, the frozen positive training
+factors leave ranking unchanged; the holdout table verifies this for all five
+models while showing the change in level diagnostics.
 
 ### One-way charts: per-predictor calibration
 
-The recalibrated Tweedie LightGBM is treated as the working model on the
-metrics table above. Nine one-way charts — observed vs predicted pure premium
-per feature level, with translucent exposure bars underlayed — expose
+The adjusted Tweedie LightGBM is treated as the working model for these charts;
+the holdout table labels its raw and adjusted metrics separately. Nine one-way charts —
+observed vs predicted pure premium per feature level, with translucent exposure bars underlayed — expose
 per-segment miscalibration that the global O/P ratio can hide.
 
 Numeric features are shown in their **natural values on the test set**: driver
@@ -703,19 +886,51 @@ with azoic_style():
             title=feature,
             xlabel=feature,
         )
+    fig.suptitle(CHART_SCALE)
     fig.savefig(ARTIFACT_DIR / "one_way.png", bbox_inches="tight")
     plt.show()
 ```
 
 ### Double-lift: champion vs benchmark
 
-A double-lift chart orders policies by the ratio of the working model's
-prediction to a benchmark's prediction and looks at observed rates across the
-ratio deciles. Rising observed across deciles favours the working model;
-falling favours the benchmark. The middle deciles carry the most diagnostic
-signal — the endpoints are anchored by construction. The chart carries all
-the table's information (mean ratio per decile on the ticks, observed and
-both predicted rates as lines), so the table itself is not printed.
+A double-lift chart groups policies by the ratio of the working model's
+prediction (A) to the benchmark's prediction (B). Both use their frozen
+training adjustments here. Compare the gap between observed pure premium and
+**each model's predicted pure premium within each ratio group**. Rising
+observations alone cannot select a model. Extreme ratio groups contain the
+largest relative disagreements and can be particularly informative, provided
+their exposure and claims support credible comparisons; endpoints are not
+constrained to match observations. The table below the small example reports
+exposure and claim totals for the portfolio chart's ratio groups.
+
+The [CAS GLM monograph, section 7.2.2, pp. 78–79](https://www.casact.org/sites/default/files/2021-01/05-Goldburd-Khare-Tevet.pdf#page=88)
+uses this within-group comparison with curves normalized by their respective
+portfolio averages. Azoic plots **absolute rates**, retaining level differences
+as well as relative disagreement; it does not normalize those curves.
+
+For example, observed rates and B both equal $[10,20,30]$, while A predicts
+$[1,20,90]$. Observations rise with A/B, yet B matches every group and A has
+errors of $[9,0,-60]$. Four repetitions per ratio keep all three quantile groups
+in this small unit-exposure example.
+
+```{python}
+example_observed = np.repeat([10.0, 20.0, 30.0], 4)
+example_a = np.repeat([1.0, 20.0, 90.0], 4)
+example_double_lift = double_lift_table(
+    example_observed, example_a, example_observed,
+    n_bins=3, label_a="A", label_b="B",
+)
+np.testing.assert_allclose(example_double_lift.mean_ratio, [0.1, 1, 3])
+np.testing.assert_allclose(example_double_lift.observed_pure_premium, [10, 20, 30])
+np.testing.assert_allclose(
+    example_double_lift.B_pure_premium, example_double_lift.observed_pure_premium
+)
+np.testing.assert_allclose(
+    example_double_lift.observed_pure_premium - example_double_lift.A_pure_premium,
+    [9, 0, -60],
+)
+display(example_double_lift)
+```
 
 ```{python}
 dl_table = double_lift_table(
@@ -727,18 +942,17 @@ dl_table = double_lift_table(
     label_a=CHAMPION,
     label_b=BENCHMARK,
 )
+display(dl_table[["mean_ratio", "exposure", "claim_amount"]])
 with azoic_style():
-    fig, ax = plt.subplots(figsize=(7, 4.5))
     plot_double_lift(
         dl_table,
-        ax=ax,
         label_a=CHAMPION,
         label_b=BENCHMARK,
         color_a=colors[CHAMPION],
         color_b=colors[BENCHMARK],
-        title=f"Double-lift: {CHAMPION} vs {BENCHMARK}",
+        title=f"Double-lift — {CHART_SCALE}\n{CHAMPION} vs {BENCHMARK}",
+        path=ARTIFACT_DIR / "double_lift.png",
     )
-    fig.savefig(ARTIFACT_DIR / "double_lift.png", bbox_inches="tight")
     plt.show()
 ```
 
@@ -749,19 +963,12 @@ humans, not the model. The full guide lives in the
 [docs site](https://thomasbury.github.io/azoic/guide/actuarial-workflow/);
 the condensed version used here:
 
-- **Gini** measures ranking ability only, not accuracy. A monotonic increasing
-  transformation of the predictions leaves the Gini unchanged, because the rank
-  order is unchanged. Two models with the same Gini can charge very different
-  totals. Verify with the `exp(rates)` assertion above — same Gini, different
-  absolute scale. Three equivalent definitions of the same number exist:
-  mean-absolute-difference over pairs (Gini's original, $O(n^2)$),
-  $1 - 2 \cdot \mathrm{AUC}$ of the Lorenz curve (the actuarial convention), and
-  the Frees-Meyers-Cummings midrank closed form $2 \sum_i w_i y_i \bar F_i /
-  \sum_i w_i y_i - 1$. Azoic uses the midrank form because tied predictions
-  are aggregated into single blocks before integration, so the value is
-  permutation-invariant by construction (a GLM with only categorical features
-  produces many ties; a vendor implementation that integrates through rows in
-  arbitrary order gives a different number).
+- **Concentration Gini** measures prediction ordering, not premium level. A
+  positive scalar leaves it unchanged. It is twice the signed area from the
+  prediction-ordered curve to the diagonal and may be negative. Pairwise
+  inequality Gini measures observed-rate dispersion; observed-rate ordering
+  recovers that value. Azoic integrates tied-score blocks, equivalently
+  the midrank formula, so row order within ties cannot affect the result.
 - **Weighted deviance** is the proper score matched to the response distribution
   (Poisson for frequency, Gamma for severity, Tweedie for pure premium). Smaller
   is better; one unit does not translate directly to euros. When the true
@@ -771,14 +978,14 @@ the condensed version used here:
   the weighted-mean null. Higher is better. $D^2$ is only comparable between models
   of the same response and same family; a frequency $D^2$ cannot be ranked against
   a severity $D^2$.
-- **A/E (actual / expected)** is $\sum_i w_i y_i / \sum_i w_i \hat{p}_i$. A/E near 1 is necessary
+- **O/P (observed / predicted), also called A/E**, is $\sum_i w_i r_i / \sum_i w_i \mu_i$. A/E near 1 is necessary
   but not sufficient: a portfolio can hit 1.0 with offsetting biases that cancel
   across segments. Always segment-check (the one-way charts above are exactly
   that check).
-- **Lorenz curve** — the area between the diagonal and the curve is the Gini. A
-  curve dominates only when it does not cross; crossing curves are not a
-  ranking win. Good models bow the curve below the diagonal; the diagonal
-  itself is random ranking.
+- **Concentration curve** — Gini is twice the signed area to the diagonal. A
+  lower curve dominates another only if it is nowhere above it; crossing
+  curves do not establish dominance. The diagonal is the random-ranking
+  reference and also results from constant prediction scores.
 - **Lift chart** — observed and predicted per decile. The two should track on
   absolute level (calibration) and the observed should rise with the decile
   (ranking). Crossing signals that the model over-estimates in some deciles and
@@ -787,29 +994,72 @@ the condensed version used here:
 - **One-way chart** — the predicted lines should sit close to the observed line
   per feature level. A bowed observed line without a matching predicted line is
   systematic miscalibration by segment, not bad ranking.
-- **Double-lift chart** — orders policies by the A/B ratio and looks at observed
-  rates across ratio deciles. Rising observed across deciles favours A;
-  falling favours B. Flat, noisy, or crossing evidence is inconclusive. The
-  middle deciles carry the most diagnostic signal; the endpoints are anchored
-  by construction.
-- **Hexbin (actual vs predicted)** — predicted-vs-observed on linear axes shows
-  the bulk plus the claim-free band at observed = 0 (the linear view is
-  clipped to the predicted-value span, so observed outliers extend beyond it).
-  The **residual panel** (observed − predicted) carries the shape diagnostic:
-  - *Band centred on zero across the full predicted range* — the model is
-    locally unbiased at every level; what remains is noise. A flat vertical
-    shift is fixable by a single A/E rescale.
-  - *Tilted or curved band* — the model's *shape* is wrong, not its level. A
-    global A/E rescale will not fix it; refit with the missing structure
-    (misspecified link, missing non-linear term, or an interaction the model
-    never saw).
-  - *Funnel shape (spread grows with predicted mean)* — expected for
-    Poisson-Gamma-Tweedie variance; widening alone is not a defect.
-  - *Discrete stripes, off-diagonal structure* — an unsaturated feature or a
-    categorical split the model smoothed (GLUM) versus a few dominant leaves
-    (LightGBM). Compare the two panels: structure the GLM smooths but
-    LightGBM preserves points to a structural story rather than a
-    distributional one.
+- **Double-lift chart** — compare each predicted rate with observations within
+  A/B ratio groups. Observed direction alone does not identify the better
+  model. Extreme groups capture the largest relative disagreements; inspect
+  their exposure and claims credibility. These are absolute-rate curves.
+- **Hexbin (actual vs predicted)** — exposure density locates common outcomes,
+  including the claim-free band at observed rate zero. The default scatter
+  axes span their respective observed and predicted ranges, which can differ
+  greatly when a few losses dominate the observed rates.
+  A dense residual band need not estimate the conditional mean: zero-heavy
+  outcomes often produce a band near $-\mu$ even for a well-calibrated model.
+
+### Additive and multiplicative residual patterns
+
+Residuals are observed rate minus predicted rate: $e_i=r_i-\mu_i$. Interpret
+**credible, exposure-weighted grouped means** before attributing a pattern to
+model structure. A constant non-zero conditional mean residual is an additive
+discrepancy. If instead $r_i=c\mu_i$, then
+
+$$
+e_i=(c-1)\mu_i.
+$$
+
+That slope can be entirely multiplicative and removable by one factor. Remaining
+curvature after checking level can motivate reviewing features, the link, or
+interactions; density stripes alone do not diagnose their cause. Increasing
+spread is compatible with Poisson, Gamma, and Tweedie variance and is not by
+itself evidence of bias.
+
+In the following deterministic grouped-mean examples, $r=\mu+5$ leaves residuals
+$[5,5,5]$. Its portfolio O/P factor is 1.25, but applying it leaves
+$[2.5,0,-2.5]$: one multiplier cannot generally remove an additive error.
+For $r=2\mu$, residuals initially equal $\mu$ and multiplying predictions by
+two removes every error.
+
+```{python}
+example_prediction = np.array([10.0, 20.0, 30.0])
+example_exposure = np.array([1.0, 2.0, 1.0])
+for pattern, example_rate in [
+    ("additive", example_prediction + 5),
+    ("multiplicative", 2 * example_prediction),
+]:
+    factor = op_ratio(example_rate * example_exposure, example_prediction, example_exposure)
+    residual = example_rate - example_prediction
+    adjusted_residual = example_rate - factor * example_prediction
+    np.testing.assert_allclose(residual, 5 if pattern == "additive" else example_prediction)
+    np.testing.assert_allclose(
+        adjusted_residual, [2.5, 0, -2.5] if pattern == "additive" else [0, 0, 0]
+    )
+    display(pd.DataFrame({
+        "pattern": pattern, "prediction": example_prediction, "observed_rate": example_rate,
+        "residual": residual, "factor": factor, "adjusted_residual": adjusted_residual,
+    }))
+```
+
+For the adjusted working model, the calibration bins already provide grouped
+mean residuals. Exposure and claim totals help assess how much evidence each
+bin contains; this table does not estimate uncertainty.
+
+```{python}
+grouped_residuals = calibration_table(y_test, champion_pred, w_test, n_bins=10)
+grouped_residuals["mean_rate_residual"] = (
+    grouped_residuals.observed_pure_premium - grouped_residuals.predicted_pure_premium
+)
+grouped_residuals["prediction_scale"] = CHART_SCALE
+display(grouped_residuals)
+```
 
 ### The five-line checklist applied to these five models
 
@@ -820,7 +1070,7 @@ the condensed version used here:
   one-way charts above are the segment-check; favour the model whose predicted
   line tracks the observed across all nine features.
 - **Ranking** — positive Gini; the Lorenz curve dominates the GLM benchmark
-  without crossing; monotonic invariance verified on the re-prediction above.
+  without crossing; positive-scalar invariance verified in the holdout table.
 - **Lift** — observed per-decile tracks predicted in level; the decile range is
   large; no crossings of observed and predicted.
 - **Business** — relativities make sense, fairness check passes, model is
@@ -833,8 +1083,9 @@ constraints — no single number makes a pricing decision.
 
 The scoring interface remains `estimator.predict(raw_frame)`. No scoring
 service or persistence layer is required. The frame below contains only rating
-features and exposure; the GBM rates shown are level-recalibrated, matching the
-diagnostics above.
+features and exposure. Every GLM and GBM rate shown is multiplied by its
+frozen training O/P factor, matching the adjusted diagnostics above. Calling
+`estimator.predict` alone returns raw rates.
 
 ```{python}
 scoring_frame = portfolio[[*features, "exposure"]].copy()
@@ -842,14 +1093,13 @@ scored = pd.DataFrame(index=scoring_frame.index)
 
 for model_name, estimator in estimators.items():
     prediction = np.asarray(estimator.predict(scoring_frame), dtype=float)
-    if model_name in recalibration_factors:
-        prediction = prediction * recalibration_factors[model_name]
+    prediction = prediction * recalibration_factors[model_name]
     assert len(prediction) == len(scoring_frame)
     assert np.isfinite(prediction).all()
     assert (prediction >= 0).all()
     scored[model_name] = prediction
 
-display(scored.describe().T)
+display(scored.describe().T.assign(prediction_scale=CHART_SCALE))
 ```
 
 ## Distil the GBM into an executable tariff
@@ -858,9 +1108,9 @@ A tree model is not itself a multiplicative tariff. `distill_gbm` fits a
 log-link GLM student to a GBM teacher's predictions on the experiment's
 training rows, then measures fidelity on the untouched test rows. It copies the
 already-fitted preprocessing, so bins and group mappings are not relearned from
-the holdout. The teacher here is the **tariff-structured** Tweedie LightGBM
-(`tweedie-lightgbm-tariff`): the student lives in the same binned/grouped
-feature space, which is what keeps distillation faithful — and its ranking
+the holdout. The teacher here is the **raw, unscaled tariff-structured** Tweedie
+LightGBM (`tweedie-lightgbm-tariff`), before the chart adjustment: the student lives
+in the same binned/grouped feature space, which is what keeps distillation faithful — and its ranking
 already showed the cost of that structure compared with the raw-feature GBMs.
 
 The workbook contains the same `base_rate`, `factors`, and `mappings` sheets as
@@ -874,13 +1124,11 @@ tariff_X = portfolio[
     [*features, "exposure", "claim_amount", "claim_count"]
 ]
 teacher_pipeline = estimators["tweedie-lightgbm-tariff"]
-validation_idx = test_idx
-fit_idx = train_idx
-distilled_pipeline = distill_gbm(
-    teacher_pipeline,
-    tariff_X.iloc[fit_idx],
-    tariff_X.iloc[validation_idx],
-)
+fit_X = train_frame[special_predict_columns]
+validation_X = test_frame[special_predict_columns]
+pd.testing.assert_frame_equal(fit_X, tariff_X.iloc[train_idx])
+pd.testing.assert_frame_equal(validation_X, tariff_X.iloc[test_idx])
+distilled_pipeline = distill_gbm(teacher_pipeline, fit_X, validation_X)
 
 export_tariff(
     distilled_pipeline,
@@ -914,16 +1162,16 @@ workbook_tariff = {
     "numeric": numeric_factors,
     "categorical": categorical_factors,
 }
-validation_X = tariff_X.iloc[validation_idx]
 transformed_validation = distilled_pipeline[:-1].transform(validation_X)
 teacher_rate = np.asarray(teacher_pipeline.predict(validation_X), dtype=float)
+np.testing.assert_allclose(teacher_rate, raw_test_predictions["tweedie-lightgbm-tariff"])
 student_rate = np.asarray(distilled_pipeline.predict(validation_X), dtype=float)
 workbook_rate = apply_tariff(workbook_tariff, transformed_validation)
 
 assert np.allclose(workbook_rate, student_rate, rtol=1e-6, atol=1e-8)
 rate_comparison = pd.DataFrame(
     {
-        "gbm_teacher": teacher_rate,
+        "raw_gbm_teacher": teacher_rate,
         "distilled_glm_student": student_rate,
         "applied_workbook": workbook_rate,
     }
@@ -936,7 +1184,8 @@ display(rate_comparison.describe().T)
 
 Each experiment gets a Markdown model card and a standalone HTML comparison
 dashboard; the cross-config comparison table collects all five fitted models
-from both experiments.
+from both experiments. These reports and MLflow metrics use raw run predictions,
+before the training factors applied to every candidate in the charts and scoring example.
 
 ```{python}
 glm_card_path = ARTIFACT_DIR / "model_card_tariff_structured.md"
@@ -951,7 +1200,7 @@ assert metrics["model"].nunique() == 5
 assert glm_card_path.stat().st_size > 0
 assert gbm_card_path.stat().st_size > 0
 assert dashboard_path.stat().st_size > 0
-display(metrics[["config", "model", "gini_test", "op_ratio_test", "deviance_test"]])
+display(metrics[["config", "model", "prediction_scale", "gini_test", "op_ratio_test", "deviance_test"]])
 ```
 
 MLflow uses a local SQLite backend. Its artifact root is also placed under the

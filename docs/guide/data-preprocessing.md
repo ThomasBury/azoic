@@ -31,11 +31,21 @@ override a cardinality heuristic.
 
 `AutoBinner` handles numeric features. Quantile binning balances row count or
 exposure; tree binning learns target-aware cut points. Credibility floors can
-merge bins with insufficient exposure or claim count.
+merge bins with insufficient exposure or claim count. Intervals include their
+finite lower edge and exclude their upper edge: with edges 30 and 60, the bins
+are `(-inf, 30.0)`, `[30.0, 60.0)`, and `[60.0, inf)`. A value of exactly 30
+belongs to the second bin; exactly 60 belongs to the third. With no edges, all
+observed values belong to `(-inf, inf)`; missing values still use `Missing`.
 
 `AutoGrouper` handles categorical features. The `rare` strategy collapses
-thin levels; `similarity` combines levels with nearby aggregate pure premium.
-Ordered categoricals only merge adjacent levels.
+thin levels; `similarity` stably sorts nominal levels by aggregate pure premium
+(`sum(claim_amount) / sum(exposure)`). Ordered categoricals retain their declared
+order. Groups below an exposure or claim-count floor merge with their closest
+adjacent risk. The closest adjacent pair then merges until `max_groups` is met,
+recomputing aggregate risks after each merge and breaking distance ties to the
+left. For equal exposures, rates 100, 101, and 10000 with `max_groups=2` pool
+100 and 101, leaving 10000 separate. If the whole portfolio cannot meet a floor,
+only one group remains.
 
 ```python
 from sklearn.pipeline import Pipeline

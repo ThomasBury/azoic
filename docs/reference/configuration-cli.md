@@ -332,13 +332,37 @@ Run `azoic COMMAND --help` for Typer's current option spellings.
 
 | Object | Contents |
 |---|---|
-| `Run` | Config, SHA-256 data fingerprint, row counts, feature names, and named `ModelResult` objects |
+| `Run` | Config, SHA-256 data fingerprint, row counts, exact train/test positions, feature names, and named `ModelResult` objects |
 | `ModelResult` | Model kind, effective YAML parameters, diagnostic metrics, held-out calibration table, and `protected_calibration` mapping |
 | Metrics | `gini_train`, `gini_test`, `op_ratio_test`, and exposure-weighted Tweedie `deviance_test` at fixed power 1.5 |
 | Optional estimator mapping | Returned by `run_experiment(..., return_estimators=True)` |
 | Model card | Markdown |
 | Comparison | pandas table; `comparison_dashboard(runs)` optionally returns standalone Plotly HTML from Python |
 | Tariff | `base_rate`, `factors`, and `mappings` workbook sheets |
+
+`Run.train_indices` and `Run.test_indices` are immutable `tuple[int, ...]`
+values containing the actual fit/evaluation row positions, in their original
+partition order. All models within a run share those positions. For tuning,
+`TuneResult.run` records the final **outer** partition, not an inner trial split.
+
+Recover rows from the exact input frame without sorting, filtering, or changing
+its index. The fingerprint covers shape, columns, dtypes, index, and values;
+matching seeds or row counts alone cannot establish matching partitions. When
+comparing runs, check both their fingerprints and their position tuples.
+
+```python
+train_frame = portfolio.iloc[list(run.train_indices)]
+test_frame = portfolio.iloc[list(run.test_indices)]
+```
+
+Convert tuples to a list or integer array: pandas interprets a bare tuple as
+row/column indexing. Use training positions for recalibration and student fits,
+and test positions for diagnostic and distillation-fidelity frames. CLI
+`export-tariff --distill` uses the returned run's positions and rejects a reloaded
+dataset whose fingerprint changed after fitting.
+
+Run metrics describe raw estimator predictions. If applying a training-derived
+scale factor later, label those adjusted diagnostics separately.
 
 ## Validation rules
 

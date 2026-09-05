@@ -11,8 +11,10 @@ calibration, and business plausibility together.
 3. Reserve an untouched temporal test set when an ordered policy-time field
    exists; otherwise use a documented non-temporal holdout.
 4. Select preprocessing and model parameters only inside the training data.
-5. Refit the selected candidates on the outer training data and evaluate the
-   outer test once.
+5. Refit the selected candidates on outer training data, measure training O/P
+   for every candidate, and freeze any training-derived level adjustment before
+   inspecting the outer test. Evaluate raw and adjusted candidates on the same
+   untouched test rows.
 6. Review diagnostics and relativities before reporting or exporting a tariff.
 
 !!! danger "Leakage boundary"
@@ -41,8 +43,36 @@ pure premium. Equal scores are aggregated before integration, so row order
 inside a tied score cannot change the result. Positive Gini means observed
 claims concentrate in the high-predicted-risk tail.
 
-A monotonic transformation of predictions leaves Gini unchanged. It therefore
-cannot establish correct premium level.
+Write \(u\) for cumulative exposure share and \(C(u)\) for cumulative claim
+share in prediction order. Azoic computes
+
+\[
+G=1-2\int_0^1 C(u)\,du=2\int_0^1[u-C(u)]\,du.
+\]
+
+This is twice the signed area from the concentration curve to the diagonal,
+so it may be negative. A positive Gini does not require the curve to stay
+below the diagonal everywhere, and zero Gini does not prove random ranking.
+Strictly increasing transformations that preserve ties, including positive
+scaling, leave it unchanged and therefore cannot establish premium level.
+
+The pairwise absolute-difference **inequality Gini** measures observed-rate
+dispersion independently of model predictions. With rates \(r_i\) and
+exposures \(w_i\), it is
+
+\[
+G_{\mathrm{ineq}}=
+\frac{\sum_i\sum_j w_iw_j|r_i-r_j|}
+{2(\sum_i w_i)(\sum_i w_i r_i)}.
+\]
+
+It equals concentration Gini when ranking by observed rates. Azoic integrates
+tied-score blocks, equivalently the midrank formula; it does not compute
+pairwise differences. Its hindsight upper bound generally falls below one.
+For rates \([1,3]\) and exposures \([1,2]\), the observed-rate curve passes
+through \((1/3,1/7)\), its area is \(17/42\), and Gini is \(4/21\).
+Reversing the prediction ordering gives \(-4/21\), while inequality stays
+\(4/21\). The [tutorial](fremtpl2.md) executes this example.
 
 ### Distributional accuracy
 
@@ -74,6 +104,37 @@ The observed/predicted ratio is
 An O/P ratio near 1 is necessary, not sufficient. Opposing segment biases can
 cancel at portfolio level, so inspect calibration and one-way tables as well.
 
+Measure training O/P for **every** GLM and GBM candidate. Poisson, Gamma, and
+Tweedie losses target conditional means; they do not inherently target below
+the mean. Restrictions on the model, regularization, finite boosting iterations,
+and solver convergence affect achieved calibration. A GLM intercept or a
+Poisson GBM objective alone is not a guarantee of total balance.
+
+For observed rate \(r\), predicted rate \(\mu\), and exposure \(w\), our
+chain-rule derivation from [glum's deviance and log-link definitions](https://glum.readthedocs.io/en/latest/glm.html)
+gives the converged, unpenalized log-link GLM intercept equation
+
+\[
+\sum_i w_i(\mu_i-r_i)\mu_i^{1-p}=0.
+\]
+
+For Poisson (\(p=1\)), it implies training total balance. For Gamma
+(\(p=2\)) and Tweedie (\(1<p<2\)), it generally does not. All three
+intercept-only fits recover the weighted mean; adding a varying feature can
+break total balance for Gamma and Tweedie even with a converged intercept
+score. None of these statements guarantees held-out calibration or balance of
+a frequency–severity product. The tutorial includes fitted counterexamples
+and a Poisson control with solver tolerances.
+
+If choosing an explicit burn-cost adjustment, calculate each factor as
+\(c_m=\sum_{\mathrm{train}}\mathrm{claim\ amount}/\sum_{\mathrm{train}}w\mu_m\)
+on the stored training rows and freeze it before inspecting test outcomes.
+Multiplying by \(c_m\) balances training totals. It need not improve test
+deviance, test O/P, or segment calibration. Show labelled raw and adjusted
+holdout results on the same positions; state which predictions feed charts,
+scoring, and distillation. The tutorial's charts and scoring use adjusted
+rates for every candidate; its distillation teacher and run reports stay raw.
+
 ### Visual evidence
 
 | View | Question | Useful signal | Boundary |
@@ -82,8 +143,24 @@ cancel at portfolio level, so inspect calibration and one-way tables as well.
 | Lift chart | Does observed risk rise with predicted decile, and do levels agree? | Increasing observed lift with observed and predicted lines close together | Wide gaps are calibration errors, not ranking errors |
 | Calibration chart | Are segment predictions on level? | Exposure-heavy points near the diagonal | It says nothing about individual-policy accuracy |
 | One-way chart | Is a feature segment systematically mispriced? | Observed and predicted lines track across credible levels | Thin-exposure levels are noisy |
-| Double-lift chart | Where do two models disagree, and which ordering matches outcomes? | A clear observed trend across prediction-ratio deciles | Flat or crossing evidence is inconclusive |
-| Actual vs predicted | Where is policy-level density and residual structure? | Dense mass near the reference with residuals around zero | Zero-heavy claims make individual points noisy |
+| Double-lift chart | Which prediction matches observations within each ratio group? | Smaller observed-minus-predicted gaps in credible groups | Rising observations alone cannot select a model; inspect extreme disagreements |
+| Actual vs predicted | Where is policy-level density and residual structure? | Credible grouped mean residuals near zero | The densest band need not be the conditional mean |
+
+In a double-lift view, observed and B rates \([10,20,30]\) against A rates
+\([1,20,90]\) give rising A/B ratios, yet B matches all three groups.
+The [CAS GLM monograph, section 7.2.2, pp. 78–79](https://www.casact.org/sites/default/files/2021-01/05-Goldburd-Khare-Tevet.pdf#page=88)
+compares predictions with observations within ratio groups using normalized
+curves. Azoic shows absolute rates, retaining level differences. Extreme ratio
+groups contain the largest relative disagreements; assess their exposure and
+claims credibility rather than assuming the middle is most informative.
+
+Residuals are \(e=r-\mu\). A constant non-zero conditional mean residual
+indicates an additive discrepancy: \(r=\mu+5\) gives \(e=5\), which one
+multiplier cannot generally remove. If \(r=c\mu\), then
+\(e=(c-1)\mu\); this slope is entirely multiplicative and one factor can
+remove it. Inspect credible exposure-weighted grouped means before attributing
+remaining curvature to missing structure. Claim-free policies create residuals
+near \(-\mu\), so the densest band is not necessarily the mean.
 
 The [diagnostics and visualization guide](diagnostics-visualization.md) contains
 the runnable table and plotting recipes.

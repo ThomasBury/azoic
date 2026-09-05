@@ -109,13 +109,16 @@ declares each used param explicitly.
    exposure-weighted mean Tweedie deviance with fixed `power=1.5`.
 6. **Concentration Gini measures ranking only** — policies are ordered from
    safest to riskiest (ascending `y_pred`); equal prediction scores are
-   aggregated into single blocks before integration so the curve sits below
-   the diagonal and the Gini is independent of row order. `gini = 1 - 2*auc`
-   on the tie-corrected polygonal curve, numerically identical to the
+   aggregated into single blocks before integration so Gini is independent of
+   row order within ties. `gini = 1 - 2*auc` is twice the signed area from the
+   curve to the diagonal and can be negative, including with crossing curves;
+   the tie-corrected polygonal calculation is numerically identical to the
    Frees-Meyers-Cummings midrank closed form. Never infer calibration from
    Gini; always pair it with `calibration_table` + O/P ratio. The Lorenz
-   plot optionally overlays the perfect-model oracle curve and shades the
-   Gini area.
+   plot optionally overlays the hindsight observed-rate oracle curve and
+   shades the area whose signed value is half the Gini. Observed-rate ranking
+   recovers exposure-weighted inequality Gini, a hindsight bound generally
+   below one; it does not measure calibration.
 7. **Primary diagnostics**: `gini`, `lorenz`, `calibration_table`, O/P ratio,
    lift by decile. `RMSE`/`MAE`/`R^2`/`MAPE` are secondary and accompanied by a
    warning when surfaced.
@@ -222,9 +225,59 @@ Each is independently shippable. Done-when = acceptance check.
   source-distribution CLI smoke tests pass and the Pages deployment is green.*
 - **M15 — first public release**: publish the validated `azoic==0.4.1`
   distributions through PyPI trusted publishing from a `v0.4.1` GitHub release.
+  M16–M21 are prerequisites; rebuild and revalidate the corrected source using
+  M14's distribution checks before publication.
   *Done when PyPI exposes the release, a fresh isolated install reports version
   `0.4.1` and all five CLI commands, and the release and documentation workflows
   are green.*
+
+- **M16 — preserve the experiment holdout** — **completed 2026-09-05**:
+  immutable `Run.train_indices` and `Run.test_indices` record actual fit and
+  evaluation positions. Tutorial diagnostics, training calibration, and CLI
+  distillation reuse them; CLI export rejects changed input fingerprints.
+  Exact membership, raw-metric reproduction, outer-tuning-boundary, CLI
+  distillation, strict docs build, and full tutorial-render checks pass.
+  See `PROGRESS.md` for acceptance evidence.
+- **M17 — reject inconsistent frequency-severity outcomes** — **completed
+  2026-09-05**: standalone fitting enforces the workflow's exposure/count/amount
+  contract before rate division, cloning, or component fitting. Invalid outcomes
+  fail with and without a supplied rate across direct and pipeline fits; workflow
+  checks, valid-data weights, outcome-free prediction, the full suite, and strict
+  docs build pass. See `PROGRESS.md` for acceptance evidence.
+- **M18 — faithful tariff bins and similarity groups** — **completed
+  2026-09-05**: labels describe existing lower-inclusive bin assignments;
+  nominal categories reuse adjacent-risk merging after stable risk sorting.
+  Independent workbook boundary application, aggregate-risk/credibility/ordered
+  adjacency checks, the full suite, strict docs build, and a fresh tutorial
+  refit pass. Migration guidance requires regenerating fitted models and
+  workbooks together. See `PROGRESS.md` for acceptance evidence.
+- **M19 — complete missing-value diagnostics** — **completed 2026-09-05**:
+  weighted quantiles use observed grouping values and their matching weights;
+  missing numeric segments retain their totals and remain visible in one-way
+  plots. Missing-exposure invariance across shared callers, empty/all-missing
+  handling, weight validation, total reconciliation, visible missing-group
+  checks, the full suite, and strict docs build pass. See `PROGRESS.md` for
+  acceptance evidence.
+- **M20 — valid diagnostic references and residual scales** — **completed
+  2026-09-05**: claim-free experiments report undefined test D²; the oracle ranks
+  observed rates; logarithmic residual views use native symmetric log axes with
+  correctly positioned density cells. Claim-free reporting/tuning, constant and
+  ordinary D² baselines, unequal-exposure/tied-rate oracle coordinates, actual
+  signed-density rendering, the full suite, and strict docs build pass. See
+  `PROGRESS.md` for acceptance evidence.
+- **M21 — correct actuarial explanations** — **completed 2026-09-05**:
+  every tutorial candidate reports training O/P and uses a frozen training-only
+  factor, with labelled raw/adjusted holdout diagnostics. Double-lift compares
+  predictions with observations; residual guidance separates additive and
+  multiplicative errors; concentration and inequality Gini are distinct.
+  Numerical examples, training-only factor checks, the full suite, strict
+  documentation build, and full tutorial rendering/visual inspection pass.
+  See `PROGRESS.md` for acceptance evidence and the M15 handoff.
+
+The 2026-09-05 priorities, affected paths, dependencies, and regression criteria
+are in the [correctness remediation plan](PROGRESS.md#correctness-remediation-plan--2026-09-05).
+Execute M16 through M21 before M15, one green milestone per session. These
+correct existing contracts; they do not expand the optional roadmap below.
 
 ## 7. Later iterations (optional, none blocking)
 
