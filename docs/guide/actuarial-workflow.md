@@ -132,8 +132,9 @@ on the stored training rows and freeze it before inspecting test outcomes.
 Multiplying by \(c_m\) balances training totals. It need not improve test
 deviance, test O/P, or segment calibration. Show labelled raw and adjusted
 holdout results on the same positions; state which predictions feed charts,
-scoring, and distillation. The tutorial's charts and scoring use adjusted
-rates for every candidate; its distillation teacher and run reports stay raw.
+scoring, and distillation. The tutorial labels its adjusted comparison charts
+and scoring separately from the raw GLM structure illustrations. Its distillation
+teacher and run reports stay raw.
 
 ### Visual evidence
 

@@ -144,7 +144,14 @@ azoic export-tariff \
 ```
 
 The workbook describes the student and includes held-out teacher/student
-fidelity metadata.
+fidelity metadata. Fidelity measures agreement with teacher predictions, not
+accuracy against claims. The [freMTPL2 tutorial](fremtpl2.md) applies the workbook
+after fitted preprocessing and compares it with the direct GLM, raw GBM, and
+structured teacher on the same held-out claims. It exports with
+`recalibrate=False` and training-frame feature metadata, then reports raw metrics
+and a separate external multiplier based on each candidate's own training O/P,
+including the applied workbook. Calibration, Lorenz, and common training-bin age
+comparisons accompany deviance, D², Gini, O/P, and portfolio totals.
 
 !!! danger "Application boundary"
 

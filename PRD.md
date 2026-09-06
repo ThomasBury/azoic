@@ -225,7 +225,7 @@ Each is independently shippable. Done-when = acceptance check.
   source-distribution CLI smoke tests pass and the Pages deployment is green.*
 - **M15 — first public release**: publish the validated `azoic==0.4.1`
   distributions through PyPI trusted publishing from a `v0.4.1` GitHub release.
-  M16–M21 are prerequisites; rebuild and revalidate the corrected source using
+  M16–M23 are prerequisites; rebuild and revalidate the corrected source using
   M14's distribution checks before publication.
   *Done when PyPI exposes the release, a fresh isolated install reports version
   `0.4.1` and all five CLI commands, and the release and documentation workflows
@@ -274,9 +274,53 @@ Each is independently shippable. Done-when = acceptance check.
   documentation build, and full tutorial rendering/visual inspection pass.
   See `PROGRESS.md` for acceptance evidence and the M15 handoff.
 
+### M22 — show what fitted preprocessing does (completed 2026-09-06)
+
+Lead with the direct binned/grouped GLM baseline, raw GBM benchmark, and structured
+GBM teacher. Preserve parameters, tree/similarity settings, and stored partitions.
+Show fitted intervals/memberships with training policy counts, exposure, claim counts,
+and observed pure premium. Use frozen groups for held-out GLM one-ways; illustrate
+fixed-policy age steps beside raw-age composition effects. Explain uncertain cuts,
+unadjusted grouping loss rates, credibility floors, and no monotonic guarantee.
+Preserve ordered-category one-way order, observed groups, and missing totals.
+Move frequency–severity fitting, comparison, and reporting to an executable appendix.
+Acceptance: ordered/unused/missing regression; totals, fixed-policy invariance,
+within-bin equality, exact partitions, frozen mappings, positive predictions,
+raw metric reproduction, adjusted training O/P one, Gini invariance, and workbook
+agreement. Full tutorial/appendix render and visual inspection, `just check`,
+`just docs-build`, and `git diff --check` must pass.
+
+All M22 acceptance checks passed; see `PROGRESS.md` for full-render, regression,
+visual, and unchanged-metric evidence. The subsequent presentation cleanup
+replaces the manual fixed-policy curve with raw-value one-ways for both ages and
+a link to the existing sklearn PDP/ICE recipe. Fitted-group views remain supporting
+diagnostics; no training inputs or settings change. M23 is also complete; M15 is next.
+
+### M23 — evaluate the exported tariff against claims (completed 2026-09-06)
+
+Distil the structured teacher on training rows with copied preprocessing. Export
+with `recalibrate=False` and training metadata. Apply workbook factors using the
+existing recipe to fitted-pipeline-transformed features; no standalone loader.
+Check workbook/student agreement on train/test at existing tolerance. Finish with
+four rows: direct GLM, raw GBM, structured teacher, applied workbook; show weighted
+Tweedie deviance at 1.5, D², concentration Gini, O/P, predicted total claims, and
+common observed claims/exposure. Add calibration panels, overlaid Lorenz curves,
+and age comparisons at raw values, supported by identical-training-bin views.
+Separately show metrics adjusted
+by each model's own frozen training O/P (including workbook training predictions);
+the workbook adjustment is an external multiplier. Separate teacher/student deviance
+and total-ratio fidelity from claims performance. Describe gains/losses without
+assuming distillation worsens performance or claiming superiority from one split.
+Repeat tutorial/visual, partition/mapping/scaling/metric, suite, docs, and diff checks.
+No new dependencies, public interfaces, binning algorithm, or automated selection.
+
+All M23 acceptance checks passed; see `PROGRESS.md` for the four-candidate
+claims results, separate fidelity, training-only scaling regression, fresh
+32-cell tutorial render, visual inspection, full suite, and strict docs build.
+
 The 2026-09-05 priorities, affected paths, dependencies, and regression criteria
 are in the [correctness remediation plan](PROGRESS.md#correctness-remediation-plan--2026-09-05).
-Execute M16 through M21 before M15, one green milestone per session. These
+Execute M16 through M23 before M15, one green milestone per session. These
 correct existing contracts; they do not expand the optional roadmap below.
 
 ## 7. Later iterations (optional, none blocking)

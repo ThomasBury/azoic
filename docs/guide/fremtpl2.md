@@ -25,13 +25,16 @@ workbooks, reports, MLflow state, and `examples/fremtpl2.html` stay ignored.
 ## What it covers
 
 - deterministic cleaning, sampling, and portfolio validation;
-- profiling, screening, binning, and grouping;
-- direct Tweedie GLM and LightGBM candidates;
-- Poisson-frequency times Gamma-severity modelling;
+- profiling, screening, and fitted bins/groups with training totals;
+- direct Tweedie GLM tariff baseline, raw LightGBM benchmark, and structured teacher;
+- raw-value driver/vehicle-age one-ways and supporting fitted-group GLM diagnostics;
+- executable Poisson-frequency times Gamma-severity appendix;
 - held-out Gini, Lorenz, lift, calibration, one-way, double-lift, and
   actual-versus-predicted diagnostics;
 - outcome-free scoring checks;
-- model cards, comparison output, MLflow logging, and tariff export.
+- model cards, comparison output, MLflow logging, and tariff export;
+- four-candidate claims evaluation including the applied workbook, raw and
+  training-adjusted metrics, raw ages and common age bins, and separate teacher/student fidelity.
 
 !!! note "Rendering boundary"
 

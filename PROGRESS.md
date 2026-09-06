@@ -9,6 +9,24 @@ Legend: ☐ pending · ◐ in progress · ☑ done
 
 ## Milestones
 
+- ☑ **Tutorial age-chart presentation** — prioritize raw-value one-ways for
+  both ages, retain fitted-group diagnostics, and replace the manual single-policy
+  curve with a link to the existing sklearn PDP/ICE recipe. Separate exposure
+  panels make sparse ages visible. Completed 2026-09-06: `just check` passed Ruff,
+  Ty, and 678 tests (4 upstream skips); strict docs build passed; final `just demo`
+  executed all 32 cells. Raw ages, shared comparison groups, and portfolio totals
+  reconcile; frozen-mapping assertions pass. Visually checked the age figures and
+  verified their exact PNGs are embedded in the rebuilt HTML. Generated outputs
+  stay ignored. Handoff: presentation complete; M15 stays next.
+
+- ☑ **Requested simplification cleanup** — remove the unused stratified split
+  helper with migration guidance; simplify density plots, one-way labels,
+  tuning results, and model-card rendering. Completed 2026-09-06: `just check`
+  passed Ruff, Ty, and 678 tests (4 upstream skips); `just docs-build` passed
+  strict mode; `just demo` executed all 32 cells and rebuilt the HTML. Numeric
+  labels matched the previous implementation across 80 seeded cases. Generated
+  outputs remain ignored. Handoff: requested cleanup complete; M15 stays next.
+
 - ☑ **M0 — scaffold** — uv, src layout, ruff, pytest, pre-commit,
   AGENTS/PRD/PROGRESS, smoke green.
 - ☑ **M1 — data + metrics** — `DatasetSpec`, `load_data`, `gini`, `lorenz`,
@@ -60,7 +78,7 @@ Legend: ☐ pending · ◐ in progress · ☑ done
   stability, remove obsolete MLflow roadmap language, and validate wheel and
   source distributions before a least-privilege publish job.
 - ☐ **M15 — first public release** — publish and verify `azoic==0.4.1` through
-  GitHub Releases and PyPI trusted publishing, after M16–M21 are green.
+  GitHub Releases and PyPI trusted publishing, after M16–M23 are green.
 - ☑ **M16 — preserve the experiment holdout** — immutable fit/test positions
   reused by tutorial diagnostics, training calibration, and CLI distillation.
 - ☑ **M17 — reject inconsistent frequency-severity outcomes** — issue 2.
@@ -69,10 +87,13 @@ Legend: ☐ pending · ◐ in progress · ☑ done
 - ☑ **M20 — valid diagnostic references and residual scales** — issues 7, 9, and 12.
 - ☑ **M21 — correct actuarial explanations** — issues 8, 10, 11, and 13.
 
+- ☑ **M22 — show what fitted preprocessing does**.
+- ☑ **M23 — evaluate the exported tariff against claims**.
+
 ## Current focus
 
 - M14 and M16–M21 are complete. The thirteen correctness findings supplied
-  on 2026-09-05 are covered by the remediation evidence below. M15 is next;
+  on 2026-09-05 are covered by the remediation evidence below. M22 and M23 are complete;
   milestone numbers retain their existing identity even though release comes last.
 - **M16 and M17 are complete.** Frequency-severity fitting now validates all
   outcome rows before deriving rates or cloning/fitting either component.
@@ -89,9 +110,13 @@ Legend: ☐ pending · ◐ in progress · ☑ done
 - **M21 is complete.** Calibration factors use training rows for every tutorial
   candidate, raw/adjusted holdout metrics are labelled, and double-lift,
   residual, and Gini explanations have executable numerical evidence.
-- Next implementation session: **M15 only**. Repeat distribution builds and
-  isolated CLI smoke checks for the corrected source before the public release.
-  This session stops at the M21 handoff.
+- **M22 is complete.** Fitted mapping tables, ordered GLM one-ways, and the
+  frequency–severity appendix are verified below. The later presentation cleanup
+  replaces the manual fixed-policy curve with raw-value one-ways for both ages.
+- **M23 is complete.** The applied workbook is evaluated against held-out claims
+  alongside the three main models, with separate raw/adjusted and fidelity evidence.
+- Next implementation session: **M15 only** repeats distribution and isolated CLI
+  checks before publication. This session stops at the M23 handoff.
 
 ## Correctness remediation plan — 2026-09-05
 
@@ -129,7 +154,7 @@ with missing-value diagnostics.
 | P1 | 11 — residual calibration guidance | The suggested remedy confuses additive and multiplicative errors | M21 |
 | P1 | 13 — Gini definitions conflated | Inequality, concentration, and signed area are taught as interchangeable | M21 |
 
-Execute **M16 → M17 → M18 → M19 → M20 → M21 → M15**. M17 and M18 have
+Execute **M16 → M17 → M18 → M19 → M20 → M21 → M22 → M23 → M15**. M17 and M18 have
 no code dependency on M16, but this sequence restores the evaluation boundary
 first. Within M19, fix issue 6 before validating binned missing-value diagnostics.
 M21 depends on M16 for calibration data and on M19/M20 for trustworthy plots.
@@ -657,3 +682,111 @@ smokes on the corrected source before publication. Stop this session here.
   isolated CLI smoke checks must be repeated for the corrected source. Earlier
   artifacts and contaminated tutorial results are not release evidence for these
   fixes. Keep generated data, charts, reports, workbooks, and HTML ignored.
+
+## Demo tariff flow — 2026-09-05
+
+### M22 — show what fitted preprocessing does (completed 2026-09-06)
+
+Lead with the direct binned/grouped GLM baseline, raw GBM benchmark, and structured
+GBM teacher. Preserve parameters, tree/similarity settings, and stored partitions.
+Show fitted intervals/memberships with training policy counts, exposure, claim counts,
+and observed pure premium. Use frozen groups for held-out GLM one-ways; illustrate
+fixed-policy age steps beside raw-age composition effects. Explain uncertain cuts,
+unadjusted grouping loss rates, credibility floors, and no monotonic guarantee.
+Preserve ordered-category one-way order, observed groups, and missing totals.
+Move frequency–severity fitting, comparison, and reporting to an executable appendix.
+Acceptance: ordered/unused/missing regression; totals, fixed-policy invariance,
+within-bin equality, exact partitions, frozen mappings, positive predictions,
+raw metric reproduction, adjusted training O/P one, Gini invariance, and workbook
+agreement. Full tutorial/appendix render and visual inspection, `just check`,
+`just docs-build`, and `git diff --check` must pass.
+
+### M23 — evaluate the exported tariff against claims (completed 2026-09-06)
+
+Distil the structured teacher on training rows with copied preprocessing. Export
+with `recalibrate=False` and training metadata. Apply workbook factors using the
+existing recipe to fitted-pipeline-transformed features; no standalone loader.
+Check workbook/student agreement on train/test at existing tolerance. Finish with
+four rows: direct GLM, raw GBM, structured teacher, applied workbook; show weighted
+Tweedie deviance at 1.5, D², concentration Gini, O/P, predicted total claims, and
+common observed claims/exposure. Add calibration panels, overlaid Lorenz curves,
+and age comparisons with identical training bins. Separately show metrics adjusted
+by each model's own frozen training O/P (including workbook training predictions);
+the workbook adjustment is an external multiplier. Separate teacher/student deviance
+and total-ratio fidelity from claims performance. Describe gains/losses without
+assuming distillation worsens performance or claiming superiority from one split.
+Repeat tutorial/visual, partition/mapping/scaling/metric, suite, docs, and diff checks.
+No new dependencies, public interfaces, binning algorithm, or automated selection.
+
+### M22 acceptance evidence — 2026-09-06
+
+- `just check`: **685 passed, 4 skipped**, with Ruff and production Ty green.
+  Ordered interval regression covers alphabetical traps, unused categories,
+  missing rows, and reconciled exposure, claims, and predicted totals. The existing
+  tutorial leakage test now executes the separated setup/calibration cells and
+  still proves holdout outcome changes cannot change training factors.
+- Final `just demo`: all **27 cells** passed on **667,673 policies**, with
+  **534,138 training / 133,535 test** rows. Main and appendix runs assert identical
+  fingerprints and stored positions. An AST comparison against the pre-M22 source
+  also confirms every ModelSpec and PreprocessingSpec is unchanged.
+- All nine fitted-group training summaries reconcile policy counts, exposure,
+  claim counts, and losses. Primary held-out GLM one-ways reconcile exposure,
+  losses, and predicted totals. Fixed-policy age inputs preserve every other
+  feature/exposure, and predictions agree within each bin at absolute tolerance
+  1e-10. Training-fitted mappings remain unchanged.
+- Raw run metrics and calibration tables reproduce fresh predictions; every
+  training-adjusted O/P is one and positive scaling preserves held-out Gini.
+  Workbook factors plus fitted preprocessing match the student on both training
+  and test rows (`rtol=1e-6`, `atol=1e-8`), with positive finite predictions and
+  copied teacher mappings checked explicitly.
+- Raw holdout deviances reproduce the M21 values to six decimals: direct GLM
+  **75.338331**, structured GBM **75.285399**, raw GBM **74.721321**, appendix
+  frequency–severity GLM **75.237864**, and frequency–severity GBM **74.560943**.
+- Visual inspection confirms numeric interval order, raw GLM scale labels,
+  non-monotonic fixed-policy steps at fitted boundaries, secondary raw-age
+  composition swings, three-model comparison legends, observed curves, and
+  calibration/Lorenz references. Headless inspection found no broken images or
+  MathJax errors. `just docs-build` and `git diff --check` pass. Generated HTML,
+  charts, workbooks, reports, data, and tracking artifacts remain ignored.
+
+Handoff: **M23 only next**. Add the final four-model claims-based tariff
+comparison, training-only export metadata, separately adjusted workbook metrics,
+and separate fidelity presentation as specified above. M15 remains after M23.
+
+
+### M23 acceptance evidence — 2026-09-06
+
+- Export uses `X=fit_X` and `recalibrate=False`. Existing workbook application
+  applies the read factors after copied fitted preprocessing, agrees with the
+  student on train/test (`rtol=1e-6`, `atol=1e-8`), and retains positive finite rates.
+- Two four-row claims tables compare direct GLM, raw GBM, structured teacher,
+  and applied workbook on the same **133,535 test policies**, **70,511.873650
+  exposure**, and **10,033,849.49 observed claims**. They report weighted Tweedie
+  deviance at 1.5, D², concentration Gini, O/P, predicted claims, and shared totals.
+- Every adjusted candidate uses its own frozen training O/P. The workbook's
+  external factor is **1.093724601**; the workbook itself remains unadjusted.
+  Extended synthetic tutorial regression checks all eight metric rows and proves
+  changed holdout claims cannot change the workbook factor or applied rates.
+- Raw deviances: direct GLM **75.338331**, raw GBM **74.721321**, structured
+  teacher **75.285399**, applied workbook **75.279827**. The original three
+  reproduce M22. Adjusted teacher/workbook deviances are **75.119374 / 75.146789**:
+  distillation does not have a predetermined direction of claims performance.
+  Teacher/student deviance and total-ratio fidelity reproduce both pipeline and
+  workbook metadata and are displayed separately from claims diagnostics.
+- `uv sync --all-extras --all-groups --locked` passed. `just check`: Ruff and
+  production Ty green, **685 passed, 4 upstream array-API skips**. The focused
+  tutorial regression passed. `just docs-build` passed strict mode.
+- `uv run quarto render examples/fremtpl2.qmd --to html --execute --no-cache
+  --execute-daemon-restart` completed all **32 cells**, including the executable
+  appendix, on **667,673 policies / 534,138 training rows**. Execution was fresh;
+  only deterministic pinned source-data downloads/joins were reused.
+- Visual inspection checked both four-panel calibration scales, overlaid Lorenz
+  references and four-model legends, and driver/vehicle-age comparisons with
+  identical ordered training bins. Reconciliation and frozen-mapping assertions
+  passed. Headless HTML inspection found **zero broken images and zero MathJax
+  errors**. New figures use responsive 700-pixel notebook displays, preserving
+  full-resolution PNGs; the final fresh HTML was visually checked after this fix.
+  `git diff --check` passed; generated outputs remain ignored.
+- No dependencies, public interfaces, model settings, or binning algorithms changed.
+
+Handoff: **M15 only next**. M23 is complete; publication is not part of this session.

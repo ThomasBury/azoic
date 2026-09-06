@@ -297,8 +297,9 @@ Measure training O/P for every GLM and GBM rather than assuming balance from
 the model family. Freeze any burn-cost factor on training rows, then label raw
 and adjusted metrics from the same holdout. Positive scaling preserves Gini
 but changes level diagnostics; it need not improve holdout or segment fit.
-The [tutorial](fremtpl2.md) uses adjusted rates for every candidate's charts and
-scoring, and an explicitly raw teacher for distillation.
+The [tutorial](fremtpl2.md) labels adjusted comparison charts and scoring
+separately from raw GLM one-ways at each driver/vehicle age and inside
+training-fitted groups. Its distillation teacher stays raw.
 
 [Read the conceptual workflow](actuarial-workflow.md){ .md-button }
 [Continue to reporting and operations](operations.md){ .md-button .md-button--primary }

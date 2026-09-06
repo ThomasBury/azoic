@@ -53,7 +53,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from IPython.display import display
+from IPython.display import Image, display
 from sklearn.datasets import fetch_openml
 
 from azoic.data import DatasetSpec
@@ -335,23 +335,17 @@ but are excluded from candidate features. Grouping relativities are
 claim-count floor. Nominal levels are stably sorted by risk; ordered categories
 keep their declared order. Under-credible groups merge with their closest-risk
 neighbour, then the closest adjacent pairs merge until the group limit is met.
-Each merge recomputes aggregate risk, with distance ties going left. Three
-pipelines share this tariff structure:
+Each merge recomputes aggregate risk, with distance ties going left.
 
-- a direct log-link Tweedie GLM;
-- Poisson-frequency $\times$ Gamma-severity GLMs. Frequency fits
-  `claim_count / exposure` with exposure weights; the positive-claim severity
-  filter stays inside `FrequencySeverityModel.fit`;
-- a Tweedie LightGBM on the binned/grouped features (`tweedie-lightgbm-tariff`)
-  — the tree model whose predictions are later distilled into an executable
-  tariff workbook.
+The **direct Tweedie GLM is the tariff baseline**. Its log-link model uses the
+learned bins and groups as rating levels. The **raw-feature Tweedie GBM is the
+flexible benchmark**. The **tariff-structured Tweedie GBM is the distillation
+teacher**, using the same type of fitted structure as the GLM. These are roles,
+not a validated model selection. All training parameters and the stored partition
+are retained; we do not choose new cuts using this already-inspected holdout.
 
-**Raw-feature experiment.** Trees build their own splits, so coarser
-supervised bins only discard information. The LightGBMs therefore read the raw
-features: a direct Tweedie GBM and Poisson-frequency $\times$ Gamma-severity
-LightGBMs wrapped in the same `FrequencySeverityModel`. The sub-estimators take
-any scikit-learn-compatible regressor exposing `fit(X, y, sample_weight=...)`
-and `predict(X)`.
+Frequency–severity fitting, comparison, and reporting are in the executable
+appendix. Those models reuse the identical partition and existing settings.
 
 ```{python}
 glm_config = ExperimentConfig(
@@ -393,17 +387,6 @@ glm_config = ExperimentConfig(
                 "alpha": 0.001,
             },
         ),
-        "frequency-severity-glm": ModelSpec(
-            kind="frequency_severity",
-            frequency=ModelSpec(
-                kind="glm",
-                params={"family": "poisson", "link": "log", "alpha": 0.001},
-            ),
-            severity=ModelSpec(
-                kind="glm",
-                params={"family": "gamma", "link": "log", "alpha": 0.001},
-            ),
-        ),
         "tweedie-lightgbm-tariff": ModelSpec(
             kind="gbm",
             params={
@@ -437,29 +420,6 @@ gbm_config = ExperimentConfig(
                 "learning_rate": 0.05,
                 "random_state": RANDOM_STATE,
             },
-        ),
-        "frequency-severity-gbm": ModelSpec(
-            kind="frequency_severity",
-            frequency=ModelSpec(
-                kind="gbm",
-                params={
-                    "objective": "poisson",
-                    "n_estimators": 100,
-                    "num_leaves": 31,
-                    "learning_rate": 0.05,
-                    "random_state": RANDOM_STATE,
-                },
-            ),
-            severity=ModelSpec(
-                kind="gbm",
-                params={
-                    "objective": "gamma",
-                    "n_estimators": 100,
-                    "num_leaves": 31,
-                    "learning_rate": 0.05,
-                    "random_state": RANDOM_STATE,
-                },
-            ),
         ),
     },
 )
@@ -496,6 +456,59 @@ random holdout; no second split is made. Positions refer to the exact input
 frame in its original row order, not to index labels or policy IDs. The dataset
 fingerprint and exact partition assertions above establish that both runs use
 the same rows.
+
+## Inspect the fitted tariff structure
+
+These are **training-fitted candidates for review**. Exposure and claim-count
+floors do not establish statistical certainty. Tree cuts may change across
+samples. Similarity grouping uses loss rates before adjustment for other
+predictors, so membership is not an adjusted causal effect.
+
+```{python}
+train_frame = portfolio.iloc[train_idx].copy()
+pd.testing.assert_index_equal(
+    train_frame.index, portfolio.index.take(glm_run.train_indices)
+)
+y_train = train_frame["claim_amount"].to_numpy()
+w_train = train_frame["exposure"].to_numpy()
+
+raw_predict_columns = [*features, "exposure"]
+special_predict_columns = [*features, "exposure", "claim_amount", "claim_count"]
+```
+
+```{python}
+glm_pipeline = glm_estimators["direct-tweedie-glm"]
+fitted_preprocessing = glm_pipeline[:-1]
+fitted_binner = glm_pipeline.named_steps["binner"]
+fitted_grouper = glm_pipeline.named_steps["grouper"]
+bin_snapshot = {name: edges.copy() for name, edges in fitted_binner.mapping_.items()}
+group_snapshot = {name: mapping.copy() for name, mapping in fitted_grouper.mapping_.items()}
+train_grouped = fitted_preprocessing.transform(train_frame[special_predict_columns])
+train_grouped[["claim_count", "claim_amount"]] = train_frame[["claim_count", "claim_amount"]]
+
+for feature in features:
+    grouped = train_grouped.groupby(feature, observed=True, sort=True, dropna=False)
+    summary = grouped.agg(
+        policies=("exposure", "size"), exposure=("exposure", "sum"),
+        claim_count=("claim_count", "sum"), claim_amount=("claim_amount", "sum"),
+    )
+    summary["observed_pure_premium"] = summary.claim_amount / summary.exposure
+    if feature in fitted_grouper.mapping_:
+        mapping = fitted_grouper.mapping_[feature]
+        summary["members"] = [
+            ", ".join(str(level) for level, group in mapping.items() if group == label)
+            for label in summary.index
+        ]
+    assert summary.policies.sum() == len(train_frame)
+    np.testing.assert_allclose(
+        summary[["exposure", "claim_count", "claim_amount"]].sum(),
+        train_frame[["exposure", "claim_count", "claim_amount"]].sum(),
+    )
+    display(summary.reset_index())
+```
+
+Intervals are lower-inclusive and upper-exclusive at finite boundaries. The
+following diagnostics reuse this fitted pipeline; they never refit the mappings.
 
 ## Held-out ranking, calibration, deviance, and lift
 
@@ -596,23 +609,14 @@ The factor uses the stored training positions only and is frozen before we
 inspect holdout outcomes or metrics. It balances training totals; it need not
 improve test deviance, test O/P, or segment calibration. A positive factor
 preserves ranking while changing level diagnostics. The table shows training
-O/P for all five raw candidates and checks their adjusted training totals.
+O/P for all three main candidates and checks their adjusted training totals.
 
 ```{python}
-train_frame = portfolio.iloc[train_idx].copy()
-pd.testing.assert_index_equal(
-    train_frame.index, portfolio.index.take(glm_run.train_indices)
-)
-y_train = train_frame["claim_amount"].to_numpy()
-w_train = train_frame["exposure"].to_numpy()
-
-raw_predict_columns = [*features, "exposure"]
-special_predict_columns = [*features, "exposure", "claim_amount", "claim_count"]
-
 recalibration_factors = {}
 training_rows = []
 for name, estimator in estimators.items():
     pred_train = np.asarray(estimator.predict(train_frame[raw_predict_columns]), dtype=float)
+    assert np.isfinite(pred_train).all() and (pred_train > 0).all()
     factor = op_ratio(y_train, pred_train, w_train)
     assert np.isfinite(factor) and factor > 0
     recalibration_factors[name] = factor
@@ -630,9 +634,9 @@ display(pd.DataFrame(training_rows))
 
 Re-predict every fitted model on the stored holdout using rating features and
 exposure only, as in outcome-free scoring. Check raw metrics against each run,
-then show raw and training-adjusted results on those same rows. All portfolio
-charts below use the adjusted predictions for every candidate; model cards,
-comparison dashboards, and MLflow retain the raw run metrics.
+then show raw and training-adjusted results on those same rows. The comparison
+charts use adjusted predictions; the GLM structure illustrations explicitly use
+raw rates. Model cards, comparison dashboards, and MLflow retain raw run metrics.
 
 ```{python}
 test_frame = portfolio.iloc[test_idx].copy()
@@ -668,6 +672,7 @@ def holdout_diagnostics(prediction):
 holdout_rows = []
 for name, estimator in estimators.items():
     prediction = np.asarray(estimator.predict(test_frame[raw_predict_columns]), dtype=float)
+    assert np.isfinite(prediction).all() and (prediction > 0).all()
     raw_test_predictions[name] = prediction
     raw_metrics = holdout_diagnostics(prediction)
     result = (glm_run if name in glm_run.models else gbm_run).models[name]
@@ -688,13 +693,13 @@ for name, estimator in estimators.items():
 holdout_metrics = pd.DataFrame(holdout_rows)
 display(holdout_metrics)
 metrics = comparison_table(runs).assign(prediction_scale="raw")
-CHAMPION = "tweedie-lightgbm"
+RAW_BENCHMARK = "tweedie-lightgbm"
 BENCHMARK = "direct-tweedie-glm"
 CHART_SCALE = "training O/P adjusted"
 colors = model_colors(list(estimators))
 ```
 
-Lorenz curves for all five models on one axes — the dotted diagonal (random
+Lorenz curves for all three main models on one axes — the dotted diagonal (random
 ranking) and the grey dash-dot oracle (hindsight ranking by observed rate) are
 drawn once, one color per model, Gini in the legend. The oracle is unavailable
 at prediction time and need not have Gini one. Gini is twice the signed area
@@ -767,9 +772,9 @@ have zero claims, so the scatter remains sparse at individual-policy level.
 with azoic_style():
     plot_actual_vs_predicted(
         y_test,
-        test_predictions[CHAMPION],
+        test_predictions[RAW_BENCHMARK],
         w_test,
-        title=f"{CHAMPION} — {CHART_SCALE}",
+        title=f"{RAW_BENCHMARK} — {CHART_SCALE}",
         path=ARTIFACT_DIR / "hexbin_actual_vs_predicted.png",
     )
     plt.show()
@@ -828,73 +833,88 @@ print(f"Inequality: {inequality_gini:.6f}; forward: {example_curve.gini:.6f}; "
 
 Any strictly increasing transformation that preserves the prediction ties
 preserves concentration Gini. In particular, the frozen positive training
-factors leave ranking unchanged; the holdout table verifies this for all five
+factors leave ranking unchanged; the holdout table verifies this for all three main
 models while showing the change in level diagnostics.
 
-### One-way charts: per-predictor calibration
+### Age one-ways: held-out calibration at each raw age
 
-The adjusted Tweedie LightGBM is treated as the working model for these charts;
-the holdout table labels its raw and adjusted metrics separately. Nine one-way charts —
-observed vs predicted pure premium per feature level, with translucent exposure bars underlayed — expose
-per-segment miscalibration that the global O/P ratio can hide.
+Start with driver and vehicle age on their original scales. Each point compares
+observed claims per exposure unit with the exposure-weighted mean prediction for
+held-out policies at that age. Exposure bars show the business supporting each
+comparison; sparse ages can have noisy observed rates. These views can reveal
+within-bin discrepancies that the grouped overview below averages away.
 
-Numeric features are shown in their **natural values on the test set**: driver
-age and vehicle age get one point per unique test value (`n_bins=None`), not
-the tariff bins used for fitting. Bonus malus and density are near-continuous,
-so they stay on exposure-weighted quantiles (`n_bins=10`). The five
-categorical features (including vehicle power, carried as a string) are mapped
-through the `AutoGrouper` groups **learned on the training partition by the
-tariff-structured experiment**, so high-cardinality levels are
-credibility-grouped rather than raw.
+The predictions are the **raw direct GLM baseline**, without the training O/P
+multiplier. The x-axis uses raw ages; the fitted model still uses its original
+training bins. Other rating features and exposure composition change with age,
+so average GLM predictions can vary even inside one fitted age bin. These are
+portfolio comparisons, not isolated age effects or evidence of causality.
+
+For individual conditional expectation (ICE) or partial dependence (PDP), use
+scikit-learn's built-in `PartialDependenceDisplay` through the existing
+[PDP/ICE recipe](https://thomasbury.github.io/azoic/guide/model-choice/#inspect-feature-effects-with-pdp-and-ice).
+ICE varies one feature while keeping each row's other inputs fixed; PDP averages
+those predictions. Neither curve measures observed segment calibration.
 
 ```{python}
-champion_pred = test_predictions[CHAMPION]
-test_X = test_frame[features]
-
-fitted_grouper = glm_estimators["direct-tweedie-glm"].named_steps["grouper"]
-test_grouped = test_X.copy()
-for col, mapping in fitted_grouper.mapping_.items():
-    if col in test_grouped.columns:
-        test_grouped[col] = test_grouped[col].map(mapping)
-
-feature_bins = {
-    "driver_age": None,
-    "vehicle_age": None,
-    "bonus_malus": 10,
-    "density": 10,
-}
-
+benchmark_pred = test_predictions[RAW_BENCHMARK]
+glm_pred = raw_test_predictions["direct-tweedie-glm"]
 with azoic_style():
-    fig, axd = plt.subplot_mosaic(
-        [list(features)], figsize=(4 * len(features), 4), sharey=True
-    )
-    for feature in features:
-        table = one_way_table(
-            test_grouped,
-            feature,
-            y_test,
-            champion_pred,
-            w_test,
-            n_bins=feature_bins.get(feature, 10),
-        )
-        plot_one_way(
-            table,
-            color=colors[CHAMPION],
-            label=CHAMPION,
-            ax=axd[feature],
-            exposure="background",
-            title=feature,
-            xlabel=feature,
-        )
-    fig.suptitle(CHART_SCALE)
-    fig.savefig(ARTIFACT_DIR / "one_way.png", bbox_inches="tight")
-    plt.show()
+    fig, axes = plt.subplots(2, 2, figsize=(14, 7), layout="constrained",
+                             sharex="col", gridspec_kw={"height_ratios": [3, 1]})
+    for col, feature in enumerate(["driver_age", "vehicle_age"]):
+        ax, exposure_ax = axes[:, col]
+        table = one_way_table(test_frame, feature, y_test, glm_pred, w_test, n_bins=None)
+        np.testing.assert_array_equal(table.level, np.sort(test_frame[feature].unique()))
+        np.testing.assert_allclose(table.exposure.sum(), w_test.sum())
+        np.testing.assert_allclose(table.claim_amount.sum(), y_test.sum())
+        np.testing.assert_allclose(table.predicted_claim_amount.sum(), glm_pred @ w_test)
+        plot_one_way(table, ax=ax, color=colors[BENCHMARK], label="direct GLM (raw)",
+                     title=feature, exposure="none")
+        ax.set_xlabel("")
+        exposure_ax.bar(table.level_center, 100 * table.exposure / w_test.sum(), color="lightgrey")
+        exposure_ax.set(xlabel=f"{feature} (years)", ylabel="Exposure (%)")
+    fig.suptitle("Held-out GLM calibration — raw rates at each raw age")
+    fig.savefig(ARTIFACT_DIR / "raw_age_one_way.png", bbox_inches="tight")
+    plt.close(fig)
+    display(Image(filename=str(ARTIFACT_DIR / "raw_age_one_way.png"), width=700))
 ```
 
-### Double-lift: champion vs benchmark
+### Supporting overview: calibration inside fitted groups
 
-A double-lift chart groups policies by the ratio of the working model's
-prediction (A) to the benchmark's prediction (B). Both use their frozen
+Across all rating factors, compare the same predictions and observations inside
+training-fitted bins and groups. This checks calibration across the implemented
+tariff segments. It also keeps continuous factors such as density readable,
+where a point for every distinct raw value would have little claims support.
+Every feature passes through the complete fitted preprocessing pipeline.
+Changing the reporting groups does not change any policy's prediction.
+
+```{python}
+test_grouped = fitted_preprocessing.transform(test_frame[special_predict_columns])
+with azoic_style():
+    fig, axes = plt.subplots(3, 3, figsize=(18, 15), layout="constrained")
+    for feature, ax in zip(features, axes.flat, strict=True):
+        table = one_way_table(test_grouped, feature, y_test, glm_pred, w_test)
+        np.testing.assert_allclose(table.exposure.sum(), w_test.sum())
+        np.testing.assert_allclose(table.claim_amount.sum(), y_test.sum())
+        np.testing.assert_allclose(table.predicted_claim_amount.sum(), glm_pred @ w_test)
+        plot_one_way(
+            table, color=colors[BENCHMARK], label="direct GLM (raw)", ax=ax,
+            exposure="background", title=feature, xlabel="fitted training group",
+        )
+        ax.tick_params(axis="x", labelrotation=35)
+    fig.suptitle("Held-out GLM calibration — raw rates, training-fitted groups")
+    fig.savefig(ARTIFACT_DIR / "one_way.png", bbox_inches="tight")
+    plt.show()
+for name, edges in bin_snapshot.items():
+    np.testing.assert_array_equal(fitted_binner.mapping_[name], edges)
+assert fitted_grouper.mapping_ == group_snapshot
+```
+
+### Double-lift: raw GBM benchmark vs direct GLM baseline
+
+A double-lift chart groups policies by the ratio of the raw-feature GBM
+benchmark's prediction (A) to the direct GLM baseline's prediction (B). Both use their frozen
 training adjustments here. Compare the gap between observed pure premium and
 **each model's predicted pure premium within each ratio group**. Rising
 observations alone cannot select a model. Extreme ratio groups contain the
@@ -935,22 +955,22 @@ display(example_double_lift)
 ```{python}
 dl_table = double_lift_table(
     y_test,
-    champion_pred,
+    benchmark_pred,
     test_predictions[BENCHMARK],
     w_test,
     n_bins=10,
-    label_a=CHAMPION,
+    label_a=RAW_BENCHMARK,
     label_b=BENCHMARK,
 )
 display(dl_table[["mean_ratio", "exposure", "claim_amount"]])
 with azoic_style():
     plot_double_lift(
         dl_table,
-        label_a=CHAMPION,
+        label_a=RAW_BENCHMARK,
         label_b=BENCHMARK,
-        color_a=colors[CHAMPION],
+        color_a=colors[RAW_BENCHMARK],
         color_b=colors[BENCHMARK],
-        title=f"Double-lift — {CHART_SCALE}\n{CHAMPION} vs {BENCHMARK}",
+        title=f"Double-lift — {CHART_SCALE}\n{RAW_BENCHMARK} vs {BENCHMARK}",
         path=ARTIFACT_DIR / "double_lift.png",
     )
     plt.show()
@@ -1053,7 +1073,7 @@ mean residuals. Exposure and claim totals help assess how much evidence each
 bin contains; this table does not estimate uncertainty.
 
 ```{python}
-grouped_residuals = calibration_table(y_test, champion_pred, w_test, n_bins=10)
+grouped_residuals = calibration_table(y_test, benchmark_pred, w_test, n_bins=10)
 grouped_residuals["mean_rate_residual"] = (
     grouped_residuals.observed_pure_premium - grouped_residuals.predicted_pure_premium
 )
@@ -1061,14 +1081,14 @@ grouped_residuals["prediction_scale"] = CHART_SCALE
 display(grouped_residuals)
 ```
 
-### The five-line checklist applied to these five models
+### The five-line checklist applied to these three models
 
 - **Accuracy** — deviance and $D^2$ are smaller / larger than the GLM benchmark
-  within the same family. The raw-feature GBMs are the candidates; the GLM is
+  within the same family. The raw-feature GBM is the benchmark; the GLM is
   the within-family reference.
 - **Portfolio calibration** — A/E near 1, with credible sub-segments. The
-  one-way charts above are the segment-check; favour the model whose predicted
-  line tracks the observed across all nine features.
+  one-way charts above check the direct GLM in its fitted groups. Compare other
+  candidates in the same groups before making a segment-level choice.
 - **Ranking** — positive Gini; the Lorenz curve dominates the GLM benchmark
   without crossing; positive-scalar invariance verified in the holdout table.
 - **Lift** — observed per-decile tracks predicted in level; the decile range is
@@ -1110,13 +1130,15 @@ training rows, then measures fidelity on the untouched test rows. It copies the
 already-fitted preprocessing, so bins and group mappings are not relearned from
 the holdout. The teacher here is the **raw, unscaled tariff-structured** Tweedie
 LightGBM (`tweedie-lightgbm-tariff`), before the chart adjustment: the student lives
-in the same binned/grouped feature space, which is what keeps distillation faithful — and its ranking
-already showed the cost of that structure compared with the raw-feature GBMs.
+in the same binned/grouped feature space. Fidelity measures agreement with this
+teacher; it does not establish performance against claims.
 
 The workbook contains the same `base_rate`, `factors`, and `mappings` sheets as
 a direct GLM export. Here `recalibrate=False` is deliberate: applying the
 workbook reproduces the student exactly. The student approximates the GBM
-teacher; the workbook does not reproduce the teacher exactly.
+teacher; the workbook does not reproduce the teacher exactly. Export receives
+only the training frame for feature metadata. The held-out fidelity metadata
+still measures agreement with the teacher, not with claims.
 
 ```{python}
 tariff_path = ARTIFACT_DIR / "distilled_tweedie_tariff.xlsx"
@@ -1133,13 +1155,14 @@ distilled_pipeline = distill_gbm(teacher_pipeline, fit_X, validation_X)
 export_tariff(
     distilled_pipeline,
     tariff_path,
-    X=tariff_X,
+    X=fit_X,
     recalibrate=False,
 )
 
 sheets = pd.read_excel(tariff_path, sheet_name=None)
 assert list(sheets) == ["base_rate", "factors", "mappings"]
 assert sheets["base_rate"].iloc[0]["distilled_from"] == "RiskGBM"
+assert not sheets["base_rate"].iloc[0]["recalibrated"]
 display(sheets["base_rate"])
 display(sheets["factors"].head(20))
 display(sheets["mappings"].head(20))
@@ -1168,24 +1191,319 @@ np.testing.assert_allclose(teacher_rate, raw_test_predictions["tweedie-lightgbm-
 student_rate = np.asarray(distilled_pipeline.predict(validation_X), dtype=float)
 workbook_rate = apply_tariff(workbook_tariff, transformed_validation)
 
-assert np.allclose(workbook_rate, student_rate, rtol=1e-6, atol=1e-8)
-rate_comparison = pd.DataFrame(
-    {
-        "raw_gbm_teacher": teacher_rate,
-        "distilled_glm_student": student_rate,
-        "applied_workbook": workbook_rate,
-    }
-)
-display(rate_comparison.head())
-display(rate_comparison.describe().T)
+for frame in [fit_X, validation_X]:
+    applied = apply_tariff(workbook_tariff, distilled_pipeline[:-1].transform(frame))
+    student = np.asarray(distilled_pipeline.predict(frame), dtype=float)
+    assert np.isfinite(applied).all() and (applied > 0).all()
+    np.testing.assert_allclose(applied, student, rtol=1e-6, atol=1e-8)
+for step in ["binner", "grouper"]:
+    original = teacher_pipeline.named_steps[step].mapping_
+    copied = distilled_pipeline.named_steps[step].mapping_
+    assert original.keys() == copied.keys()
+    for name in original:
+        if step == "binner":
+            np.testing.assert_array_equal(original[name], copied[name])
+        else:
+            assert original[name] == copied[name]
 ```
+
+### Teacher–student fidelity, separately from claims performance
+
+Here the target is the **teacher's predicted rate**, not observed claims.
+Weighted Tweedie deviance at power 1.5 is zero for exact reproduction; the
+student/teacher predicted-total ratio is one for equal totals. Neither establishes
+accuracy against losses or segment calibration.
+
+```{python}
+fidelity = {
+    "teacher_student_deviance": mean_tweedie_deviance(
+        teacher_rate, student_rate, sample_weight=w_test, power=1.5,
+    ),
+    "student_teacher_total_ratio": (student_rate @ w_test) / (teacher_rate @ w_test),
+}
+for key, value in fidelity.items():
+    np.testing.assert_allclose(value, distilled_pipeline.distillation_metrics_[key])
+    np.testing.assert_allclose(value, sheets["base_rate"].iloc[0][key])
+display(pd.DataFrame([fidelity]).assign(target="teacher rates", partition="test"))
+```
+
+### Four candidates against the same held-out claims
+
+The applied workbook is the fourth candidate. Its rates come from the workbook
+factors applied after the student's fitted preprocessing, not from a teacher
+prediction. All four rows use exactly the same test claims and exposure.
+Deviance is exposure-weighted Tweedie at power 1.5; $D^2$ uses the same constant
+held-out mean reference as above. Concentration Gini measures ranking only.
+
+The second table applies each candidate's **own frozen training O/P**. For the
+workbook, compute that factor from applied workbook predictions on training rows;
+it is an **external multiplier**, not a change to the exported base or factors.
+It balances training totals and can improve or worsen held-out diagnostics.
+
+```{python}
+workbook_train_rate = apply_tariff(workbook_tariff, distilled_pipeline[:-1].transform(fit_X))
+workbook_factor = op_ratio(y_train, workbook_train_rate, w_train)
+assert np.isfinite(workbook_factor) and workbook_factor > 0
+np.testing.assert_allclose(op_ratio(y_train, workbook_factor * workbook_train_rate, w_train), 1)
+final_factors = {
+    "Direct GLM": recalibration_factors["direct-tweedie-glm"],
+    "Raw GBM": recalibration_factors["tweedie-lightgbm"],
+    "Structured teacher": recalibration_factors["tweedie-lightgbm-tariff"],
+    "Applied workbook": workbook_factor,
+}
+final_raw_predictions = {
+    "Direct GLM": raw_test_predictions["direct-tweedie-glm"],
+    "Raw GBM": raw_test_predictions["tweedie-lightgbm"],
+    "Structured teacher": teacher_rate,
+    "Applied workbook": workbook_rate,
+}
+final_adjusted_predictions = {
+    name: prediction * final_factors[name] for name, prediction in final_raw_predictions.items()
+}
+final_rows = []
+for scale, predictions in [("raw", final_raw_predictions),
+                           ("training O/P adjusted", final_adjusted_predictions)]:
+    for name, prediction in predictions.items():
+        assert prediction.shape == y_test.shape
+        assert np.isfinite(prediction).all() and (prediction > 0).all()
+        values = holdout_diagnostics(prediction)
+        np.testing.assert_allclose(values["gini_test"], gini(y_test, final_raw_predictions[name], w_test))
+        np.testing.assert_allclose(
+            values["op_ratio_test"], y_test.sum() / (prediction @ w_test),
+        )
+        final_rows.append({
+            "model": name, "prediction_scale": scale, **values,
+            "predicted_claim_amount": prediction @ w_test,
+            "observed_claim_amount": y_test.sum(), "exposure": w_test.sum(),
+            "frozen_training_factor": final_factors[name],
+        })
+final_metrics = pd.DataFrame(final_rows)
+for scale in ["raw", "training O/P adjusted"]:
+    table = final_metrics[final_metrics.prediction_scale == scale]
+    assert len(table) == 4
+    assert table.observed_claim_amount.nunique() == table.exposure.nunique() == 1
+    display(table)
+final_metrics.to_csv(ARTIFACT_DIR / "tariff_claims_comparison.csv", index=False)
+```
+
+### Calibration and ranking of the applied tariff
+
+Each calibration panel compares observed and predicted rates in that candidate's
+exposure-weighted prediction deciles. The diagonal means agreement in level.
+The Lorenz overlay uses raw rates; positive training multipliers preserve every
+curve, as checked above. Crossing curves do not establish ranking dominance.
+
+```{python}
+final_colors = model_colors(list(final_raw_predictions))
+with azoic_style():
+    for scale, predictions in [("raw", final_raw_predictions),
+                               ("training O/P adjusted", final_adjusted_predictions)]:
+        fig, axes = plt.subplots(2, 2, figsize=(12, 10), layout="constrained")
+        for (name, prediction), ax in zip(predictions.items(), axes.flat, strict=True):
+            table = calibration_table(y_test, prediction, w_test, n_bins=10)
+            np.testing.assert_allclose(table.exposure.sum(), w_test.sum())
+            np.testing.assert_allclose(table.claim_amount.sum(), y_test.sum())
+            np.testing.assert_allclose(table.predicted_claim_amount.sum(), prediction @ w_test)
+            plot_calibration(table, ax=ax, title=name)
+        fig.suptitle(f"Four-candidate held-out calibration — {scale}")
+        suffix = "raw" if scale == "raw" else "adjusted"
+        fig.savefig(ARTIFACT_DIR / f"tariff_calibration_{suffix}.png", bbox_inches="tight")
+        plt.close(fig)
+        display(Image(filename=str(ARTIFACT_DIR / f"tariff_calibration_{suffix}.png"), width=700))
+    fig, ax = plt.subplots(figsize=(8, 6))
+    plot_lorenz(y_test, final_raw_predictions, w_test, ax=ax, show_oracle=True,
+                title="Four-candidate held-out Lorenz curves — raw rates")
+    fig.savefig(ARTIFACT_DIR / "tariff_lorenz.png", bbox_inches="tight")
+    plt.close(fig)
+    display(Image(filename=str(ARTIFACT_DIR / "tariff_lorenz.png"), width=700))
+```
+
+### Compare candidates at each raw age, then inside tariff bins
+
+The first figure compares all four candidates at every observed driver and
+vehicle age. Use it to locate differences that could be hidden by a fitted bin.
+The second is a supporting tariff view using the direct GLM's frozen training
+bins. This also puts the raw-feature GBM in those bins for reporting; it does not
+alter its inputs or fit new cuts.
+
+Both views reuse the same held-out predictions. Observed rates and exposure are
+shared across candidates within each view. Raw and training O/P adjusted rates
+appear in separate columns; "raw" in those column titles means no level
+adjustment, independently of whether the x-axis uses raw ages or fitted bins.
+These are portfolio averages, subject to composition and claim variation.
+Read the sparse tails alongside exposure before interpreting a jagged line.
+
+```{python}
+with azoic_style():
+    for grouping, frame, suffix in [
+        ("each raw age", test_frame, "raw"),
+        ("shared training bins", test_grouped, "grouped"),
+    ]:
+        fig, axes = plt.subplots(4, 2, figsize=(16, 13), layout="tight",
+                                 gridspec_kw={"height_ratios": [3, 1, 3, 1]})
+        for row, feature in enumerate(["driver_age", "vehicle_age"]):
+            for col, (scale, predictions) in enumerate([
+                ("raw", final_raw_predictions),
+                ("training O/P adjusted", final_adjusted_predictions),
+            ]):
+                ax, exposure_ax = axes[2 * row, col], axes[2 * row + 1, col]
+                exposure_ax.sharex(ax)
+                reference_table = None
+                for name, prediction in predictions.items():
+                    table = one_way_table(frame, feature, y_test, prediction, w_test, n_bins=None)
+                    np.testing.assert_allclose(table.exposure.sum(), w_test.sum())
+                    np.testing.assert_allclose(table.claim_amount.sum(), y_test.sum())
+                    np.testing.assert_allclose(table.predicted_claim_amount.sum(), prediction @ w_test)
+                    if suffix == "raw":
+                        np.testing.assert_array_equal(table.level, np.sort(test_frame[feature].unique()))
+                    common_columns = ["level", "level_label", "level_center", "exposure",
+                                      "claim_amount", "observed_pure_premium"]
+                    if reference_table is None:
+                        reference_table = table
+                        plot_one_way(table, ax=ax, color=final_colors[name], label=name,
+                                     exposure="none", title=f"{feature} — {scale}")
+                        exposure_ax.bar(ax.lines[0].get_xdata(),
+                                        100 * table.exposure / w_test.sum(), color="lightgrey")
+                        exposure_ax.set_ylabel("Exposure (%)")
+                    else:
+                        pd.testing.assert_frame_equal(table[common_columns], reference_table[common_columns])
+                        ax.plot(ax.lines[0].get_xdata(), table.predicted_pure_premium,
+                                marker="s", linestyle="--", color=final_colors[name], label=name)
+                ax.set_title(f"{feature} — {scale}", y=1.02)
+                ax.set_xlabel("")
+                ax.tick_params(axis="x", labelbottom=False)
+                exposure_ax.set_xlabel(f"{feature} (years)" if suffix == "raw" else "fitted training bin")
+                ax.legend(fontsize=8)
+        fig.suptitle(f"Held-out age comparisons — {grouping}, observed rates and exposure")
+        figure_path = ARTIFACT_DIR / f"tariff_age_comparison_{suffix}.png"
+        fig.savefig(figure_path, bbox_inches="tight")
+        plt.close(fig)
+        display(Image(filename=str(figure_path), width=700))
+for name, edges in bin_snapshot.items():
+    np.testing.assert_array_equal(fitted_binner.mapping_[name], edges)
+assert fitted_grouper.mapping_ == group_snapshot
+```
+
+### What is gained and lost in this export?
+
+The workbook gains a multiplicative factor representation. It preserves the
+student's rates to the checked numerical tolerance, while approximating the
+teacher's predictions. The table below reports **workbook minus comparator**
+on claims: negative deviance differences mean lower loss; positive $D^2$ or
+Gini differences mean improvement in that statistic. An O/P change must be read
+against one, not maximized. Predicted-total changes are monetary level changes.
+
+```{python}
+export_differences = []
+for scale in ["raw", "training O/P adjusted"]:
+    table = final_metrics[final_metrics.prediction_scale == scale].set_index("model")
+    for comparator in ["Direct GLM", "Raw GBM", "Structured teacher"]:
+        columns = ["deviance_test", "d2_test", "gini_test", "op_ratio_test", "predicted_claim_amount"]
+        differences = table.loc["Applied workbook", columns] - table.loc[comparator, columns]
+        export_differences.append({"workbook_minus": comparator, "prediction_scale": scale,
+                                   **differences.to_dict()})
+display(pd.DataFrame(export_differences))
+```
+
+Distillation may improve or worsen claims performance: approximation error
+against a teacher is not the same as prediction error against claims. Read the
+differences alongside calibration and age panels; equal portfolio totals do not
+imply equal segment rates. This single held-out split gives descriptive evidence,
+not statistical superiority, stability under refitting, or an automatic choice
+of production tariff. Adjusted workbook results describe the workbook **plus**
+its external training multiplier; the exported workbook itself remains raw.
+
+## Next steps: make premiums more stable
+
+Sparse ages or vehicle categories can show large changes in predicted pure
+premium because a small amount of data has too much influence. **Regularization**
+means limiting how closely a model can follow those fluctuations. The aim is
+to retain supported risk differences while reducing changes that depend on a
+few policies or claims. A smoother-looking curve alone does not establish that
+the premiums are better.
+
+### Before fitting: pool sparse risks and limit model flexibility
+
+Use the existing `PreprocessingSpec` and `ModelSpec.params` settings to compare
+a few deliberate alternatives:
+
+| Action in Azoic | What it can achieve | What it does not guarantee |
+|---|---|---|
+| Increase `AutoBinner.min_exposure` or `min_claims`, or reduce `max_bins`. | Merge neighbouring age intervals so sparse tails share information with a larger group. The demo's 1,000 exposure units and 50 claims per bin are trial settings, not universal credibility thresholds. | Smooth transitions between bins, or enough evidence for every combination of rating factors. |
+| Use the learned bins for a GBM as well as a GLM. | Prevent age distinctions inside a bin, holding other inputs fixed. The demo already includes this candidate as `tweedie-lightgbm-tariff`. | The best possible GBM: pooling can hide real differences, and other features can still split a bin into sparse leaves. |
+| Increase `AutoGrouper.min_exposure` or `min_claims`, or reduce `max_groups`. | Pool sparse categorical levels, such as vehicle brands, using the configured grouping strategy. | Similar risk after accounting for other features: similarity grouping uses unadjusted loss rates. |
+| Increase `RiskGLM.alpha`, keeping `l1_ratio=0` for an L2 penalty. | Pull fitted coefficients towards zero and temper extreme effects. | Similar factors for adjacent ages: the penalty does not connect neighbouring bins. |
+| Reduce `RiskGBM.num_leaves`, set a smaller positive `max_depth`, increase `min_child_samples`, or increase `reg_lambda`. | Limit detailed interactions or shrink leaf estimates, making isolated fluctuations harder to fit. | A minimum exposure per leaf: `min_child_samples` controls observation support, not an exposure floor. |
+
+If ages 80–95 share one bin, the model cannot use that age feature to charge an
+otherwise identical 93-year-old differently from an 82-year-old. Bins create
+flat steps with possible boundary jumps, not continuous curves. LightGBM's
+internal histogram bins do not replace Azoic's exposure and claim-count floors.
+See the [LightGBM regularization guidance](https://lightgbm.readthedocs.io/en/stable/Parameters-Tuning.html).
+
+Use a direction constraint only when the risk relationship supports it.
+`RiskGBM.monotone_constraints` can require a numeric feature's predicted effect
+to increase or decrease, holding other inputs fixed. Azoic rejects nonzero
+constraints on categorical features, including `AutoBinner` interval categories.
+Driver age need not have one direction across the whole age range.
+`AutoBinner.monotonic` influences how training bins are merged; it does **not**
+constrain the premiums subsequently fitted by the GLM or GBM.
+
+### After fitting: distinguish shape changes from level changes
+
+**First locate the instability.** Use `one_way_table` and `plot_one_way` to
+inspect observed and predicted rates alongside exposure at raw ages and in
+common training bins. Use the linked PDP/ICE recipe to inspect the fitted age
+response while controlling the other inputs. Wider reporting groups make charts
+less noisy but do not change any policy's prediction.
+
+**Simplify a fitted GBM with `distill_gbm`.** This fits a multiplicative GLM to
+the teacher's predictions and retains its fitted preprocessing. For this demo's
+binned inputs, the student removes the teacher's flexible interactions. That
+may improve stability, but can lose useful signal and retain uneven age factors.
+Check performance against claims as well as agreement with the teacher;
+distillation does not guarantee smoother or better premiums.
+
+**Adjust the total when the overall level is wrong.** The training O/P multiplier
+used above changes every rate by the same proportion. For a GLM tariff,
+`export_tariff(..., recalibrate=True)` adjusts the exported base using supplied
+outcomes and exposure; `recalibrate_for_total` returns an adjusted base for a
+tariff dictionary. Estimate the adjustment on training or designated calibration
+data and freeze it before evaluation. This corrects the total on those data,
+not age-to-age swings or segment-level errors.
+
+**Treat judgemental factor changes as a revised tariff.** `extract_tariff`
+provides a GLM's factor dictionary; `apply_tariff` can score a revised copy on
+the same preprocessed features. An actuary can replace selected categorical
+factors there, then reassess totals and segment calibration. This is a manual
+decision, not an automatic credibility or smoothing procedure. Record the
+original factors and reasons for each change. Editing the dictionary does not
+update the fitted model or a previously exported workbook. Changing bin
+boundaries or group membership requires refitting the downstream model; do not
+change a fitted pipeline's mappings and retain its old coefficients or trees.
+
+### Check that stability has improved
+
+Compare the raw-feature GBM, the binned GBM, and the simpler tariff on the same
+validation rows. Review exposure-weighted Tweedie deviance, portfolio and
+segment O/P, and age profiles. Refit on repeated training samples to see whether
+tail premiums and learned boundaries move substantially; this tutorial does
+not yet demonstrate that stability check. Relearn supervised bins and groups
+within each training fold, and choose settings using validation inside the
+outer training data. Keep the final test set for one evaluation. Since this
+tutorial's holdout has already been inspected, further choices motivated by its
+charts need fresh evaluation data.
+
+Prefer the simpler candidate when predictive performance is comparable and
+tail premiums are materially more stable. The evidence comes from these
+comparisons, not from a smooth line or an exposure threshold alone.
 
 ## Reports and local MLflow tracking
 
 Each experiment gets a Markdown model card and a standalone HTML comparison
-dashboard; the cross-config comparison table collects all five fitted models
+dashboard; the cross-config comparison table collects the three main fitted models
 from both experiments. These reports and MLflow metrics use raw run predictions,
-before the training factors applied to every candidate in the charts and scoring example.
+before the training factors used in the adjusted comparisons and scoring example.
 
 ```{python}
 glm_card_path = ARTIFACT_DIR / "model_card_tariff_structured.md"
@@ -1196,7 +1514,7 @@ glm_card_path.write_text(model_card(glm_run), encoding="utf-8")
 gbm_card_path.write_text(model_card(gbm_run), encoding="utf-8")
 dashboard_path.write_text(comparison_dashboard(runs), encoding="utf-8")
 
-assert metrics["model"].nunique() == 5
+assert metrics["model"].nunique() == len(estimators)
 assert glm_card_path.stat().st_size > 0
 assert gbm_card_path.stat().st_size > 0
 assert dashboard_path.stat().st_size > 0
@@ -1276,3 +1594,92 @@ artifacts. It does **not** provide model persistence or deployment, expense or
 profit loadings, a commercial premium, causal interpretations of associations,
 remote MLflow, or a production scoring service. Claim outcomes are required for
 training and evaluation, but not for scoring.
+
+## Appendix: frequency–severity alternatives
+
+These two alternatives use the same stored partition and unchanged model settings.
+Frequency fits claim count / exposure with exposure weights. Severity fits
+claim amount / claim count with claim-count weights on positive-claim rows only;
+that filter remains inside `FrequencySeverityModel.fit`. Their product predicts
+pure-premium rates. The GLMs use the tariff structure; the GBMs use raw features.
+
+```{python}
+fs_glm_config = glm_config.model_copy(update={
+    "name": "fremtpl2-frequency-severity-glm",
+    "models": {
+        "frequency-severity-glm": ModelSpec(
+            kind="frequency_severity",
+            frequency=ModelSpec(
+                kind="glm",
+                params={"family": "poisson", "link": "log", "alpha": 0.001},
+            ),
+            severity=ModelSpec(
+                kind="glm",
+                params={"family": "gamma", "link": "log", "alpha": 0.001},
+            ),
+        ),
+    },
+})
+fs_gbm_config = gbm_config.model_copy(update={
+    "name": "fremtpl2-frequency-severity-gbm",
+    "models": {
+        "frequency-severity-gbm": ModelSpec(
+            kind="frequency_severity",
+            frequency=ModelSpec(
+                kind="gbm",
+                params={
+                    "objective": "poisson",
+                    "n_estimators": 100,
+                    "num_leaves": 31,
+                    "learning_rate": 0.05,
+                    "random_state": RANDOM_STATE,
+                },
+            ),
+            severity=ModelSpec(
+                kind="gbm",
+                params={
+                    "objective": "gamma",
+                    "n_estimators": 100,
+                    "num_leaves": 31,
+                    "learning_rate": 0.05,
+                    "random_state": RANDOM_STATE,
+                },
+            ),
+        ),
+    },
+})
+appendix_runs = []
+appendix_rows = []
+for config in [fs_glm_config, fs_gbm_config]:
+    run, fitted = run_experiment(config, return_estimators=True)
+    assert run.data_fingerprint == glm_run.data_fingerprint
+    assert run.train_indices == glm_run.train_indices
+    assert run.test_indices == glm_run.test_indices
+    appendix_runs.append(run)
+    for name, estimator in fitted.items():
+        train_prediction = np.asarray(estimator.predict(train_frame[raw_predict_columns]))
+        prediction = np.asarray(estimator.predict(test_frame[raw_predict_columns]))
+        assert np.isfinite(train_prediction).all() and (train_prediction > 0).all()
+        assert np.isfinite(prediction).all() and (prediction > 0).all()
+        raw_metrics = holdout_diagnostics(prediction)
+        np.testing.assert_allclose(
+            list(raw_metrics.values()), [run.models[name].metrics[k] for k in raw_metrics]
+        )
+        factor = op_ratio(y_train, train_prediction, w_train)
+        np.testing.assert_allclose(op_ratio(y_train, factor * train_prediction, w_train), 1)
+        adjusted = holdout_diagnostics(factor * prediction)
+        np.testing.assert_allclose(adjusted["gini_test"], raw_metrics["gini_test"])
+        for scale, values in [("raw", raw_metrics), ("training O/P adjusted", adjusted)]:
+            appendix_rows.append({"model": name, "prediction_scale": scale,
+                                  "training_factor": factor, **values})
+    (ARTIFACT_DIR / f"{config.name}_card.md").write_text(model_card(run), encoding="utf-8")
+    log_run(run, tracking_uri=tracking_uri, experiment_name=experiment_name)
+display(pd.DataFrame(appendix_rows))
+display(comparison_table([*runs, *appendix_runs]).assign(prediction_scale="raw"))
+(ARTIFACT_DIR / "comparison_with_appendix.html").write_text(
+    comparison_dashboard([*runs, *appendix_runs]), encoding="utf-8"
+)
+```
+
+These are descriptive comparisons on one split, not evidence of statistical
+superiority. All appendix reports and tracked metrics retain raw predictions.

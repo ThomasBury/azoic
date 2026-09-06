@@ -907,10 +907,8 @@ def test_tutorial_freezes_all_training_factors_and_labels_holdout_metrics(monkey
     portfolio.to_parquet(path)
     names = [
         "direct-tweedie-glm",
-        "frequency-severity-glm",
         "tweedie-lightgbm-tariff",
         "tweedie-lightgbm",
-        "frequency-severity-gbm",
     ]
     features = ["driver_age", "vehicle_age"]
 
@@ -954,6 +952,9 @@ def test_tutorial_freezes_all_training_factors_and_labels_holdout_metrics(monkey
     source = (Path(__file__).parents[1] / "examples/fremtpl2.qmd").read_text()
     cells = re.findall(r"```\{python\}\n(.*?)\n```", source, flags=re.DOTALL)
     training_code = next(cell for cell in cells if cell.startswith("train_frame ="))
+    training_code += "\n" + next(
+        cell for cell in cells if cell.startswith("recalibration_factors =")
+    )
     evaluation_code = next(cell for cell in cells if cell.startswith("test_frame ="))
     exec(training_code, namespace)
     factors = namespace["recalibration_factors"].copy()
@@ -986,3 +987,52 @@ def test_tutorial_freezes_all_training_factors_and_labels_holdout_metrics(monkey
             test.claim_amount / test.exposure, prediction, sample_weight=test.exposure, power=1.5
         )
         assert adjusted.deviance_test == pytest.approx(expected)
+
+    from sklearn.pipeline import Pipeline
+    from sklearn.preprocessing import FunctionTransformer
+
+    from azoic.tariff import apply_tariff
+
+    workbook_tariff = {"base_rate": 125.0, "numeric": {"driver_age": 0.01}, "categorical": {}}
+    test = portfolio.iloc[list(run.test_indices)]
+    namespace.update(
+        {
+            "apply_tariff": apply_tariff,
+            "workbook_tariff": workbook_tariff,
+            "distilled_pipeline": Pipeline([("identity", FunctionTransformer()), ("model", None)]),
+            "fit_X": train,
+            "teacher_rate": namespace["raw_test_predictions"][names[1]],
+            "workbook_rate": apply_tariff(workbook_tariff, test),
+            "ARTIFACT_DIR": tmp_path,
+        }
+    )
+    final_code = next(cell for cell in cells if cell.startswith("workbook_train_rate ="))
+    exec(final_code, namespace)
+    workbook_factor = train.claim_amount.sum() / np.dot(
+        train.exposure, apply_tariff(workbook_tariff, train)
+    )
+    assert namespace["workbook_factor"] == pytest.approx(workbook_factor)
+    assert not np.isclose(workbook_factor, factors[names[1]])
+    final_table = namespace["final_metrics"].set_index(["model", "prediction_scale"])
+    assert len(final_table) == 8
+    for name, raw_prediction in namespace["final_raw_predictions"].items():
+        for scale in ["raw", "training O/P adjusted"]:
+            prediction = raw_prediction.copy()
+            if scale != "raw":
+                prediction *= namespace["final_factors"][name]
+            row = final_table.loc[(name, scale)]
+            deviance = mean_tweedie_deviance(
+                test.claim_amount / test.exposure,
+                prediction,
+                sample_weight=test.exposure,
+                power=1.5,
+            )
+            assert row.deviance_test == pytest.approx(deviance)
+            assert row.d2_test == pytest.approx(1 - deviance / namespace["null_deviance"])
+            assert row.predicted_claim_amount == pytest.approx(prediction @ test.exposure)
+            assert row.observed_claim_amount == pytest.approx(test.claim_amount.sum())
+            assert row.exposure == pytest.approx(test.exposure.sum())
+    namespace["y_test"] = namespace["y_test"] * 100
+    exec(final_code, namespace)
+    assert namespace["workbook_factor"] == pytest.approx(workbook_factor)
+    np.testing.assert_array_equal(namespace["workbook_rate"], apply_tariff(workbook_tariff, test))
