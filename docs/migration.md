@@ -14,6 +14,24 @@ and verify the same held-out workflow.
 
 No compatibility package or CLI alias is provided.
 
+## Removed stratified split helper
+
+`azoic.validation.stratified_random_split` has been removed. Replace calls with
+scikit-learn's `StratifiedShuffleSplit` directly to retain positional indices:
+
+```python
+import numpy as np
+from sklearn.model_selection import StratifiedShuffleSplit
+
+splitter = StratifiedShuffleSplit(n_splits=1, test_size=0.2, random_state=42)
+train_idx, test_idx = next(splitter.split(np.zeros(len(strata)), strata))
+```
+
+Keep your existing `strata`, `test_size`, and `random_state` values. Select rows
+with `df.iloc[train_idx]` and `df.iloc[test_idx]`. Validation errors now come
+from scikit-learn; code matching the helper's error messages must be updated.
+`make_strata` and `temporal_split` remain available.
+
 ## Corrected tariff preprocessing
 
 `AutoBinner` interval labels now describe the existing lower-inclusive,

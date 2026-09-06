@@ -1,24 +1,11 @@
-"""Validation helpers: stratum labels for stratified splits, temporal split,
-single-shot stratified random split.
-
-Three thin function helpers, not splitter classes -- sklearn already has the
-splitters (``StratifiedKFold`` / ``StratifiedGroupKFold`` / ``TimeSeriesSplit``).
-``make_strata`` discretizes a continuous y so sklearn's stratifiers work on
-pure-premium / claim-count targets; ``temporal_split`` is the single-
-holdout case (one cutoff, no leakage) that ``TimeSeriesSplit`` does not cover
-directly; ``stratified_random_split`` is the ``train_test_split(stratify=...)``
-case for low-frequency events where a random shuffle can leave the test set
-with an unrepresentative share of positives (claim presence is the canonical
-actuarial example).
-"""
+"""Stratum labels for sklearn stratifiers and a tie-safe temporal holdout."""
 
 from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import StratifiedShuffleSplit
 
-__all__ = ["make_strata", "temporal_split", "stratified_random_split"]
+__all__ = ["make_strata", "temporal_split"]
 
 
 def _weighted_quantile_edges(y, sample_weight, *, n_quantiles: int) -> np.ndarray:
@@ -137,51 +124,4 @@ def temporal_split(
     train, test = order[:cut_pos], order[cut_pos:]
     if len(train) == 0 or len(test) == 0:
         raise ValueError("temporal split produces an empty train or test partition")
-    return train, test
-
-
-def stratified_random_split(
-    strata,
-    *,
-    test_size: float | int,
-    random_state: int,
-) -> tuple[np.ndarray, np.ndarray]:
-    """Positional ``(train_idx, test_idx)`` from a single stratified random split.
-
-    Thin wrapper around ``sklearn.StratifiedShuffleSplit`` that returns
-    positional indices, mirroring ``temporal_split``. Use when a naive random
-    shuffle can produce a test partition with an unrepresentative share of the
-    rare class -- claim presence (``(claim_count > 0).astype(int)``) is the
-    actuarial default for low-frequency events.
-
-    ``test_size`` follows ``train_test_split`` conventions: float in ``(0, 1)``
-    is the fraction of rows; int is the absolute count and must satisfy
-    ``1 <= n_test < n``.
-
-    Returns
-    -------
-    (ndarray[int], ndarray[int])
-        Positional row indices (use ``df.iloc[...]``). Disjoint, together
-        cover the full input length. Strata classes of size < 2 raise --
-        sklearn rejects them.
-
-    ponytail: returns positional indices only -- a single holdout does not need
-      a sklearn splitter; for K-fold stratified CV use ``StratifiedKFold`` with
-      ``make_strata`` codes.
-    """
-    strata = np.asarray(strata)
-    n = len(strata)
-    if n == 0:
-        raise ValueError("strata is empty")
-    _, counts = np.unique(strata, return_counts=True)
-    if (counts < 2).any():
-        raise ValueError("each stratum must contain at least 2 rows")
-    splitter = StratifiedShuffleSplit(
-        n_splits=1,
-        test_size=test_size,
-        random_state=random_state,
-    )
-    train, test = next(splitter.split(np.zeros(n), strata))
-    if len(train) == 0 or len(test) == 0:
-        raise ValueError("stratified_random_split produces an empty train or test partition")
     return train, test
