@@ -231,25 +231,17 @@ def tune_experiment(
     }
     final_config = config.model_copy(update={"models": final_models})
 
-    if return_estimators:
-        run, estimators = _evaluate_split(
-            final_config,
-            df,
-            outer_train_idx,
-            outer_test_idx,
-            return_estimators=True,
-        )
-        return TuneResult(
-            best_params=best_params,
-            best_values=best_values,
-            n_trials=int(n_trials),
-            run=run,
-            estimators=estimators,
-        )
-    run = _evaluate_split(final_config, df, outer_train_idx, outer_test_idx)
+    run, estimators = _evaluate_split(
+        final_config,
+        df,
+        outer_train_idx,
+        outer_test_idx,
+        return_estimators=True,
+    )
     return TuneResult(
         best_params=best_params,
         best_values=best_values,
         n_trials=int(n_trials),
         run=run,
+        estimators=estimators if return_estimators else None,
     )

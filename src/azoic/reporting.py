@@ -64,7 +64,8 @@ def _metrics_block_md(name: str, kind: str, params: dict, metrics: dict) -> str:
     return "\n".join(lines)
 
 
-def _render_markdown(run: Run) -> str:
+def model_card(run: Run) -> str:
+    """Return the model card for ``run`` as markdown."""
     cfg = run.config
     lines = [
         f"# Azoic model card -- {cfg.name}",
@@ -102,11 +103,6 @@ def _render_markdown(run: Run) -> str:
             for column, table in res.protected_calibration.items():
                 lines.extend(["", f"##### `{column}`", "", _df_preview_md(table), ""])
     return "\n".join(lines)
-
-
-def model_card(run: Run) -> str:
-    """Return the model card for ``run`` as markdown."""
-    return _render_markdown(run)
 
 
 def comparison_table(runs) -> pd.DataFrame:

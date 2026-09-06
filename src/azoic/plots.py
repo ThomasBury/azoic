@@ -561,27 +561,19 @@ def plot_actual_vs_predicted(
             fig = ax.get_figure()
             ax_scatter = ax
             ax_resid = ax.inset_axes((1.04, 0.0, 1.0, 1.0))
+        hb = ax_scatter.hexbin(
+            x=observed_rate,
+            y=y_pred,
+            C=sample_weight,
+            reduce_C_function=np.sum,
+            gridsize=gridsize,
+            cmap=cmap,
+            bins=bins,
+            mincnt=1,
+        )
         if sample_weight is not None:
-            hb = ax_scatter.hexbin(
-                x=observed_rate,
-                y=y_pred,
-                C=sample_weight,
-                reduce_C_function=np.sum,
-                gridsize=gridsize,
-                cmap=cmap,
-                bins=bins,
-                mincnt=1,
-            )
             cb_label = "Σ exposure"
         else:
-            hb = ax_scatter.hexbin(
-                x=observed_rate,
-                y=y_pred,
-                gridsize=gridsize,
-                cmap=cmap,
-                bins=bins,
-                mincnt=1,
-            )
             cb_label = "log₁₀(count)" if bins == "log" else "count"
         if ax_lim is not None:
             lo, hi = ax_lim
@@ -597,26 +589,16 @@ def plot_actual_vs_predicted(
         ax_scatter.set_ylabel("predicted pure-premium rate")
         ax_scatter.set_title(f"{title} — scatter")
         _draw_colorbar(hb, target_axes=ax_scatter, label=cb_label)
-        if sample_weight is not None:
-            hb2 = ax_resid.hexbin(
-                x=y_pred,
-                y=observed_rate - y_pred,
-                C=sample_weight,
-                reduce_C_function=np.sum,
-                gridsize=gridsize,
-                cmap=cmap,
-                bins=bins,
-                mincnt=1,
-            )
-        else:
-            hb2 = ax_resid.hexbin(
-                x=y_pred,
-                y=observed_rate - y_pred,
-                gridsize=gridsize,
-                cmap=cmap,
-                bins=bins,
-                mincnt=1,
-            )
+        hb2 = ax_resid.hexbin(
+            x=y_pred,
+            y=observed_rate - y_pred,
+            C=sample_weight,
+            reduce_C_function=np.sum,
+            gridsize=gridsize,
+            cmap=cmap,
+            bins=bins,
+            mincnt=1,
+        )
         ax_resid.axhline(0.0, color="black", linewidth=1.2, linestyle="--")
         ax_resid.set_xlabel("predicted pure-premium rate")
         ax_resid.set_ylabel("rate residual (observed − predicted)")
