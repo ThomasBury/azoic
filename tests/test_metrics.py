@@ -496,3 +496,27 @@ def test_concentration_gini_differs_from_inequality_and_is_twice_signed_area() -
     assert gini(claims, rate, exposure) == pytest.approx(pairwise)
     assert gini(claims, -rate, exposure) == pytest.approx(-pairwise)
     assert gini(claims, 7 * rate, exposure) == pytest.approx(pairwise)
+
+
+def test_one_way_ordered_intervals_keep_order_observed_groups_and_missing_totals() -> None:
+    categories = ["(-inf, 2)", "[2, 10)", "[10, 20)", "[20, inf)"]
+    X = pd.DataFrame(
+        {
+            "age": pd.Categorical(
+                ["[10, 20)", "[2, 10)", None, "(-inf, 2)", "[2, 10)"],
+                categories=categories,
+                ordered=True,
+            )
+        }
+    )
+    exposure = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
+    claims = np.array([10.0, 20.0, 30.0, 40.0, 50.0])
+    table = one_way_table(X, "age", claims, np.full(5, 10.0), exposure)
+    assert table.level_label.tolist() == [*categories[:3], "nan"]
+    assert len(table) == 4
+    assert pd.isna(table.level.iloc[-1])
+    np.testing.assert_allclose(table.exposure, [4, 7, 1, 3])
+    np.testing.assert_allclose(table.claim_amount, [40, 70, 10, 30])
+    assert table.exposure.sum() == exposure.sum()
+    assert table.claim_amount.sum() == claims.sum()
+    assert table.predicted_claim_amount.sum() == 10 * exposure.sum()

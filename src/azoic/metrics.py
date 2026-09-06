@@ -301,7 +301,8 @@ def one_way_table(
 
     Buckets rows by ``feature``. Categorical / low-cardinality features are
     kept at their actual level (grouped levels from ``AutoGrouper`` are
-    preserved as-is). Numeric features with ``n_bins=None`` get one level
+    preserved as-is, including declared ordered-category order). Numeric features
+    with ``n_bins=None`` get one level
     per unique raw value (natural-value one-way on test rows: driver age
     has as many points as distinct values); an integer ``n_bins`` exposure-
     weight quantiles numeric features into ``n_bins`` bins for near-
@@ -332,7 +333,7 @@ def one_way_table(
         raw = values.to_numpy(dtype=float)
         codes = make_strata(raw, w, n_strata=n_bins)
         valid = codes >= 0
-        labels = _format_numeric_labels(raw, codes, w)
+        labels = _format_numeric_labels(raw, codes)
         centers = np.full(len(codes), np.nan, dtype=float)
         valid_codes = np.unique(codes[valid])
         for code in valid_codes:
@@ -347,13 +348,11 @@ def one_way_table(
         levels = raw
         labels = np.array(["Missing" if np.isnan(v) else f"{v:g}" for v in raw], dtype=object)
         centers = raw
-        codes = pd.factorize(pd.Series(raw), use_na_sentinel=False)[0].astype(int)
     else:
         raw = values.astype(object).to_numpy()
         levels = np.where(pd.isna(raw), "nan", raw).astype(object)
         labels = np.array([str(v) for v in levels.tolist()], dtype=object)
         centers = np.full(len(raw), np.nan, dtype=float)
-        codes = pd.factorize(levels, use_na_sentinel=False)[0].astype(int)
     df = pd.DataFrame(
         {
             "y_true": y_true,
@@ -362,9 +361,10 @@ def one_way_table(
             "level": levels,
             "level_label": labels,
             "level_center": centers,
-            "_code": codes,
         }
     )
+    if isinstance(values.dtype, pd.CategoricalDtype) and values.dtype.ordered:
+        df["level"] = pd.Categorical(values, dtype=values.dtype)
     df["predicted_claim_amount"] = df["y_pred"] * df["exposure"]
     grouped = df.groupby("level", observed=True, sort=True, dropna=False)
     out = grouped.agg(
@@ -394,29 +394,13 @@ def one_way_table(
     ]
 
 
-def _format_numeric_labels(
-    raw: np.ndarray,
-    codes: np.ndarray,
-    w: np.ndarray,
-) -> np.ndarray:
+def _format_numeric_labels(raw: np.ndarray, codes: np.ndarray) -> np.ndarray:
     """Return a per-row interval label ``[lo, hi]`` for the bin each row belongs to."""
-    valid = codes >= 0
-    if not valid.any():
-        return np.full(len(raw), "Missing", dtype=object)
-    sorted_idx = np.argsort(codes[valid])
-    sorted_codes = codes[valid][sorted_idx]
-    sorted_raw = raw[valid][sorted_idx]
-    bounds: dict[int, tuple[float, float]] = {}
-    for code in np.unique(sorted_codes):
-        mask = sorted_codes == code
-        bounds[code] = (float(sorted_raw[mask].min()), float(sorted_raw[mask].max()))
-    labels = np.empty(len(raw), dtype=object)
-    for i, code in enumerate(codes):
-        if code < 0:
-            labels[i] = "Missing"
-        else:
-            lo, hi = bounds[code]
-            labels[i] = f"[{lo:g}, {hi:g}]"
+    labels = np.full(len(raw), "Missing", dtype=object)
+    for code in np.unique(codes[codes >= 0]):
+        mask = codes == code
+        values = raw[mask]
+        labels[mask] = f"[{values.min():g}, {values.max():g}]"
     return labels
 
 
