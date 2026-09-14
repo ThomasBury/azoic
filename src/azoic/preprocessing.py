@@ -75,7 +75,8 @@ def _merge_small_bins(values, weights, edges, min_weight):
             bin_weights[0] += bin_weights.pop(1)
         elif small >= len(edges):
             edges.pop(-1)
-            bin_weights[-2] += bin_weights.pop()
+            last_weight = bin_weights.pop()
+            bin_weights[-1] += last_weight
         else:
             edges.pop(small)
             bin_weights[small] += bin_weights.pop(small + 1)

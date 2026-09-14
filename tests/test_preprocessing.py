@@ -96,6 +96,13 @@ def test_autobinner_min_exposure_merges_small_bins() -> None:
     assert (exp_per >= big_floor - 1e-9).all()
 
 
+def test_merge_small_bins_merges_the_last_two_bins() -> None:
+    np.testing.assert_array_equal(
+        _merge_small_bins(np.array([0.0, 1.0]), np.array([200.0, 50.0]), np.array([0.5]), 150),
+        np.array([]),
+    )
+
+
 def test_merge_small_bins_matches_rebinning_algorithm() -> None:
     rng = np.random.default_rng(42)
     values = rng.normal(size=2000)
