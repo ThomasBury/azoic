@@ -108,6 +108,25 @@ def test_experiment_config_from_yaml_roundtrip(tmp_path: Path) -> None:
     assert cfg.models["gbm-tweedie"].params["n_estimators"] == 30
 
 
+def test_from_yaml_anchors_relative_data_path_to_config_dir(tmp_path: Path) -> None:
+    sub = tmp_path / "configs"
+    sub.mkdir()
+    data = _write_portfolio(sub)
+    yaml_path = _write_yaml(sub, _basic_yaml(data.name))
+    cfg = ExperimentConfig.from_yaml(yaml_path)
+    assert cfg.data_path == str(sub / data.name)
+    run, _ = run_experiment(cfg, return_estimators=True)
+    assert run.n_rows > 0
+
+
+def test_from_yaml_leaves_absolute_and_uri_data_paths_untouched(tmp_path: Path) -> None:
+    data = _write_portfolio(tmp_path)
+    yaml_path = _write_yaml(tmp_path, _basic_yaml(str(data)))
+    assert ExperimentConfig.from_yaml(yaml_path).data_path == str(data)
+    uri_yaml = _write_yaml(tmp_path, _basic_yaml("s3://bucket/portfolio.parquet"), name="s3.yaml")
+    assert ExperimentConfig.from_yaml(uri_yaml).data_path == "s3://bucket/portfolio.parquet"
+
+
 def test_experiment_config_parses_typed_tuning_yaml(tmp_path: Path) -> None:
     data = _write_portfolio(tmp_path)
     body = (
@@ -930,6 +949,8 @@ def test_tutorial_freezes_all_training_factors_and_labels_holdout_metrics(monkey
         models={name: ModelSpec(params={"scale": i + 1}) for i, name in enumerate(names)},
     )
     run, estimators = run_experiment(config, return_estimators=True)
+    train = portfolio.iloc[list(run.train_indices)]
+    test = portfolio.iloc[list(run.test_indices)]
     namespace = {
         "np": np,
         "pd": pd,
@@ -948,28 +969,43 @@ def test_tutorial_freezes_all_training_factors_and_labels_holdout_metrics(monkey
         "mean_tweedie_deviance": mean_tweedie_deviance,
         "model_colors": model_colors,
         "comparison_table": comparison_table,
+        "train_frame": train.copy(),
+        "test_frame": test.copy(),
+        "y_train": train["claim_amount"].to_numpy(),
+        "w_train": train["exposure"].to_numpy(),
+        "y_test": test["claim_amount"].to_numpy(),
+        "w_test": test["exposure"].to_numpy(),
+        "raw_predict_columns": [*features, "exposure"],
     }
-    source = (Path(__file__).parents[1] / "examples/fremtpl2.qmd").read_text()
-    cells = re.findall(r"```\{python\}\n(.*?)\n```", source, flags=re.DOTALL)
-    training_code = next(cell for cell in cells if cell.startswith("train_frame ="))
-    training_code += "\n" + next(
-        cell for cell in cells if cell.startswith("recalibration_factors =")
+    examples = Path(__file__).parents[1] / "examples"
+    shared_cells = re.findall(
+        r"```\{python\}\n(.*?)\n```",
+        (examples / "_shared.qmd").read_text(),
+        flags=re.DOTALL,
     )
-    evaluation_code = next(cell for cell in cells if cell.startswith("test_frame ="))
-    exec(training_code, namespace)
+    exec(next(c for c in shared_cells if "def holdout_diagnostics" in c), namespace)
+    diagnostics_cells = re.findall(
+        r"```\{python\}\n(.*?)\n```",
+        (examples / "03-diagnostics.qmd").read_text(),
+        flags=re.DOTALL,
+    )
+    recalibration_code = next(
+        cell for cell in diagnostics_cells if cell.startswith("recalibration_factors =")
+    )
+    holdout_code = next(
+        cell for cell in diagnostics_cells if cell.startswith("raw_test_predictions: dict")
+    )
+    exec(recalibration_code, namespace)
     factors = namespace["recalibration_factors"].copy()
     assert set(factors) == set(names)
-    train = portfolio.iloc[list(run.train_indices)]
     for name, estimator in estimators.items():
         expected = train.claim_amount.sum() / np.dot(train.exposure, estimator.predict(train))
         assert factors[name] == pytest.approx(expected)
-    changed = portfolio.copy()
-    changed.iloc[list(run.test_indices), changed.columns.get_loc("claim_amount")] *= 100
-    namespace["portfolio"] = changed
-    exec(training_code, namespace)
+    namespace["y_test"] = namespace["y_test"] * 100
+    exec(recalibration_code, namespace)
     assert namespace["recalibration_factors"] == factors
-    namespace["portfolio"] = portfolio
-    exec(evaluation_code, namespace)
+    namespace["y_test"] = test["claim_amount"].to_numpy()
+    exec(holdout_code, namespace)
     table = namespace["holdout_metrics"].set_index(["model", "prediction_scale"])
     assert len(table) == 2 * len(names)
     for name in names:
@@ -982,7 +1018,6 @@ def test_tutorial_freezes_all_training_factors_and_labels_holdout_metrics(monkey
         np.testing.assert_allclose(
             prediction, factors[name] * namespace["raw_test_predictions"][name]
         )
-        test = portfolio.iloc[list(run.test_indices)]
         expected = mean_tweedie_deviance(
             test.claim_amount / test.exposure, prediction, sample_weight=test.exposure, power=1.5
         )
@@ -994,7 +1029,6 @@ def test_tutorial_freezes_all_training_factors_and_labels_holdout_metrics(monkey
     from azoic.tariff import apply_tariff
 
     workbook_tariff = {"base_rate": 125.0, "numeric": {"driver_age": 0.01}, "categorical": {}}
-    test = portfolio.iloc[list(run.test_indices)]
     namespace.update(
         {
             "apply_tariff": apply_tariff,
@@ -1006,7 +1040,12 @@ def test_tutorial_freezes_all_training_factors_and_labels_holdout_metrics(monkey
             "ARTIFACT_DIR": tmp_path,
         }
     )
-    final_code = next(cell for cell in cells if cell.startswith("workbook_train_rate ="))
+    tariff_cells = re.findall(
+        r"```\{python\}\n(.*?)\n```",
+        (examples / "04-scoring-tariff.qmd").read_text(),
+        flags=re.DOTALL,
+    )
+    final_code = next(cell for cell in tariff_cells if cell.startswith("workbook_train_rate ="))
     exec(final_code, namespace)
     workbook_factor = train.claim_amount.sum() / np.dot(
         train.exposure, apply_tariff(workbook_tariff, train)
@@ -1015,6 +1054,12 @@ def test_tutorial_freezes_all_training_factors_and_labels_holdout_metrics(monkey
     assert not np.isclose(workbook_factor, factors[names[1]])
     final_table = namespace["final_metrics"].set_index(["model", "prediction_scale"])
     assert len(final_table) == 8
+    null_deviance = mean_tweedie_deviance(
+        test.claim_amount / test.exposure,
+        np.full(len(test), test.claim_amount.sum() / test.exposure.sum()),
+        sample_weight=test.exposure,
+        power=1.5,
+    )
     for name, raw_prediction in namespace["final_raw_predictions"].items():
         for scale in ["raw", "training O/P adjusted"]:
             prediction = raw_prediction.copy()
@@ -1028,7 +1073,7 @@ def test_tutorial_freezes_all_training_factors_and_labels_holdout_metrics(monkey
                 power=1.5,
             )
             assert row.deviance_test == pytest.approx(deviance)
-            assert row.d2_test == pytest.approx(1 - deviance / namespace["null_deviance"])
+            assert row.d2_test == pytest.approx(1 - deviance / null_deviance)
             assert row.predicted_claim_amount == pytest.approx(prediction @ test.exposure)
             assert row.observed_claim_amount == pytest.approx(test.claim_amount.sum())
             assert row.exposure == pytest.approx(test.exposure.sum())

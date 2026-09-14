@@ -18,14 +18,12 @@ column from `spec`:
 
 ```yaml
 name: tweedie-v1
-data_path: examples/synthetic.parquet
+data_path: synthetic.parquet
 
 spec:
   target: claim_amount
   exposure: exposure
   claim_count: claim_count
-  protected_cols:
-    - review_group
 
 features:
   - driver_age
@@ -44,15 +42,35 @@ models:
       family: tweedie
       link: log
       tweedie_power: 1.5
+  tweedie-gbm:
+    kind: gbm
+    params:
+      objective: tweedie
+      tweedie_variance_power: 1.5
+      n_estimators: 50
+      num_leaves: 15
+      learning_rate: 0.05
+      random_state: 42
 ```
 
-`protected_cols` names review-only columns that remain available for held-out
-subgroup calibration but never enter preprocessing or model fitting. Provide
-review-ready categorical or pre-banded groups; Azoic preserves their labels and
-does not invent bins or pass/fail thresholds.
+!!! warning "Specials stay out of `features:`"
 
-Relative `data_path` values resolve from the process working directory. Run the
-example from the repository root.
+    Direct Python examples keep `exposure` inside `X`, where estimators read
+    it as a sample weight. YAML `features:` must instead exclude every named
+    special -- `target`, `exposure`, `claim_count`, `time_col`, and any
+    `protected_cols` -- because the workflow derives them from `spec`.
+    Listing one raises `ValueError` at config validation.
+
+`protected_cols` names review-only columns that remain available for held-out
+subgroup calibration but never enter preprocessing or model fitting. Declare it
+only when the data carries such a column -- the checkout example has none.
+Provide review-ready categorical or pre-banded groups; Azoic preserves their
+labels and does not invent bins or pass/fail thresholds.
+
+Relative `data_path` values resolve from the config file's directory, not the
+process working directory, so a config and its data travel together. Here,
+`synthetic.parquet` beside `examples/tweedie.yaml` resolves to
+`examples/synthetic.parquet`.
 
 ## Run it from Python
 

@@ -25,7 +25,7 @@ or time. When data loads, every named field must exist.
 | Field | Type | Default | Meaning |
 |---|---|---|---|
 | `name` | string | `"experiment"` | Stable experiment label used in reports and MLflow |
-| `data_path` | string | required | Local or `s3://` Parquet path; relative paths use the process working directory |
+| `data_path` | string | required | Local or `s3://` Parquet path; relative paths resolve from the config file's directory |
 | `spec` | `DatasetSpec` | required | Special-column contract |
 | `features` | list of strings or null | `null` | Explicit model features; null means every non-special column |
 | `preprocessing` | object or null | `null` | Optional binner and grouper settings |
@@ -197,7 +197,18 @@ tuning:
 
 A custom model entry replaces that model's built-in search space. It does not
 merge with the defaults. GLM or GBM siblings without a custom entry keep their
-existing built-in spaces exactly.
+existing built-in spaces exactly:
+
+| Model kind | Parameter | Distribution | Bounds |
+|---|---|---|---|
+| `glm` | `alpha` | float, log | 1e-6 to 1.0 |
+| `glm` | `l1_ratio` | float | 0.0 to 1.0 |
+| `gbm` | `num_leaves` | int | 4 to 64 |
+| `gbm` | `learning_rate` | float, log | 1e-3 to 0.3 |
+| `gbm` | `n_estimators` | int | 20 to 300 |
+| `gbm` | `min_child_samples` | int | 1 to 100 |
+| `gbm` | `reg_alpha` | float, log | 1e-8 to 10.0 |
+| `gbm` | `reg_lambda` | float, log | 1e-8 to 10.0 |
 
 Search-space parameters must be exposed by that model kind's estimator.
 Unknown model names, unsupported parameters, frequency-severity spaces, empty
@@ -221,6 +232,16 @@ The sampler's separate `random_state=42` API is unchanged.
 Configuration exposes a fraction-based temporal split. For a direct cutoff or
 integer test size in Python, use `temporal_split` itself.
 
+## Random seeds
+
+Three independent seeds control an experiment; set each where it belongs.
+
+| Seed | Default | Scope |
+|---|---|---|
+| `ExperimentConfig.random_state` | `42` | Outer split permutation only |
+| Model `random_state` parameter | Backend default (unset) | Estimator fitting; a per-model constructor parameter, never tunable |
+| `tune_experiment(random_state=)` | `42` | Optuna sampler; model index `i` samples with `TPESampler(seed=random_state + i)` |
+
 !!! warning "Nested selection"
 
     Tuning creates an inner split of outer training data. The selected candidate
@@ -242,9 +263,13 @@ review, not a fairness threshold, automated decision, or legal assessment.
 
 ## Complete YAML shape
 
+Relative `data_path` values resolve from the YAML file's directory. If this
+config is saved in `examples/`, `synthetic.parquet` means
+`examples/synthetic.parquet`.
+
 ```yaml
 name: motor-pricing-v1
-data_path: examples/synthetic.parquet
+data_path: synthetic.parquet
 
 spec:
   target: claim_amount
@@ -356,10 +381,13 @@ test_frame = portfolio.iloc[list(run.test_indices)]
 ```
 
 Convert tuples to a list or integer array: pandas interprets a bare tuple as
-row/column indexing. Use training positions for recalibration and student fits,
-and test positions for diagnostic and distillation-fidelity frames. CLI
-`export-tariff --distill` uses the returned run's positions and rejects a reloaded
-dataset whose fingerprint changed after fitting.
+row/column indexing. Use training positions for student fits and any
+evaluation-phase recalibration base, and test positions for diagnostic and
+distillation-fidelity frames. This scoping applies while candidates are being
+evaluated; the production `export-tariff` default deliberately recalibrates on
+the full loaded frame (see [Reporting and operations](../guide/operations.md)).
+CLI `export-tariff --distill` uses the returned run's positions and rejects a
+reloaded dataset whose fingerprint changed after fitting.
 
 Run metrics describe raw estimator predictions. If applying a training-derived
 scale factor later, label those adjusted diagnostics separately.

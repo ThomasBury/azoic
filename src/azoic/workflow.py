@@ -208,8 +208,10 @@ class ExperimentConfig(BaseModel):
     """End-to-end modelling experiment: data + spec + split + named models.
 
     Load with ``ExperimentConfig.from_yaml(path)``. The data path is stored as
-    a string so the config round-trips YAML cleanly; ``run_experiment`` resolves
-    it through ``azoic.data.load_data`` (local + s3 paths via fsspec).
+    a string so the config round-trips YAML cleanly; ``from_yaml`` anchors a
+    relative local path to the YAML file's directory (URI schemes such as
+    ``s3://`` pass through untouched), and ``run_experiment`` resolves it
+    through ``azoic.data.load_data`` (local + s3 paths via fsspec).
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -276,7 +278,14 @@ class ExperimentConfig(BaseModel):
     @classmethod
     def from_yaml(cls, path: str | Path) -> ExperimentConfig:
         with open(path, "rb") as fh:
-            return cls.model_validate(yaml.safe_load(fh))
+            config = cls.model_validate(yaml.safe_load(fh))
+        raw = config.data_path
+        if "://" not in raw:
+            data_path = Path(raw).expanduser()
+            if not data_path.is_absolute():
+                data_path = Path(path).parent / data_path
+            config.data_path = str(data_path)
+        return config
 
     def feature_columns(self, df: pd.DataFrame) -> list[str]:
         """Resolve the feature-column list: explicit ``features`` if given,

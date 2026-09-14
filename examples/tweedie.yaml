@@ -5,7 +5,7 @@
 #   uv run azoic fit --config examples/tweedie.yaml
 
 name: tweedie-v1
-data_path: examples/synthetic.parquet
+data_path: synthetic.parquet
 
 spec:
   target: claim_amount

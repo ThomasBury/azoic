@@ -162,6 +162,24 @@ def test_cli_fit_writes_md_card(tmp_path: Path) -> None:
     assert "Model: `gbm-tweedie` (gbm)" in md
 
 
+def test_cli_fit_shipped_yaml_from_another_directory(tmp_path: Path, monkeypatch) -> None:
+    source = Path(__file__).parents[1] / "examples" / "tweedie.yaml"
+    config_dir = tmp_path / "example"
+    config_dir.mkdir()
+    config = config_dir / source.name
+    config.write_bytes(source.read_bytes())
+    make_synthetic_portfolio(n=2000).to_parquet(config_dir / "synthetic.parquet")
+    monkeypatch.chdir(tmp_path)
+    card = tmp_path / "card.md"
+
+    result = runner.invoke(app, ["fit", "--config", str(config), "--out", str(card), "-q"])
+
+    assert result.exit_code == 0, result.output
+    content = card.read_text()
+    assert "Model: `tweedie-glm` (glm)" in content
+    assert "Model: `tweedie-gbm` (gbm)" in content
+
+
 def test_cli_fit_missing_config_path_fails(tmp_path: Path) -> None:
     missing = tmp_path / "nope.yaml"
     result = runner.invoke(app, ["fit", "--config", str(missing)])
