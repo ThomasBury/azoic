@@ -185,4 +185,5 @@ constraints.
 
 [Profile and preprocess data](data-preprocessing.md){ .md-button .md-button--primary }
 [Compare model families](model-choice.md){ .md-button }
+[Look up a term](../reference/glossary.md){ .md-button }
 [Open the complete tutorial](fremtpl2.md){ .md-button }

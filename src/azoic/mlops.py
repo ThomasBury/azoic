@@ -45,13 +45,17 @@ def log_run(
 ) -> str:
     """Log ``run`` to mlflow and return the mlflow ``run_id`` (string).
 
-    Records:
+    ``run_name`` defaults to the experiment config name. Records:
       * Top-level params: config name, split, test_size, random_state,
         n_rows / n_train / n_test (prefixed ``experiment.*``).
       * Per-model: ``<model>.kind`` + one ``<model>.params.<k>`` per param,
-        plus one ``<model>.<metric>`` metric per metric (NaN metrics are
-        skipped -- mlflow rejects NaN since 3.x).
-      * Artifacts: every path in ``artifacts`` (file or directory).
+        plus one ``<model>.<metric>`` metric per metric (NaN and infinite
+        metrics are skipped -- mlflow rejects non-finite values since 3.x).
+      * Artifacts: every path in ``artifacts`` (file or directory). A missing
+        path raises ``FileNotFoundError``. Files upload flat under
+        ``artifact_path`` (default ``"artifacts"``); a directory's contents
+        upload nested under ``<artifact_path>/<dir_name>`` so the directory
+        name is preserved in the artifact tree.
     """
     try:
         import mlflow

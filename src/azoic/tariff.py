@@ -55,10 +55,16 @@ def distill_gbm(
 ) -> RiskGLM | Pipeline:
     """Fit an exportable log-link GLM to a fitted positive-objective GBM.
 
-    The fit frame teaches the student; the separate validation frame supplies
-    only held-out fidelity metrics. Both use the teacher's exposure column as
-    sample weight. A pipeline result contains copied, already-fitted upstream
-    preprocessing and exposes the metrics in ``distillation_metrics_``.
+    The student is a ``RiskGLM`` that inherits the teacher's objective as its
+    family (tweedie, poisson, or gamma) and, for tweedie, the teacher's
+    ``tweedie_variance_power``; it fits with the ``RiskGLM`` default
+    ``alpha=0.001``. The fit frame teaches the student; the separate
+    validation frame supplies only held-out fidelity metrics. Both use the
+    teacher's exposure column as sample weight, and both frames must yield
+    positive, finite exposure and teacher predictions. A pipeline result
+    contains copied, already-fitted upstream preprocessing (bins and group
+    mappings are not relearned) and exposes the metrics in
+    ``distillation_metrics_``.
     """
     if not isinstance(X_fit, pd.DataFrame) or not isinstance(X_validation, pd.DataFrame):
         raise TypeError("distill_gbm requires pandas DataFrame fit and validation frames")

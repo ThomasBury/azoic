@@ -17,6 +17,13 @@ and return pure-premium rates from `predict`.
 Special columns travel inside `X`. `RiskGLM` removes the exposure column and
 passes it to glum as `sample_weight`.
 
+!!! note "Contrast with YAML configs"
+
+    This direct-Python contract inverts inside an `ExperimentConfig`: YAML
+    `features:` must exclude `exposure` and every other special column, which
+    the workflow derives from `spec`. See
+    [Experiments and CLI](experiment-configuration.md).
+
 ```python
 from azoic.models import RiskGLM
 
@@ -148,6 +155,11 @@ The final `expected_value` column is the backend's expected output. Adding it to
 the feature contributions reproduces the raw LightGBM score. For this Tweedie
 model the raw score is on the log scale, so exponentiating it reproduces the
 public pure-premium prediction.
+
+The example casts both `object` and `string` dtypes explicitly for a reason:
+the estimator's fit-time auto-cast converts only `object` columns to
+categorical, so pandas `string` dtype columns pass through unchanged unless you
+cast them yourself.
 
 !!! warning "Interpretation boundaries"
 

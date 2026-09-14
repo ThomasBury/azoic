@@ -258,9 +258,11 @@ def calibration_table(
 
     `y_true` = claim_amount, `y_pred` = predicted pure premium, `sample_weight` =
     exposure. When `groups` is None, segments are deciles of predicted risk,
-    exposure-weighted when `sample_weight` is supplied. Columns: group, exposure,
-    claim_amount, predicted_claim_amount, observed_pure_premium,
-    predicted_pure_premium, o_p_ratio; plus `claim_count` when provided.
+    exposure-weighted when `sample_weight` is supplied. Otherwise `groups` is an
+    array-like of one segment label per row; NaN labels form their own segment
+    (``dropna=False``). Columns: group, exposure, claim_amount,
+    predicted_claim_amount, observed_pure_premium, predicted_pure_premium,
+    o_p_ratio; plus `claim_count` when provided.
     """
     weighted = sample_weight is not None
     y_true, y_pred, w = _as_arrays(y_true, y_pred, sample_weight)

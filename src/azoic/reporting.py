@@ -65,7 +65,11 @@ def _metrics_block_md(name: str, kind: str, params: dict, metrics: dict) -> str:
 
 
 def model_card(run: Run) -> str:
-    """Return the model card for ``run`` as markdown."""
+    """Return the model card for ``run`` as markdown.
+
+    Calibration tables are truncated to their first 12 rows -- a preview, not
+    the full table; write full tables separately when all segments are needed.
+    """
     cfg = run.config
     lines = [
         f"# Azoic model card -- {cfg.name}",

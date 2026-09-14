@@ -25,6 +25,7 @@ nav = [
         {"Data and preparation" = "reference/data-preparation.md"},
         {"Models and evaluation" = "reference/models-evaluation.md"},
         {"Workflow and operations" = "reference/workflow-operations.md"},
+        {"Glossary" = "reference/glossary.md"},
     ]},
     {"Migration to 0.4" = "migration.md"},
 ]

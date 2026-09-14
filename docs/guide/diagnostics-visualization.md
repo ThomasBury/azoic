@@ -47,6 +47,12 @@ double_lift = double_lift_table(
 Pass aggregate claim amount as `y_true`, predicted pure-premium rate as
 `y_pred`, and exposure as `sample_weight` for these actuarial tables.
 
+An integer `n_bins` quantile-bins a numeric feature only when it has more
+distinct values than bins; at or below that count the actual levels are kept.
+`calibration_table(groups=...)` instead accepts any array-like of one segment
+label per row in place of the default prediction deciles; NaN labels form their
+own segment.
+
 Numeric missing values remain a separate `Missing` segment in `one_way_table`,
 including with `n_bins=None`, low-cardinality features, and entirely missing
 features. Its exposure, observed claims, and predicted claims contribute to the
@@ -65,7 +71,10 @@ natural numeric axis.
 
 Assume `test["period"]` is a real portfolio period carried from the source,
 stored as a naturally ordered value such as `pandas.Period`, a datetime, or an
-integer year-month. Reuse the same held-out claims, predictions, and exposures
+integer year-month. A column usable as `spec.time_col` for a
+[temporal experiment split](../reference/configuration-cli.md) is also the
+right `periods` here -- the split boundary and the stability view then describe
+the same time axis. Reuse the same held-out claims, predictions, and exposures
 as the other diagnostics:
 
 ```python
@@ -302,4 +311,5 @@ separately from raw GLM one-ways at each driver/vehicle age and inside
 training-fitted groups. Its distillation teacher stays raw.
 
 [Read the conceptual workflow](actuarial-workflow.md){ .md-button }
+[Look up a term](../reference/glossary.md){ .md-button }
 [Continue to reporting and operations](operations.md){ .md-button .md-button--primary }

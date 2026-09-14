@@ -22,7 +22,8 @@ Path("comparison.html").write_text(
 ```
 
 A model card is Markdown and records the experiment data contract, fingerprint,
-split, features, model parameters, held-out metrics, and a calibration preview.
+split, features, model parameters, held-out metrics, and a calibration preview
+(first 12 rows; write full tables separately when every segment is needed).
 
 The CLI can run several configs and write their comparison table:
 
@@ -31,7 +32,9 @@ azoic compare baseline.yaml candidate.yaml --out comparison.csv
 ```
 
 The Python-only `comparison_dashboard` API returns standalone Plotly HTML and
-requires the `plot` extra; the CSV table does not.
+requires the `plot` extra; the CSV table does not. It has no CLI command because
+it returns an interactive Plotly object -- there is no stdout or file output
+channel for it, unlike the CSV comparison.
 
 ## Tune without touching outer test
 
@@ -107,8 +110,12 @@ print(run_id)
 
 Install `azoic[mlops]` first. `log_run` records the data fingerprint,
 experiment fields, model parameters, finite metrics, and the requested files or
-directories. Remote tracking remains an environment concern; Azoic does not
-invent credentials or deployment policy.
+directories. The run name defaults to the experiment config name. Artifacts
+upload under `artifact_path="artifacts"` by default; a directory's contents
+nest under `artifacts/<dir_name>` so the directory name is preserved, and a
+missing artifact path raises `FileNotFoundError`. NaN and infinite metrics are
+skipped because MLflow rejects non-finite values. Remote tracking remains an
+environment concern; Azoic does not invent credentials or deployment policy.
 
 ## Export a multiplicative tariff
 
@@ -129,8 +136,17 @@ azoic export-tariff \
 | `mappings` | Feature roles, levels, references, and fitted bin/group mappings |
 
 Recalibration is on by default and shifts the base to reproduce observed
-portfolio claim amount. Use `--no-recalibrate` only when the structural model
-total is intentionally required.
+portfolio claim amount. The CLI recalibrates against the full loaded frame, and
+for a production tariff that scope is deliberate: once a winner is chosen, best
+practice retrains it on the whole historical data without changing the model,
+so the base calibrates to every observed claim and no information is left
+uncaptured. No evaluation claim is drawn from that frame afterwards.
+
+The evaluation context is different: while candidates are still being compared
+on held-out rows, test data must stay out of the tariff base. That is why the
+tutorial below exports with `recalibrate=False` plus training-frame metadata
+and a separate external multiplier. Use `--no-recalibrate` the same way when
+the structural model total is intentionally required.
 
 A positive-objective GBM is not itself a multiplicative table. Distill a
 held-out GLM student explicitly:
@@ -144,8 +160,14 @@ azoic export-tariff \
 ```
 
 The workbook describes the student and includes held-out teacher/student
-fidelity metadata. Fidelity measures agreement with teacher predictions, not
-accuracy against claims. The [freMTPL2 tutorial](fremtpl2.md) applies the workbook
+fidelity metadata. The student is a log-link `RiskGLM` that inherits the
+teacher's objective as its family -- and the Tweedie power when the objective
+is tweedie -- fits with the `RiskGLM` default `alpha=0.001`, and reuses a copy
+of the teacher's already-fitted preprocessing, so bins and group mappings are
+not relearned from the holdout. Teacher predictions and exposure must be
+positive and finite on both the fit and validation frames. Fidelity measures
+agreement with teacher predictions, not accuracy against claims. The
+[freMTPL2 tutorial](fremtpl2.md) applies the workbook
 after fitted preprocessing and compares it with the direct GLM, raw GBM, and
 structured teacher on the same held-out claims. It exports with
 `recalibrate=False` and training-frame feature metadata, then reports raw metrics
@@ -158,6 +180,24 @@ comparisons accompany deviance, D², Gini, O/P, and portfolio totals.
     Tariff application rejects unseen categorical levels and non-finite numeric
     inputs. Do not silently map an unknown quote-time category into a factor.
     Resolve the data contract or publish an explicitly approved mapping first.
+
+## Score an outcome-free frame
+
+Fitted workflow pipelines do not need outcome columns at prediction time:
+
+```python
+run, estimators = run_experiment(config, return_estimators=True)
+pipeline = estimators["tweedie-glm"]
+
+unlabeled = test.drop(columns=["claim_amount", "claim_count"])
+predictions = pipeline.predict(unlabeled)
+```
+
+When the config declares preprocessing, a `fit_columns` placeholder step adds
+zero-valued outcome columns so the fitted binner and grouper see their training
+schema, and a `drop_specials` step removes them before the final estimator, so
+targets never leak into prediction inputs. Frequency-severity pipelines strip
+the same columns inside the meta-estimator instead.
 
 ## Operational checklist
 
