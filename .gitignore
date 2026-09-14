@@ -37,9 +37,10 @@ site/
 mlruns/
 
 # Executable tutorial outputs
-examples/fremtpl2.html
+examples/_book/
 examples/fremtpl2_files/
 examples/.quarto/
 examples/_freeze/
 examples/_artifacts/
+examples/*.html
 examples/synthetic.parquet

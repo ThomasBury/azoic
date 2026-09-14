@@ -1,0 +1,168 @@
+# Temporal stability diagnostics
+
+freMTPL2 has no genuine policy-time field, so this chapter builds a small
+synthetic portfolio with a real `period` column and exercises the pieces that
+only make sense on ordered data: a temporal experiment split and the
+period-level `stability_table`.
+
+This is an optional, network-free recipe. The data-generating relationships are
+stationary: no inflation, drift, or structural break is introduced. One model
+is fitted once and evaluated by later period. The chapter demonstrates
+chronological partitioning and period summaries, not stability under refitting
+or robustness to changes in the insured population.
+
+The split trains on earlier periods and tests on later ones. If the requested
+boundary falls inside a period, every row with that equal timestamp stays on
+the same side, and missing periods are rejected. The stability table then
+reports exposure, observed and predicted totals, O/P, Gini, deviance, and
+$D^2$ per period on the held-out rows.
+
+```{python}
+#| include: false
+from pathlib import Path
+
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+
+from azoic.data import DatasetSpec
+from azoic.metrics import stability_table
+from azoic.workflow import ExperimentConfig, ModelSpec, run_experiment
+
+ROOT = Path.cwd()
+if not (ROOT / "pyproject.toml").exists():
+    ROOT = ROOT.parent
+
+ARTIFACT_DIR = ROOT / "examples" / "_artifacts" / "temporal"
+ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
+
+RANDOM_STATE = 42
+```
+
+```{python}
+rng = np.random.default_rng(RANDOM_STATE)
+n_policies = 20_000
+
+exposure = rng.uniform(0.5, 1.0, n_policies)
+driver_age = rng.integers(18, 90, n_policies)
+vehicle_age = rng.integers(0, 25, n_policies)
+region = rng.choice(["urban", "suburban", "rural"], n_policies, p=[0.4, 0.4, 0.2])
+period = np.repeat(np.arange(24), np.ceil(n_policies / 24).astype(int))[:n_policies]
+
+frequency = (
+    0.10
+    * np.where(driver_age < 25, 1.6, np.where(driver_age > 65, 1.3, 1.0))
+    * np.where(region == "urban", 1.4, np.where(region == "rural", 0.6, 1.0))
+    * (1.0 + 0.03 * vehicle_age)
+)
+claim_count = rng.poisson(frequency * exposure)
+mean_severity = 2_500 * (1.0 + 0.02 * vehicle_age)
+claim_amount = np.zeros(n_policies)
+has_claim = claim_count > 0
+claim_amount[has_claim] = (
+    rng.gamma(3.0, mean_severity[has_claim] / 3.0) * claim_count[has_claim]
+)
+
+portfolio = pd.DataFrame(
+    {
+        "period": period,
+        "driver_age": driver_age,
+        "vehicle_age": vehicle_age,
+        "region": region,
+        "exposure": exposure,
+        "claim_count": claim_count,
+        "claim_amount": claim_amount,
+    }
+)
+portfolio_path = ARTIFACT_DIR / "temporal_portfolio.parquet"
+portfolio.to_parquet(portfolio_path, index=False)
+pd.DataFrame(
+    {
+        "policies": [len(portfolio)],
+        "periods": [portfolio["period"].nunique()],
+        "observed_pure_premium": [
+            portfolio["claim_amount"].sum() / portfolio["exposure"].sum()
+        ],
+    }
+)
+```
+
+```{python}
+config = ExperimentConfig(
+    name="temporal-demo",
+    data_path=str(portfolio_path),
+    spec=DatasetSpec(
+        target="claim_amount",
+        exposure="exposure",
+        claim_count="claim_count",
+        time_col="period",
+    ),
+    features=["driver_age", "vehicle_age", "region"],
+    split="temporal",
+    test_size=0.25,
+    random_state=RANDOM_STATE,
+    models={
+        "tweedie-glm": ModelSpec(
+            kind="glm",
+            params={
+                "family": "tweedie",
+                "link": "log",
+                "tweedie_power": 1.5,
+                "alpha": 0.001,
+            },
+        ),
+    },
+)
+run, estimators = run_experiment(config, return_estimators=True)
+
+train_periods = portfolio.loc[list(run.train_indices), "period"].unique()
+test_periods = portfolio.loc[list(run.test_indices), "period"].unique()
+assert train_periods.max() < test_periods.min()
+assert len(train_periods) + len(test_periods) == 24
+print(f"train periods: {train_periods.min()}–{train_periods.max()}; "
+      f"test periods: {test_periods.min()}–{test_periods.max()}")
+```
+
+```{python}
+test_frame = portfolio.loc[list(run.test_indices)].copy()
+y_test = test_frame["claim_amount"].to_numpy()
+w_test = test_frame["exposure"].to_numpy()
+prediction = np.asarray(
+    estimators["tweedie-glm"].predict(test_frame[[*config.features, "exposure"]])
+)
+
+stability = stability_table(
+    y_test,
+    prediction,
+    w_test,
+    periods=test_frame["period"].to_numpy(),
+)
+assert len(stability) == len(test_periods)
+np.testing.assert_allclose(stability["exposure"].sum(), w_test.sum())
+np.testing.assert_allclose(stability["claim_amount"].sum(), y_test.sum())
+np.testing.assert_allclose(stability["predicted_claim_amount"].sum(), prediction @ w_test)
+display(stability[["period", "exposure", "claim_amount", "predicted_claim_amount"]]
+        .rename(columns={"claim_amount": "Observed claims", "predicted_claim_amount": "Predicted claims"}))
+display(stability[["period", "o_p_ratio", "gini", "deviance", "d2"]]
+        .rename(columns={"o_p_ratio": "O/P", "gini": "Gini", "deviance": "Deviance", "d2": "D²"}))
+```
+
+```{python}
+#| fig-alt: "Later-period O/P fluctuates around the balance line; read each deviation with its exposure and claims support."
+#| code-fold: true
+with plt.style.context("default"):
+    fig, ax = plt.subplots(figsize=(8, 4))
+    ax.plot(stability["period"], stability["o_p_ratio"], marker="o", label="O/P")
+    ax.axhline(1.0, color="grey", linestyle="--")
+    ax.set_xlabel("held-out period")
+    ax.set_ylabel("observed / predicted")
+    ax.set_title("Period-level O/P — temporal stability")
+    fig.savefig(ARTIFACT_DIR / "temporal_op.png", bbox_inches="tight")
+    plt.show()
+```
+
+Period O/P drifts are read together with exposure and claim totals per row: a
+single volatile period with little exposure deserves less weight than a stable
+drift across heavy periods. Use `temporal_split`-backed configs whenever the
+portfolio carries any sortable period; without one, report non-temporal
+held-out diagnostics instead.

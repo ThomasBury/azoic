@@ -1,0 +1,251 @@
+# Reporting, MLflow, and the CLI
+
+Each experiment gets a Markdown model card and a standalone HTML comparison
+dashboard; the cross-config comparison table collects the three main fitted models
+from both experiments. These reports and MLflow metrics use raw run predictions,
+before the training factors used in the adjusted comparisons and scoring example.
+
+This optional operations recipe refits its own candidates. It creates every
+report it logs; no workbook or fitted model from another chapter is required.
+For a brief handoff, generate the cards and comparison below and stop there.
+
+{{< include _shared.qmd >}}
+
+```{python}
+import subprocess
+
+import yaml
+
+from azoic.mlops import log_run
+
+portfolio = load_portfolio()
+glm_config, gbm_config = make_experiment_configs(str(PORTFOLIO_PATH))
+glm_run = run_experiment(glm_config)
+gbm_run = run_experiment(gbm_config)
+runs = [glm_run, gbm_run]
+metrics = comparison_table(runs)
+```
+
+```{python}
+glm_card_path = ARTIFACT_DIR / "model_card_tariff_structured.md"
+gbm_card_path = ARTIFACT_DIR / "model_card_raw_feature.md"
+dashboard_path = ARTIFACT_DIR / "comparison_dashboard.html"
+
+glm_card_path.write_text(model_card(glm_run), encoding="utf-8")
+gbm_card_path.write_text(model_card(gbm_run), encoding="utf-8")
+dashboard_path.write_text(comparison_dashboard(runs), encoding="utf-8")
+
+assert metrics["model"].nunique() == 3
+assert glm_card_path.stat().st_size > 0
+assert gbm_card_path.stat().st_size > 0
+assert dashboard_path.stat().st_size > 0
+display(metrics[["config", "model", "gini_test", "op_ratio_test", "deviance_test"]])
+```
+
+## Log runs to local MLflow
+
+MLflow uses a local SQLite backend. Its artifact root is also placed under the
+tutorial artifact directory. Each `log_run` call records the data fingerprint,
+experiment and model parameters, all finite metrics, and the generated
+artifacts. `setup_mlflow_tracking` is a tutorial helper in `_shared.qmd`;
+`log_run` is the Azoic API. Only reports written above are attached, so an older
+tariff workbook cannot be mistaken for an artifact of these new runs.
+
+```{python}
+import mlflow
+
+tracking_uri, experiment_name = setup_mlflow_tracking()
+tracking_database = (ARTIFACT_DIR / "mlflow.db").resolve()
+
+artifacts = [glm_card_path, gbm_card_path, dashboard_path]
+mlflow_run_ids = [
+    log_run(
+        run,
+        tracking_uri=tracking_uri,
+        experiment_name=experiment_name,
+        artifacts=artifacts,
+    )
+    for run in runs
+]
+
+client = mlflow.MlflowClient(tracking_uri=tracking_uri)
+logged = [client.get_run(run_id) for run_id in mlflow_run_ids]
+
+assert glm_run.data_fingerprint == gbm_run.data_fingerprint
+assert all(
+    entry.data.params["experiment.data_fingerprint"] == glm_run.data_fingerprint
+    for entry in logged
+)
+assert all(
+    f"{model_name}.gini_test" in entry.data.metrics
+    for entry, run in zip(logged, runs, strict=True)
+    for model_name in run.models
+)
+assert all(
+    {Path(item.path).name for item in client.list_artifacts(run_id, path="artifacts")}
+    == {Path(path).name for path in artifacts}
+    for run_id in mlflow_run_ids
+)
+
+pd.DataFrame(
+    {
+        "run_id": mlflow_run_ids,
+        "tracking_database": [str(tracking_database.relative_to(ROOT))] * len(mlflow_run_ids),
+        "artifact_count": [len(artifacts)] * len(mlflow_run_ids),
+    }
+)
+```
+
+To inspect the run later, start the UI manually; rendering never starts a server:
+
+```bash
+uv run mlflow ui \
+  --backend-store-uri sqlite:///examples/_artifacts/fremtpl2/mlflow.db
+```
+
+## Drive the same workflow from the CLI
+
+The Python-only objects above have CLI equivalents. The cells below write the
+two experiment YAMLs, then invoke `azoic profile`, `azoic fit`, `azoic compare`,
+and `azoic export-tariff` as real subprocesses. Every command prints or writes
+into the tutorial artifacts directory.
+
+```{python}
+glm_yaml = ARTIFACT_DIR / "glm_config.yaml"
+gbm_yaml = ARTIFACT_DIR / "gbm_config.yaml"
+glm_yaml.write_text(
+    yaml.safe_dump(glm_config.model_dump(exclude_none=True)), encoding="utf-8"
+)
+gbm_yaml.write_text(
+    yaml.safe_dump(gbm_config.model_dump(exclude_none=True)), encoding="utf-8"
+)
+assert glm_yaml.stat().st_size > 0 and gbm_yaml.stat().st_size > 0
+print(glm_yaml.read_text().splitlines()[:6])
+```
+
+```{python}
+screening_csv = ARTIFACT_DIR / "cli_screening.csv"
+subprocess.run(
+    [
+        "uv", "run", "azoic", "profile",
+        "--data", str(PORTFOLIO_PATH),
+        "--target", "claim_amount",
+        "--exposure", "exposure",
+        "--claim-count", "claim_count",
+        "--out", str(screening_csv),
+    ],
+    cwd=ROOT,
+    check=True,
+    capture_output=True,
+    text=True,
+)
+assert screening_csv.stat().st_size > 0
+print(pd.read_csv(screening_csv).to_string(index=False))
+```
+
+```{python}
+cli_card = ARTIFACT_DIR / "cli_model_card.md"
+subprocess.run(
+    [
+        "uv", "run", "azoic", "fit",
+        "--config", str(glm_yaml),
+        "--out", str(cli_card),
+        "--quiet",
+    ],
+    cwd=ROOT,
+    check=True,
+    capture_output=True,
+    text=True,
+)
+assert cli_card.stat().st_size > 0
+print(cli_card.read_text()[:600])
+```
+
+```{python}
+cli_comparison = ARTIFACT_DIR / "cli_comparison.csv"
+subprocess.run(
+    [
+        "uv", "run", "azoic", "compare",
+        str(glm_yaml), str(gbm_yaml),
+        "--out", str(cli_comparison),
+    ],
+    cwd=ROOT,
+    check=True,
+    capture_output=True,
+    text=True,
+)
+assert cli_comparison.stat().st_size > 0
+print(pd.read_csv(cli_comparison).to_string(index=False))
+```
+
+Export both workbooks with `--no-recalibrate` to preserve their raw prediction
+scale. The direct export uses the GLM; the second distils the structured GBM
+using the stored train/test partition. Neither export uses holdout claims to
+set its premium level. The training multipliers shown in the scoring chapter
+are separate from these raw workbooks.
+
+Without this flag, CLI export recalibrates against the full loaded frame,
+including its holdout. Such a workbook has consumed the test outcomes and needs
+fresh evaluation data; the earlier raw metrics do not evaluate that adjustment.
+
+```{python}
+cli_glm_tariff = ARTIFACT_DIR / "cli_glm_tariff.xlsx"
+cli_distilled_tariff = ARTIFACT_DIR / "cli_distilled_tariff.xlsx"
+subprocess.run(
+    [
+        "uv", "run", "azoic", "export-tariff",
+        "--config", str(glm_yaml),
+        "--model", "direct-tweedie-glm",
+        "--no-recalibrate",
+        "--out", str(cli_glm_tariff),
+    ],
+    cwd=ROOT,
+    check=True,
+    capture_output=True,
+    text=True,
+)
+subprocess.run(
+    [
+        "uv", "run", "azoic", "export-tariff",
+        "--config", str(glm_yaml),
+        "--model", "tweedie-lightgbm-tariff",
+        "--distill",
+        "--no-recalibrate",
+        "--out", str(cli_distilled_tariff),
+    ],
+    cwd=ROOT,
+    check=True,
+    capture_output=True,
+    text=True,
+)
+assert cli_glm_tariff.stat().st_size > 0
+assert cli_distilled_tariff.stat().st_size > 0
+display(pd.read_excel(cli_glm_tariff, sheet_name="base_rate"))
+```
+
+`azoic tune` is exercised end-to-end in the tuning chapter, using a bounded
+trial budget; its full search output is intentionally kept out of this page.
+
+```{python}
+help_result = subprocess.run(
+    ["uv", "run", "azoic", "tune", "--help"],
+    cwd=ROOT,
+    check=True,
+    capture_output=True,
+    text=True,
+)
+print(help_result.stdout)
+```
+
+## Operational boundaries
+
+This book estimates the capped historical pure-premium layer. A deployable
+price still needs decisions about large losses above the cap, claims development,
+inflation, expenses, commission, profit, taxes, and business constraints.
+The local MLflow store and workbook are review artifacts, not a deployed scoring
+service or policy-system integration. Keep preprocessing, model, prediction
+scale, and calibration factor together when handing work over.
+
+Once these holdout results inform a change to features, tuning, factors, or
+calibration, they become development evidence. Evaluate the revised decision on
+fresh data or a reserved later period before claiming independent performance.

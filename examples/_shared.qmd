@@ -1,0 +1,321 @@
+```{python}
+#| include: false
+from pathlib import Path
+
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+from IPython.display import Image, display
+from sklearn.datasets import fetch_openml
+
+from azoic.data import DatasetSpec
+from azoic.metrics import (
+    calibration_table,
+    double_lift_table,
+    gini,
+    lorenz,
+    mean_tweedie_deviance,
+    one_way_table,
+    op_ratio,
+)
+from azoic.models import RiskGLM
+from azoic.plots import (
+    azoic_style,
+    model_colors,
+    plot_actual_vs_predicted,
+    plot_calibration,
+    plot_double_lift,
+    plot_lift,
+    plot_lorenz,
+    plot_one_way,
+)
+from azoic.profile import profile_features, screen_features
+from azoic.reporting import comparison_dashboard, comparison_table, model_card
+from azoic.tariff import apply_tariff, distill_gbm, export_tariff
+from azoic.workflow import (
+    ExperimentConfig,
+    ModelSpec,
+    PreprocessingSpec,
+    run_experiment,
+)
+```
+
+```{python}
+#| include: false
+ROOT = Path.cwd()
+if not (ROOT / "pyproject.toml").exists():
+    ROOT = ROOT.parent
+
+ARTIFACT_DIR = ROOT / "examples" / "_artifacts" / "fremtpl2"
+ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
+
+SAMPLE_SIZE = 1_000_000
+RANDOM_STATE = 42
+CLAIM_CAP = 100_000.0
+JOINED_PATH = ARTIFACT_DIR / "fremtpl2_joined_v3.parquet"
+PORTFOLIO_PATH = ARTIFACT_DIR / "portfolio_v3.parquet"
+AUDIT_PATH = ARTIFACT_DIR / "cleaning_audit_v1.csv"
+
+FEATURES = [
+    "driver_age",
+    "vehicle_age",
+    "bonus_malus",
+    "density",
+    "region",
+    "vehicle_brand",
+    "veh_power",
+    "veh_gas",
+    "area",
+]
+```
+
+```{python}
+#| include: false
+def load_portfolio():
+    """Fetch, join, clean, and cache the pinned freMTPL2 datasets."""
+    if not JOINED_PATH.exists() or not AUDIT_PATH.exists():
+        openml_cache = ARTIFACT_DIR / "openml-cache"
+        frequency = fetch_openml(
+            data_id=41214, as_frame=True, parser="auto", data_home=openml_cache
+        )
+        severity = fetch_openml(
+            data_id=41215, as_frame=True, parser="auto", data_home=openml_cache
+        )
+        frequency_frame = frequency.frame.copy()
+        severity_frame = severity.frame.copy()
+        raw_claim_amount = severity_frame["ClaimAmount"].sum()
+        severity_frame["ClaimAmount"] = severity_frame["ClaimAmount"].clip(upper=CLAIM_CAP)
+        capped_claim_amount = severity_frame["ClaimAmount"].sum()
+        claim_totals = (
+            severity_frame.groupby("IDpol", observed=True, as_index=False)["ClaimAmount"]
+            .sum()
+        )
+        joined = frequency_frame.merge(
+            claim_totals, on="IDpol", how="left", validate="one_to_one"
+        )
+        joined["ClaimAmount"] = joined["ClaimAmount"].fillna(0.0)
+        joined = joined.rename(
+            columns={
+                "IDpol": "policy_id",
+                "Exposure": "exposure",
+                "ClaimNb": "claim_count",
+                "ClaimAmount": "claim_amount",
+                "DrivAge": "driver_age",
+                "VehAge": "vehicle_age",
+                "BonusMalus": "bonus_malus",
+                "Density": "density",
+                "Region": "region",
+                "VehBrand": "vehicle_brand",
+                "VehPower": "veh_power",
+                "VehGas": "veh_gas",
+                "Area": "area",
+            }
+        )
+        numeric_columns = [
+            "policy_id",
+            "exposure",
+            "claim_count",
+            "claim_amount",
+            "driver_age",
+            "vehicle_age",
+            "bonus_malus",
+            "density",
+            "veh_power",
+        ]
+        joined[numeric_columns] = joined[numeric_columns].apply(pd.to_numeric)
+        for column in ["region", "vehicle_brand", "veh_gas", "area"]:
+            joined[column] = joined[column].astype("string").fillna("Missing").astype(str)
+        consistent_outcomes = (
+            ((joined["claim_count"] == 0) & (joined["claim_amount"] == 0))
+            | ((joined["claim_count"] > 0) & (joined["claim_amount"] > 0))
+        )
+        rules = {
+            "Joined policies before exclusions": pd.Series(True, index=joined.index),
+            "Missing or duplicate policy ID": (
+                joined["policy_id"].notna()
+                & joined["policy_id"].duplicated(keep=False).eq(False)
+            ),
+            "Exposure outside (0, 1]": joined["exposure"].gt(0) & joined["exposure"].le(1),
+            "Negative or missing claim count": joined["claim_count"].ge(0),
+            "Negative claim amount": joined["claim_amount"].ge(0),
+            "Driver age outside [18, 100]": joined["driver_age"].between(18, 100),
+            "Vehicle age outside [0, 100]": joined["vehicle_age"].between(0, 100),
+            "Bonus-malus outside [50, 230]": joined["bonus_malus"].between(50, 230),
+            "Vehicle power outside [2, 15]": joined["veh_power"].between(2, 15),
+            "Non-positive or missing density": joined["density"].gt(0),
+            "Inconsistent count and amount": consistent_outcomes,
+        }
+        valid = pd.Series(True, index=joined.index)
+        audit_rows = []
+        for rule, passes in rules.items():
+            passes = passes.fillna(False)
+            removed = valid & ~passes
+            valid &= passes
+            row = {"rule": rule}
+            for label, mask in [("removed", removed), ("retained", valid)]:
+                row[f"{label}_policies"] = int(mask.sum())
+                for column in ["exposure", "claim_count", "claim_amount"]:
+                    row[f"{label}_{column}"] = joined.loc[mask, column].sum()
+            audit_rows.append(row)
+        audit = pd.DataFrame(audit_rows).assign(
+            claim_cap=CLAIM_CAP,
+            raw_severity_claim_amount=raw_claim_amount,
+            capped_severity_claim_amount=capped_claim_amount,
+        )
+        joined = joined.loc[
+            valid,
+            [
+                "policy_id",
+                "exposure",
+                "claim_count",
+                "claim_amount",
+                "driver_age",
+                "vehicle_age",
+                "bonus_malus",
+                "density",
+                "region",
+                "vehicle_brand",
+                "veh_power",
+                "veh_gas",
+                "area",
+            ],
+        ].reset_index(drop=True)
+        joined["veh_power"] = (
+            joined["veh_power"].astype("string").fillna("Missing").astype(str)
+        )
+        joined.to_parquet(JOINED_PATH, index=False)
+        audit.to_csv(AUDIT_PATH, index=False)
+    joined = pd.read_parquet(JOINED_PATH)
+    portfolio = (
+        joined.sample(
+            n=min(SAMPLE_SIZE, len(joined)),
+            random_state=RANDOM_STATE,
+            replace=False,
+        )
+        .sort_values("policy_id")
+        .reset_index(drop=True)
+    )
+    portfolio.to_parquet(PORTFOLIO_PATH, index=False)
+    return portfolio
+```
+
+```{python}
+#| include: false
+def make_experiment_configs(data_path, random_state=RANDOM_STATE):
+    """Base models: direct Tweedie GLM and raw/tariff GBMs on the same partition."""
+    glm_config = ExperimentConfig(
+        name="fremtpl2-tariff-structured",
+        data_path=str(data_path),
+        spec=DatasetSpec(
+            target="claim_amount",
+            exposure="exposure",
+            claim_count="claim_count",
+        ),
+        features=FEATURES,
+        preprocessing=PreprocessingSpec(
+            binner={
+                "cols": ["driver_age", "vehicle_age", "bonus_malus", "density"],
+                "strategy": "tree",
+                "max_bins": 8,
+                "min_exposure": 1000,
+                "min_claims": 50,
+                "random_state": random_state,
+            },
+            grouper={
+                "cols": ["region", "vehicle_brand", "veh_power", "veh_gas", "area"],
+                "strategy": "similarity",
+                "max_groups": 8,
+                "min_exposure": 2000,
+                "min_claims": 50,
+            },
+        ),
+        split="random",
+        test_size=0.2,
+        random_state=random_state,
+        models={
+            "direct-tweedie-glm": ModelSpec(
+                kind="glm",
+                params={
+                    "family": "tweedie",
+                    "link": "log",
+                    "tweedie_power": 1.5,
+                    "alpha": 0.001,
+                },
+            ),
+            "tweedie-lightgbm-tariff": ModelSpec(
+                kind="gbm",
+                params={
+                    "objective": "tweedie",
+                    "tweedie_variance_power": 1.5,
+                    "n_estimators": 100,
+                    "num_leaves": 31,
+                    "learning_rate": 0.05,
+                    "random_state": random_state,
+                },
+            ),
+        },
+    )
+    gbm_config = ExperimentConfig(
+        name="fremtpl2-raw-feature",
+        data_path=str(data_path),
+        spec=glm_config.spec.model_copy(),
+        features=FEATURES,
+        split="random",
+        test_size=0.2,
+        random_state=random_state,
+        models={
+            "tweedie-lightgbm": ModelSpec(
+                kind="gbm",
+                params={
+                    "objective": "tweedie",
+                    "tweedie_variance_power": 1.5,
+                    "n_estimators": 100,
+                    "num_leaves": 31,
+                    "learning_rate": 0.05,
+                    "random_state": random_state,
+                },
+            ),
+        },
+    )
+    return glm_config, gbm_config
+```
+
+```{python}
+#| include: false
+def setup_mlflow_tracking(
+    artifact_dir=ARTIFACT_DIR, experiment_name="azoic-fremtpl2-tutorial"
+):
+    """Point MLflow at the local SQLite store under the tutorial artifacts."""
+    import mlflow
+
+    tracking_database = (artifact_dir / "mlflow.db").resolve()
+    tracking_uri = f"sqlite:///{tracking_database}"
+    artifact_root = (artifact_dir / "mlruns").resolve()
+    mlflow.set_tracking_uri(tracking_uri)
+    if mlflow.get_experiment_by_name(experiment_name) is None:
+        mlflow.create_experiment(
+            experiment_name, artifact_location=artifact_root.as_uri()
+        )
+    return tracking_uri, experiment_name
+```
+
+```{python}
+#| include: false
+def holdout_diagnostics(y_true, w, prediction):
+    """Gini, O/P, exposure-weighted Tweedie deviance, and D2 on held-out rows."""
+    null_deviance = mean_tweedie_deviance(
+        y_true / w,
+        np.full(len(y_true), y_true.sum() / w.sum()),
+        sample_weight=w,
+        power=1.5,
+    )
+    deviance = mean_tweedie_deviance(
+        y_true / w, prediction, sample_weight=w, power=1.5
+    )
+    return {
+        "gini_test": gini(y_true, prediction, w),
+        "op_ratio_test": op_ratio(y_true, prediction, w),
+        "deviance_test": deviance,
+        "d2_test": 1 - deviance / null_deviance,
+    }
+```

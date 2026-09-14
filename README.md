@@ -6,7 +6,7 @@ frequency-severity decomposition, actuarial diagnostics, reproducible runs,
 GBM-to-GLM distillation, and multiplicative tariff export.
 
 - Documentation: <https://thomasbury.github.io/azoic/>
-- Hosted freMTPL2 tutorial: <https://thomasbury.github.io/azoic/tutorial/fremtpl2.html>
+- Hosted tutorial series: <https://thomasbury.github.io/azoic/tutorial/index.html>
 - Full spec and conventions: [`PRD.md`](PRD.md)
 - Agent quick rules: [`AGENTS.md`](AGENTS.md)
 - Status: [`PROGRESS.md`](PROGRESS.md)
@@ -34,21 +34,22 @@ levels and non-finite numeric inputs.
 Positive-objective GBMs can be exported through `azoic export-tariff
 --distill`; the workbook reproduces the distilled GLM student, not the teacher.
 
-## Executable freMTPL2 tutorial
+## Executable tutorial series
 
-[`examples/fremtpl2.qmd`](examples/fremtpl2.qmd) runs the complete technical-
-tariff workflow on pinned OpenML data. Install its Jupyter kernel plus the
-existing MLflow and Plotly extras; install Quarto separately and ensure its
-`quarto` executable is on `PATH`.
+The numbered Quarto book under [`examples/`](examples/) runs the complete
+technical-tariff workflow on pinned OpenML data and then covers tuning,
+temporal stability, protected-group audit, and manual tariff recipes. Install
+the Jupyter kernel plus the MLflow, Plotly, and tuning extras; install Quarto
+separately and ensure its `quarto` executable is on `PATH`.
 
 ```bash
-uv sync --group demo --extra mlops
+uv sync --group demo --extra mlops --extra plot --extra tune
 just demo
 ```
 
-The render produces the ignored standalone `examples/fremtpl2.html`; fetched
-data, the tariff workbook, reports, and local MLflow files stay under the
-ignored `examples/_artifacts/fremtpl2/`. To inspect the recorded run afterward:
+The render produces the ignored book under `examples/_book/`; fetched data,
+the tariff workbook, reports, and local MLflow files stay under the ignored
+`examples/_artifacts/`. To inspect the recorded run afterward:
 
 ```bash
 uv run mlflow ui \

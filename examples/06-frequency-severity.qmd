@@ -1,0 +1,271 @@
+# Frequency–severity alternatives
+
+Separate models help investigate whether a pricing discrepancy comes from how
+often claims occur (frequency) or how much each claim costs (severity). For example,
+a segment may have more claims than predicted but smaller claims than predicted;
+the product can conceal these opposing errors. Use the component tables to choose
+what to investigate, then assess the final pure premium against losses as well.
+
+These two alternatives use the same stored partition as the direct Tweedie models.
+Frequency fits claim count / exposure with exposure weights. Severity fits
+claim amount / claim count with claim-count weights on positive-claim rows only;
+that filter remains inside `FrequencySeverityModel.fit`. Their product predicts
+pure-premium rates. The GLMs use the tariff structure; the GBMs use raw features.
+Good calibration of each component in its own groups does not guarantee calibration
+of their product on all policies: the weights and populations differ, and component
+errors can reinforce or offset each other.
+
+{{< include _shared.qmd >}}
+
+```{python}
+#| include: false
+
+portfolio = load_portfolio()
+glm_config, gbm_config = make_experiment_configs(str(PORTFOLIO_PATH))
+glm_run = run_experiment(glm_config)
+gbm_run = run_experiment(gbm_config)
+runs = [glm_run, gbm_run]
+train_frame = portfolio.iloc[list(glm_run.train_indices)].copy()
+test_frame = portfolio.iloc[list(glm_run.test_indices)].copy()
+y_train = train_frame["claim_amount"].to_numpy()
+w_train = train_frame["exposure"].to_numpy()
+y_test = test_frame["claim_amount"].to_numpy()
+w_test = test_frame["exposure"].to_numpy()
+raw_predict_columns = [*FEATURES, "exposure"]
+```
+
+## Fit the two alternatives
+
+The configurations keep the earlier GLM preprocessing and GBM settings. Severity's
+positive-claim training filter remains inside the composite estimator; no rows are
+removed from the frequency training population.
+
+```{python}
+fs_glm_config = glm_config.model_copy(update={
+    "name": "fremtpl2-frequency-severity-glm",
+    "models": {
+        "frequency-severity-glm": ModelSpec(
+            kind="frequency_severity",
+            frequency=ModelSpec(
+                kind="glm",
+                params={"family": "poisson", "link": "log", "alpha": 0.001},
+            ),
+            severity=ModelSpec(
+                kind="glm",
+                params={"family": "gamma", "link": "log", "alpha": 0.001},
+            ),
+        ),
+    },
+})
+fs_gbm_config = gbm_config.model_copy(update={
+    "name": "fremtpl2-frequency-severity-gbm",
+    "models": {
+        "frequency-severity-gbm": ModelSpec(
+            kind="frequency_severity",
+            frequency=ModelSpec(
+                kind="gbm",
+                params={
+                    "objective": "poisson",
+                    "n_estimators": 100,
+                    "num_leaves": 31,
+                    "learning_rate": 0.05,
+                    "random_state": RANDOM_STATE,
+                },
+            ),
+            severity=ModelSpec(
+                kind="gbm",
+                params={
+                    "objective": "gamma",
+                    "n_estimators": 100,
+                    "num_leaves": 31,
+                    "learning_rate": 0.05,
+                    "random_state": RANDOM_STATE,
+                },
+            ),
+        ),
+    },
+})
+```
+
+```{python}
+#| include: false
+appendix_runs = []
+fs_estimators = {}
+for config in [fs_glm_config, fs_gbm_config]:
+    run, fitted = run_experiment(config, return_estimators=True)
+    assert run.data_fingerprint == glm_run.data_fingerprint
+    assert run.train_indices == glm_run.train_indices
+    assert run.test_indices == glm_run.test_indices
+    appendix_runs.append(run)
+    fs_estimators.update(fitted)
+```
+
+## Read the components for the same policies
+
+Prediction needs features and exposure, with no claim outcomes. For the GLM, reuse
+the training-fitted preprocessing before accessing `freq_` and `sev_` on the final
+estimator. [Pipeline slicing](https://scikit-learn.org/stable/modules/compose.html#pipeline)
+retains those fitted steps; calling `transform` does not refit their bins or groups.
+Both components then receive only the transformed features, just as during fitting.
+The GBM components receive the raw features.
+
+```{python}
+from sklearn.pipeline import Pipeline
+
+component_predictions = {}
+component_inputs = test_frame[raw_predict_columns]
+for name, estimator in fs_estimators.items():
+    if isinstance(estimator, Pipeline):
+        component_frame = estimator[:-1].transform(component_inputs)[FEATURES]
+        composite = estimator[-1]
+    else:
+        component_frame = component_inputs[FEATURES]
+        composite = estimator
+    frequency = np.asarray(composite.freq_.predict(component_frame))
+    severity = np.asarray(composite.sev_.predict(component_frame))
+    product = frequency * severity
+    assert np.isfinite(frequency).all() and (frequency > 0).all()
+    assert np.isfinite(severity).all() and (severity > 0).all()
+    np.testing.assert_allclose(product, estimator.predict(component_inputs))
+    component_predictions[name] = pd.DataFrame({
+        "policy_id": test_frame["policy_id"].to_numpy(),
+        "frequency": frequency,
+        "severity": severity,
+        "raw_product": product,
+    })
+    print(name)
+    display(component_predictions[name].head(5).rename(columns={
+        "policy_id": "Policy ID", "frequency": "Claims / insured year",
+        "severity": "Cost / claim", "raw_product": "Raw cost / insured year",
+    }))
+```
+
+Multiplying claims per insured year by cost per claim gives cost per insured year.
+These are raw component predictions. Later, a training O/P multiplier adjusts the
+**product once**. Applying it to both components would multiply the product by the
+square of that factor and would give the components an unsupported interpretation.
+
+## Check each component on held-out observations
+
+`calibration_table` sums observed totals and divides by the supplied weights.
+For frequency, pass **counts**, predicted frequency, and exposure on **all** test
+policies. For severity, pass **amounts**, predicted cost per claim, and claim counts
+on **positive-claim** test policies. Zero-claim policies have no observed claim size;
+they still receive severity predictions above and remain in product evaluation.
+
+Each table uses five weighted prediction groups (fewer if predictions tie). Frequency
+groups have roughly equal exposure; severity groups have roughly equal claim counts.
+Group numbers run from lower to higher predictions within that component/model,
+so the same number across tables need not identify the same policies. The renamed
+columns below show the component units instead of the function's default loss labels.
+O/P above one means observed totals exceed predicted totals; below one means the reverse.
+
+```{python}
+claim_counts = test_frame["claim_count"].to_numpy()
+positive_claim = claim_counts > 0
+component_tables = {}
+for name, predictions in component_predictions.items():
+    frequency_table = calibration_table(
+        claim_counts, predictions["frequency"], w_test, n_bins=5,
+    ).rename(columns={
+        "group": "Group", "exposure": "Exposure (insured years)",
+        "claim_amount": "Observed claims", "predicted_claim_amount": "Predicted claims",
+        "observed_pure_premium": "Observed claims / year",
+        "predicted_pure_premium": "Predicted claims / year", "o_p_ratio": "O/P",
+    })
+    severity_table = calibration_table(
+        y_test[positive_claim], predictions["severity"].to_numpy()[positive_claim],
+        claim_counts[positive_claim], n_bins=5,
+    ).rename(columns={
+        "group": "Group", "exposure": "Claim count",
+        "claim_amount": "Observed amount", "predicted_claim_amount": "Predicted amount",
+        "observed_pure_premium": "Observed cost / claim",
+        "predicted_pure_premium": "Predicted cost / claim", "o_p_ratio": "O/P",
+    })
+    component_tables[name] = {"frequency": frequency_table, "severity": severity_table}
+    print(f"{name}: raw frequency, all held-out policies")
+    display(frequency_table.round(3))
+    print(f"{name}: raw severity, positive-claim held-out policies")
+    display(severity_table.round(3))
+```
+
+In the default full-portfolio render (133,535 held-out policies), GLM severity
+group 1 contains 1,048 claims: observed cost per claim is about 2,005 versus 1,624
+predicted, giving O/P 1.234. Observed claim size is 23.4% above the prediction in
+that group, even though the GLM's frequency-group ratios are fairly close to one.
+This points to claim-size calibration as a useful next investigation.
+
+For the GBM, severity group 1 has 1,047 claims and observed cost per claim about
+2,096 versus 1,437 predicted (O/P 1.458). Its lowest-frequency group instead has
+475 observed claims versus about 576 predicted over 14,102 insured years (O/P
+0.825). That is an overprediction of claim counts alongside an underprediction
+of claim size in a different grouping. The group memberships differ, so these
+two ratios cannot be multiplied to explain the product's error. Inspect which
+policies and features drive each discrepancy before deciding what to change.
+These numbers describe the default run; use the tables above if you change the sample.
+
+Small claim counts and a few large losses can make a severity discrepancy unstable.
+Inspect the support columns before deciding to change a feature or model. These
+held-out tables diagnose the fitted alternatives; do not use their O/P ratios to
+recalibrate predictions on this same holdout.
+
+## Compare the product with direct Tweedie
+
+The raw product is checked against each saved run below. Each alternative also gets
+its own multiplier from **training** observed losses divided by training predicted
+losses. This balances training totals; it need not improve held-out calibration or
+deviance. Gini measures ranking and is unchanged by a positive multiplier.
+
+```{python}
+appendix_rows = []
+for run in appendix_runs:
+    for name in run.models:
+        estimator = fs_estimators[name]
+        train_prediction = np.asarray(estimator.predict(train_frame[raw_predict_columns]))
+        prediction = np.asarray(estimator.predict(test_frame[raw_predict_columns]))
+        assert np.isfinite(train_prediction).all() and (train_prediction > 0).all()
+        assert np.isfinite(prediction).all() and (prediction > 0).all()
+        raw_metrics = holdout_diagnostics(y_test, w_test, prediction)
+        np.testing.assert_allclose(
+            list(raw_metrics.values()), [run.models[name].metrics[k] for k in raw_metrics]
+        )
+        factor = op_ratio(y_train, train_prediction, w_train)
+        np.testing.assert_allclose(op_ratio(y_train, factor * train_prediction, w_train), 1)
+        adjusted = holdout_diagnostics(y_test, w_test, factor * prediction)
+        np.testing.assert_allclose(adjusted["gini_test"], raw_metrics["gini_test"])
+        for scale, values in [("raw", raw_metrics), ("training O/P adjusted", adjusted)]:
+            appendix_rows.append({"model": name, "prediction_scale": scale,
+                                  "training_factor": factor, **values})
+for scale, table in pd.DataFrame(appendix_rows).groupby("prediction_scale", sort=False):
+    print(scale)
+    display(table.drop(columns="prediction_scale").set_index("model").rename(columns={
+        "training_factor": "Factor", "gini_test": "Gini", "op_ratio_test": "O/P",
+        "deviance_test": "Deviance", "d2_test": "D²",
+    }))
+print("All candidates on the raw scale")
+display(comparison_table([*runs, *appendix_runs]).set_index("model")
+        [["gini_test", "op_ratio_test", "deviance_test", "d2_test"]]
+        .rename(columns={"gini_test": "Gini", "op_ratio_test": "O/P",
+                         "deviance_test": "Deviance", "d2_test": "D²"}))
+```
+
+These are descriptive comparisons on one split, not evidence of statistical
+superiority. The final table uses **raw** predictions for every candidate on the
+same holdout; Tweedie deviance uses exposure weights and fixed power 1.5 (lower is
+better), while O/P measures overall level and Gini measures concentration ranking.
+The adjusted product rows above are a separate comparison scale.
+
+In that same default render, the frequency–severity GLM has slightly lower raw
+deviance than the direct Tweedie GLM (75.238 versus 75.338) and higher Gini (0.314
+versus 0.310), but its overall O/P is farther from one (1.032 versus 1.022).
+For raw-feature GBMs, the product has lower deviance (74.561 versus 74.721), but
+slightly lower Gini (0.339 versus 0.342). Its raw O/P is still 1.174: observed
+losses are 17.4% above predicted losses. Applying its frozen training factor once
+brings held-out O/P to about 1.026; this does not establish segment calibration.
+The component view helps explain what to investigate, while the product metrics
+show the tradeoffs in the final price. Neither alternative improves every metric,
+and this one split does not establish which model will perform best on future data.
+
+To save model cards, dashboards, or MLflow runs, continue with the optional
+[reporting and operations recipe](05-reporting-mlops.qmd). This chapter creates
+only its data cache and in-page results; it does not set up a tracking store.

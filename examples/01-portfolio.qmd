@@ -1,0 +1,189 @@
+# Portfolio ingestion and review
+
+The frequency and severity datasets are pinned by OpenML data IDs
+[41214](https://www.openml.org/d/41214) and
+[41215](https://www.openml.org/d/41215). They are fetched through
+`sklearn.datasets.fetch_openml`, following the
+[scikit-learn insurance example](https://scikit-learn.org/stable/auto_examples/linear_model/plot_tweedie_regression_insurance_claims.html).
+
+Cleaning is deliberately deterministic and conservative:
+
+1. cap individual claim amounts at 100,000 (large-loss stability; the tariff
+   prices the retained layer);
+2. aggregate severity rows to policy-level claim amount and left-join by
+   policy ID;
+3. retain unique policies with $0 < exposure \le 1$, non-negative outcomes,
+   positive density, plausible ages, bonus-malus in $[50, 230]$, vehicle
+   power in $[2, 15]$, and consistent zero/positive claim count and amount;
+4. rename only the columns used by Azoic and derive no outcome-informed
+   features.
+
+The cap applies to **each claim before aggregation**. A policy with two capped
+claims can therefore have a `claim_amount` above the cap. Costs above that layer
+need a separate pricing decision. The live tables below separate this cap effect
+from policy exclusions, then describe the sample actually used for modelling.
+
+## Retained columns
+
+The [CASdatasets field descriptions](https://github.com/dutangc/CASdatasets/blob/master/man/freMTPL.Rd)
+explain the source encodings. The retained columns are renamed as follows. Only the nine predictors enter
+model fitting; the identifier and outcomes are not rating inputs.
+
+| Column | Meaning and unit or encoding | Role |
+|---|---|---|
+| `policy_id` | Source `IDpol`; policy identifier, not a time field | Identifier |
+| `exposure` | Observed fraction of a policy-year; retained range $(0, 1]$ | Exposure (rate denominator and weight) |
+| `claim_count` | Number of claims during the observed period (`ClaimNb`) | Outcome |
+| `claim_amount` | Policy aggregate cost: sum of individually capped claims, in euros; zero when no severity row matches | Outcome |
+| `driver_age` | Main driver's age in years (`DrivAge`), retained 18–100 | Predictor |
+| `vehicle_age` | Vehicle age in years (`VehAge`), retained 0–100 | Predictor |
+| `bonus_malus` | Bonus-malus index (`BonusMalus`); 100 is the reference, lower means a bonus, higher a penalty; retained 50–230 | Predictor |
+| `density` | Inhabitants per square kilometre in the driver's city (`Density`), positive | Predictor |
+| `region` | Source French region code (`Region`), treated as a category | Predictor |
+| `vehicle_brand` | Source vehicle-brand category code (`VehBrand`), not a decoded brand name | Predictor |
+| `veh_power` | Source ordered vehicle-power category (`VehPower`), retained 2–15 and converted to a string for grouping | Predictor |
+| `veh_gas` | Fuel category (`VehGas`): diesel or regular | Predictor |
+| `area` | Source density-area category (`Area`), A–F; retained as a category | Predictor |
+
+Missing `region`, `vehicle_brand`, `veh_gas`, or `area` values become the
+literal category `"Missing"`. Missing numeric rating values fail their range
+or positivity rule. For pure-premium fitting, the target rate is
+`claim_amount / exposure` (euros per policy-year), weighted by `exposure`.
+
+## Cache and sample controls
+
+`load_portfolio` is a tutorial helper defined in `examples/_shared.qmd`, where
+`CLAIM_CAP`, `SAMPLE_SIZE`, and `RANDOM_STATE` are set. `SAMPLE_SIZE` caps the
+cleaned policies used; the default exceeds the portfolio, so it uses all rows.
+Tuning and protected-group recipes use at most 100,000 of the available rows.
+Smaller samples change the evidence and may leave too few claims for a useful fit.
+
+The cleaned cache does **not** detect changes to `CLAIM_CAP` or cleaning rules.
+After changing either, delete
+`examples/_artifacts/fremtpl2/fremtpl2_joined_v3.parquet` **and**
+`examples/_artifacts/fremtpl2/cleaning_audit_v1.csv` before rerunning.
+Keep `openml-cache/` to reuse the raw download. If either derived cache is
+missing, the loader rebuilds both from those raw inputs; it never reconstructs
+exclusions from already-cleaned policies. Each call regenerates
+`portfolio_v3.parquet` from the cleaned cache using the current sample settings;
+changing only sample size or seed does not require deleting the cleaned cache.
+Rerender affected chapters to regenerate matching reports and workbooks.
+
+{{< include _shared.qmd >}}
+
+```{python}
+source_metadata = pd.DataFrame(
+    [
+        {
+            "openml_id": 41214,
+            "name": "freMTPL2freq",
+            "role": "policy exposure and claim counts",
+            "source": "https://www.openml.org/d/41214",
+        },
+        {
+            "openml_id": 41215,
+            "name": "freMTPL2sev",
+            "role": "individual claim amounts",
+            "source": "https://www.openml.org/d/41215",
+        },
+    ]
+)
+display(source_metadata)
+```
+
+## Claim cap before policy exclusions
+
+These totals cover every row in the pinned **severity** input, before the
+policy join, exclusions, or sampling. The exclusion audit starts from the
+left-joined **frequency** policies, so unmatched severity IDs do not contribute
+to that table. The configured cap is stored with the audit.
+
+```{python}
+portfolio = load_portfolio()
+cleaning_audit = pd.read_csv(AUDIT_PATH)
+cap_totals = cleaning_audit.iloc[0]
+raw_amount = cap_totals["raw_severity_claim_amount"]
+capped_amount = cap_totals["capped_severity_claim_amount"]
+display(pd.Series({
+    "Individual claim cap (EUR)": cap_totals["claim_cap"],
+    "Raw severity total (EUR)": raw_amount,
+    "Capped severity total (EUR)": capped_amount,
+    "Reduction (EUR)": raw_amount - capped_amount,
+    "Reduction (%)": 100 * (raw_amount - capped_amount) / raw_amount,
+}).to_frame("Before policy exclusions").style.format("{:,.2f}"))
+```
+
+## Sequential policy exclusions
+
+Read the rules from top to bottom. Each removed policy is attributed to its
+**first failing rule**, so overlapping problems count once. At each step,
+previous retained totals equal removed plus newly retained totals. The first
+row is the joined population; the last is the cleaned population **before
+sampling**. The default pinned inputs retain 667,673 policies.
+
+Exposure is in policy-years; claim amounts are policy aggregates of capped
+claims in euros. Missing numeric values contribute no amount to sums, while
+those rows still count as policies. Negative invalid values remain signed in
+removed totals. The one-to-one join rejects duplicate source policy IDs before
+these rules; the ID rule also catches missing IDs or duplicates after numeric
+conversion. Zero/positive count–amount inconsistencies are excluded, not repaired.
+
+```{python}
+#| echo: false
+audit_by_rule = cleaning_audit.set_index("rule")
+display(audit_by_rule[[
+    "removed_policies", "retained_policies", "removed_exposure", "retained_exposure",
+]].rename(columns={
+    "removed_policies": "Policies removed", "retained_policies": "Policies retained",
+    "removed_exposure": "Exposure removed", "retained_exposure": "Exposure retained",
+}).style.format({
+    "Policies removed": "{:,.0f}", "Policies retained": "{:,.0f}",
+    "Exposure removed": "{:,.2f}", "Exposure retained": "{:,.2f}",
+}))
+display(audit_by_rule[[
+    "removed_claim_count", "retained_claim_count",
+    "removed_claim_amount", "retained_claim_amount",
+]].rename(columns={
+    "removed_claim_count": "Claims removed", "retained_claim_count": "Claims retained",
+    "removed_claim_amount": "EUR removed", "retained_claim_amount": "EUR retained",
+}).style.format({
+    "Claims removed": "{:,.0f}", "Claims retained": "{:,.0f}",
+    "EUR removed": "{:,.2f}", "EUR retained": "{:,.2f}",
+}))
+```
+
+## Portfolio used in this render
+
+This summary describes the actual `SAMPLE_SIZE`/`RANDOM_STATE` selection from
+the cleaned policies. Reducing the sample changes these totals, not the
+pre-sampling audit above.
+
+```{python}
+pd.DataFrame(
+    {
+        "policies": [len(portfolio)],
+        "exposure": [portfolio["exposure"].sum()],
+        "claims": [portfolio["claim_count"].sum()],
+        "claim_amount": [portfolio["claim_amount"].sum()],
+        "observed_frequency": [
+            portfolio["claim_count"].sum() / portfolio["exposure"].sum()
+        ],
+        "observed_pure_premium": [
+            portfolio["claim_amount"].sum() / portfolio["exposure"].sum()
+        ],
+    }
+).T.rename(columns={0: "portfolio value"})
+```
+
+## Descriptive review before learned preprocessing
+
+Profiling and screening are descriptive review aids. They do not learn tariff
+relativities and do not replace actuarial judgement. Binning and grouping are
+fitted in the next chapter, using training rows only.
+
+```{python}
+profile = profile_features(portfolio[FEATURES])
+screening = screen_features(profile, max_groups=10, max_numeric_unique=20)
+display(profile[["column", "dtype", "missing_rate", "n_unique"]])
+display(screening)
+```

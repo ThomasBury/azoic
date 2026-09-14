@@ -1,0 +1,620 @@
+# Held-out diagnostics
+
+The reported Gini is a **concentration Gini for ranking only**, not a normalized
+Gini. Equal prediction scores are aggregated into tied blocks, so row order inside
+a tie cannot change the result. It does not establish calibration. O/P ratio,
+exposure-weighted calibration deciles, and exposure-weighted mean Tweedie deviance
+with fixed power 1.5 assess different aspects of fit and must be reviewed alongside
+ranking.
+
+Charts reuse the stored test positions. We calculate a training-only level
+adjustment for every candidate before reviewing raw and adjusted holdout metrics.
+The fitted estimators and their `Run` metrics remain raw.
+
+On a first reading, follow training adjustment, held-out metrics, lift and
+calibration, and age one-ways, then use the review questions to move to scoring.
+Derivations and secondary diagnostics are optional sections below.
+`holdout_diagnostics` is a tutorial helper in `_shared.qmd`; it combines existing
+Azoic metrics on these same held-out rows.
+
+{{< include _shared.qmd >}}
+
+```{python}
+#| code-fold: true
+#| code-summary: "Refit this chapter's candidates"
+portfolio = load_portfolio()
+glm_config, gbm_config = make_experiment_configs(str(PORTFOLIO_PATH))
+glm_run, glm_estimators = run_experiment(glm_config, return_estimators=True)
+gbm_run, gbm_estimators = run_experiment(gbm_config, return_estimators=True)
+estimators = {**glm_estimators, **gbm_estimators}
+train_frame = portfolio.iloc[list(glm_run.train_indices)].copy()
+test_frame = portfolio.iloc[list(glm_run.test_indices)].copy()
+y_train = train_frame["claim_amount"].to_numpy()
+w_train = train_frame["exposure"].to_numpy()
+y_test = test_frame["claim_amount"].to_numpy()
+w_test = test_frame["exposure"].to_numpy()
+raw_predict_columns = [*FEATURES, "exposure"]
+```
+
+A model family does not guarantee portfolio balance. Measure it for every
+candidate; the optional balance derivation below explains why.
+
+## Freeze a training burn-cost adjustment
+
+For this tutorial, explicitly multiply **every** GLM and GBM candidate's rates
+by its training observed/predicted ratio:
+
+$$
+c_m = \frac{\sum_{i\in\mathrm{train}}\mathrm{claim\ amount}_i}
+            {\sum_{i\in\mathrm{train}}w_i\mu_{mi}},
+\qquad \mu^{\mathrm{adjusted}}_{mi}=c_m\mu_{mi}.
+$$
+
+The factor uses the stored training positions only and is frozen before we
+inspect holdout outcomes or metrics. It balances training totals; it need not
+improve test deviance, test O/P, or segment calibration. A positive factor
+preserves ranking while changing level diagnostics. The table shows training
+O/P for all three main candidates and checks their adjusted training totals.
+
+```{python}
+recalibration_factors = {}
+training_rows = []
+for name, estimator in estimators.items():
+    pred_train = np.asarray(estimator.predict(train_frame[raw_predict_columns]), dtype=float)
+    assert np.isfinite(pred_train).all() and (pred_train > 0).all()
+    factor = op_ratio(y_train, pred_train, w_train)
+    assert np.isfinite(factor) and factor > 0
+    recalibration_factors[name] = factor
+    adjusted_op = op_ratio(y_train, factor * pred_train, w_train)
+    np.testing.assert_allclose(adjusted_op, 1)
+    training_rows.append({
+        "model": name, "raw_training_O/P": factor,
+        "frozen_factor": factor, "adjusted_training_O/P": adjusted_op,
+    })
+assert set(recalibration_factors) == set(estimators)
+display(pd.DataFrame(training_rows))
+```
+
+## Charts on the held-out test rows
+
+Re-predict every fitted model on the stored holdout using rating features and
+exposure only, as in outcome-free scoring. Check raw metrics against each run,
+then show raw and training-adjusted results on those same rows. The comparison
+charts use adjusted predictions; the GLM structure illustrations explicitly use
+raw rates. Model cards, comparison dashboards, and MLflow retain raw run metrics.
+
+```{python}
+raw_test_predictions: dict[str, np.ndarray] = {}
+test_predictions: dict[str, np.ndarray] = {}
+
+holdout_rows = []
+for name, estimator in estimators.items():
+    prediction = np.asarray(estimator.predict(test_frame[raw_predict_columns]), dtype=float)
+    assert np.isfinite(prediction).all() and (prediction > 0).all()
+    raw_test_predictions[name] = prediction
+    raw_metrics = holdout_diagnostics(y_test, w_test, prediction)
+    result = (glm_run if name in glm_run.models else gbm_run).models[name]
+    np.testing.assert_allclose(
+        list(raw_metrics.values()), [result.metrics[key] for key in raw_metrics]
+    )
+    pd.testing.assert_frame_equal(
+        calibration_table(y_test, prediction, w_test, n_bins=10),
+        result.calibration_table,
+    )
+    adjusted_prediction = prediction * recalibration_factors[name]
+    test_predictions[name] = adjusted_prediction
+    adjusted_metrics = holdout_diagnostics(y_test, w_test, adjusted_prediction)
+    np.testing.assert_allclose(adjusted_metrics["gini_test"], raw_metrics["gini_test"])
+    for scale, values in [("raw", raw_metrics), ("training O/P adjusted", adjusted_metrics)]:
+        holdout_rows.append({"model": name, "prediction_scale": scale, **values})
+
+holdout_metrics = pd.DataFrame(holdout_rows)
+for scale, table in holdout_metrics.groupby("prediction_scale", sort=False):
+    print(scale)
+    display(table.set_index("model")[["gini_test", "op_ratio_test", "deviance_test", "d2_test"]]
+            .rename(columns={"gini_test": "Gini", "op_ratio_test": "O/P",
+                             "deviance_test": "Deviance", "d2_test": "D²"}))
+RAW_BENCHMARK = "tweedie-lightgbm"
+BENCHMARK = "direct-tweedie-glm"
+CHART_SCALE = "training O/P adjusted"
+colors = model_colors(list(estimators))
+```
+
+Lorenz curves for all three main models on one axes — the dotted diagonal (random
+ranking) and the grey dash-dot oracle (hindsight ranking by observed rate) are
+drawn once, one color per model, Gini in the legend. The oracle is unavailable
+at prediction time and need not have Gini one. Gini is twice the signed area
+from the concentration curve to the diagonal. A lower curve dominates another
+only if it is nowhere above it; crossing curves do not establish dominance.
+
+```{python}
+#| fig-alt: "Held-out concentration curves compare ranking with the diagonal and observed-rate oracle; crossing curves do not establish dominance."
+#| code-fold: true
+with azoic_style():
+    fig, ax = plt.subplots(figsize=(6.5, 5))
+    plot_lorenz(
+        y_test,
+        test_predictions,
+        w_test,
+        ax=ax,
+        show_oracle=True,
+        title=f"Held-out Lorenz curves — {CHART_SCALE}",
+    )
+    fig.savefig(ARTIFACT_DIR / "lorenz.png", bbox_inches="tight")
+    plt.show()
+```
+
+Lift and calibration grids, one panel per model, computed from the
+recalibrated test predictions. The lift chart shows the observed (grey) and
+predicted (model color) pure premium per exposure-balanced decile of predicted
+risk: the two lines should track in level (calibration) while observed rises
+with the decile (ranking), and crossings expose deciles where the model over-
+or under-prices. The calibration scatter shows level adequacy on the same
+rows.
+
+```{python}
+#| fig-alt: "Observed and predicted decile rates cross for the default candidates, showing remaining calibration gaps after training adjustment."
+#| code-fold: true
+model_names = list(estimators)
+mosaic = [
+    [f"lift:{name}" for name in model_names],
+    [f"cal:{name}" for name in model_names],
+]
+with azoic_style():
+    fig, axd = plt.subplot_mosaic(
+        mosaic, figsize=(4 * len(model_names), 8), sharey=True, layout="constrained"
+    )
+    for name in model_names:
+        table = calibration_table(y_test, test_predictions[name], w_test, n_bins=10)
+        plot_lift(
+            table,
+            color=colors[name],
+            label=name,
+            ax=axd[f"lift:{name}"],
+            title=f"Lift — {name}",
+        )
+        plot_calibration(
+            table,
+            ax=axd[f"cal:{name}"],
+            title=f"Calibration — {name}",
+        )
+    fig.suptitle(CHART_SCALE)
+    fig.savefig(ARTIFACT_DIR / "lift_calibration.png", bbox_inches="tight")
+    plt.show()
+```
+
+## Age one-ways: held-out calibration at each raw age
+
+Start with driver and vehicle age on their original scales. Each point compares
+observed claims per exposure unit with the exposure-weighted mean prediction for
+held-out policies at that age. Exposure bars show the business supporting each
+comparison; sparse ages can have noisy observed rates. These views can reveal
+within-bin discrepancies that the grouped overview below averages away.
+
+The predictions are the **raw direct GLM baseline**, without the training O/P
+multiplier. The x-axis uses raw ages; the fitted model still uses its original
+training bins. Other rating features and exposure composition change with age,
+so average GLM predictions can vary even inside one fitted age bin. These are
+portfolio comparisons, not isolated age effects or evidence of causality.
+
+For individual conditional expectation (ICE) or partial dependence (PDP), use
+scikit-learn's built-in `PartialDependenceDisplay` through the existing
+[PDP/ICE recipe](https://thomasbury.github.io/azoic/guide/model-choice/#inspect-feature-effects-with-pdp-and-ice).
+ICE varies one feature while keeping each row's other inputs fixed; PDP averages
+those predictions. Neither curve measures observed segment calibration.
+
+```{python}
+#| fig-alt: "Raw GLM and observed rates differ across driver and vehicle ages; separate exposure bars identify sparse tails."
+#| code-fold: true
+benchmark_pred = test_predictions[RAW_BENCHMARK]
+glm_pred = raw_test_predictions["direct-tweedie-glm"]
+with azoic_style():
+    fig, axes = plt.subplots(2, 2, figsize=(14, 7), layout="constrained",
+                             sharex="col", gridspec_kw={"height_ratios": [3, 1]})
+    for col, feature in enumerate(["driver_age", "vehicle_age"]):
+        ax, exposure_ax = axes[:, col]
+        table = one_way_table(test_frame, feature, y_test, glm_pred, w_test, n_bins=None)
+        np.testing.assert_array_equal(table.level, np.sort(test_frame[feature].unique()))
+        np.testing.assert_allclose(table.exposure.sum(), w_test.sum())
+        np.testing.assert_allclose(table.claim_amount.sum(), y_test.sum())
+        np.testing.assert_allclose(table.predicted_claim_amount.sum(), glm_pred @ w_test)
+        plot_one_way(table, ax=ax, color=colors[BENCHMARK], label="direct GLM (raw)",
+                     title=feature, exposure="none")
+        ax.set_xlabel("")
+        exposure_ax.bar(table.level_center, 100 * table.exposure / w_test.sum(), color="lightgrey")
+        exposure_ax.set(xlabel=f"{feature} (years)", ylabel="Exposure (%)")
+    fig.suptitle("Held-out GLM calibration — raw rates at each raw age")
+    fig.savefig(ARTIFACT_DIR / "raw_age_one_way.png", bbox_inches="tight")
+    plt.close(fig)
+    display(Image(filename=str(ARTIFACT_DIR / "raw_age_one_way.png"), width=700))
+```
+
+## What the results show, and what remains to review
+
+With the default full portfolio, the raw GBM has lower deviance than the raw
+direct GLM (about 74.72 versus 75.34) and higher Gini (0.342 versus 0.310).
+After the training adjustments, all three O/P ratios are close to 1.024:
+held-out claims still exceed predicted totals by about 2.4%. These figures
+change with the sample; they describe one split, not a final model choice.
+
+The default lift curves cross: some deciles are overpredicted and others
+underpredicted. A training level adjustment therefore does not solve segment
+calibration. O/P below one means predicted claims exceed observed claims;
+O/P above one means the reverse. Read the actual O/P and deviance values for
+both scales in the holdout table before deciding whether the adjustment helps.
+The code verifies that this common multiplier leaves each candidate's Gini
+unchanged; it does not verify that one model dominates another everywhere.
+
+Use these questions to record a decision, not as a list of passed checks:
+
+| Question | Evidence here and remaining work |
+|---|---|
+| Does a candidate predict claims better on this split? | Compare Tweedie deviance (lower) and $D^2$ (higher) on the same rows and prediction scale. One split does not establish superiority. |
+| Is its level adequate? | Compare O/P with one, then inspect lift and age gaps. Aggregate balance can conceal subgroup errors. |
+| Does it rank usefully? | Compare Gini and concentration curves; crossings do not establish dominance. |
+| Which segments need review? | Locate observed/predicted gaps and check their exposure and claims support, especially sparse ages. |
+| Is it suitable for use? | Fairness, business acceptability, and stability under refitting have not been established. These need separate review and evidence. |
+
+Continue to [outcome-free scoring and tariff review](04-scoring-tariff.qmd).
+If these results prompt a model or factor change, use fresh evaluation data for
+that decision; repeated inspection makes this holdout development evidence.
+
+## Optional: Supporting overview: calibration inside fitted groups
+
+Across all rating factors, compare the same predictions and observations inside
+training-fitted bins and groups. This checks calibration across the implemented
+tariff segments. It also keeps continuous factors such as density readable,
+where a point for every distinct raw value would have little claims support.
+Every feature passes through the complete fitted preprocessing pipeline.
+Changing the reporting groups does not change any policy's prediction.
+
+```{python}
+#| fig-alt: "Observed and raw GLM rates within training-fitted rating groups reveal segment gaps that overall O/P can conceal."
+#| code-fold: true
+glm_pipeline = glm_estimators["direct-tweedie-glm"]
+fitted_preprocessing = glm_pipeline[:-1]
+special_predict_columns = [*FEATURES, "exposure", "claim_amount", "claim_count"]
+test_grouped = fitted_preprocessing.transform(test_frame[special_predict_columns])
+with azoic_style():
+    fig, axes = plt.subplots(3, 3, figsize=(18, 15), layout="constrained")
+    for feature, ax in zip(FEATURES, axes.flat, strict=True):
+        table = one_way_table(test_grouped, feature, y_test, glm_pred, w_test)
+        np.testing.assert_allclose(table.exposure.sum(), w_test.sum())
+        np.testing.assert_allclose(table.claim_amount.sum(), y_test.sum())
+        np.testing.assert_allclose(table.predicted_claim_amount.sum(), glm_pred @ w_test)
+        plot_one_way(
+            table, color=colors[BENCHMARK], label="direct GLM (raw)", ax=ax,
+            exposure="background", title=feature, xlabel="fitted training group",
+        )
+        ax.tick_params(axis="x", labelrotation=35)
+    fig.suptitle("Held-out GLM calibration — raw rates, training-fitted groups")
+    fig.savefig(ARTIFACT_DIR / "one_way.png", bbox_inches="tight")
+    plt.show()
+```
+
+## Optional: Double-lift: raw GBM benchmark vs direct GLM baseline
+
+A double-lift chart groups policies by the ratio of the raw-feature GBM
+benchmark's prediction (A) to the direct GLM baseline's prediction (B). Both use their frozen
+training adjustments here. Compare the gap between observed pure premium and
+**each model's predicted pure premium within each ratio group**. Rising
+observations alone cannot select a model. Extreme ratio groups contain the
+largest relative disagreements and can be particularly informative, provided
+their exposure and claims support credible comparisons; endpoints are not
+constrained to match observations. The table below the small example reports
+exposure and claim totals for the portfolio chart's ratio groups.
+
+The [CAS GLM monograph, section 7.2.2, pp. 78–79](https://www.casact.org/sites/default/files/2021-01/05-Goldburd-Khare-Tevet.pdf#page=88)
+uses this within-group comparison with curves normalized by their respective
+portfolio averages. Azoic plots **absolute rates**, retaining level differences
+as well as relative disagreement; it does not normalize those curves.
+
+For example, observed rates and B both equal $[10,20,30]$, while A predicts
+$[1,20,90]$. Observations rise with A/B, yet B matches every group and A has
+errors of $[9,0,-60]$. Four repetitions per ratio keep all three quantile groups
+in this small unit-exposure example.
+
+```{python}
+example_observed = np.repeat([10.0, 20.0, 30.0], 4)
+example_a = np.repeat([1.0, 20.0, 90.0], 4)
+example_double_lift = double_lift_table(
+    example_observed, example_a, example_observed,
+    n_bins=3, label_a="A", label_b="B",
+)
+np.testing.assert_allclose(example_double_lift.mean_ratio, [0.1, 1, 3])
+np.testing.assert_allclose(example_double_lift.observed_pure_premium, [10, 20, 30])
+np.testing.assert_allclose(
+    example_double_lift.B_pure_premium, example_double_lift.observed_pure_premium
+)
+np.testing.assert_allclose(
+    example_double_lift.observed_pure_premium - example_double_lift.A_pure_premium,
+    [9, 0, -60],
+)
+display(example_double_lift[["mean_ratio", "observed_pure_premium",
+                             "A_pure_premium", "B_pure_premium"]]
+        .rename(columns={"mean_ratio": "A/B", "observed_pure_premium": "Observed",
+                         "A_pure_premium": "A", "B_pure_premium": "B"}))
+```
+
+```{python}
+#| fig-alt: "Observed rates and both adjusted predictions within GBM-to-GLM ratio groups show where the models disagree and which is closer to claims."
+#| code-fold: true
+dl_table = double_lift_table(
+    y_test,
+    benchmark_pred,
+    test_predictions[BENCHMARK],
+    w_test,
+    n_bins=10,
+    label_a=RAW_BENCHMARK,
+    label_b=BENCHMARK,
+)
+display(dl_table[["mean_ratio", "exposure", "claim_amount"]])
+with azoic_style():
+    plot_double_lift(
+        dl_table,
+        label_a=RAW_BENCHMARK,
+        label_b=BENCHMARK,
+        color_a=colors[RAW_BENCHMARK],
+        color_b=colors[BENCHMARK],
+        title=f"Double-lift — {CHART_SCALE}\n{RAW_BENCHMARK} vs {BENCHMARK}",
+        path=ARTIFACT_DIR / "double_lift.png",
+    )
+    plt.show()
+```
+
+## Optional: Hexbin density: observed vs predicted rates, and rate residuals
+
+Per-policy densities for the training-adjusted working model: observed pure-premium rate versus
+predicted rate on the left (y=x dashed reference), and
+`observed rate - predicted rate` versus predicted rate on the right (zero
+reference). The plot converts aggregate `y_test` to rates with `w_test`
+before drawing either panel. Hex counts are exposure-weighted; the log colour
+scale concentrates on where the portfolio mass actually sits. Most policies
+have zero claims, so the scatter remains sparse at individual-policy level.
+
+```{python}
+#| fig-alt: "Exposure density concentrates on claim-free policies; signed rate residuals remain visible on both sides of zero."
+#| code-fold: true
+with azoic_style():
+    plot_actual_vs_predicted(
+        y_test,
+        test_predictions[RAW_BENCHMARK],
+        w_test,
+        title=f"{RAW_BENCHMARK} — {CHART_SCALE}",
+        path=ARTIFACT_DIR / "hexbin_actual_vs_predicted.png",
+    )
+    plt.show()
+```
+
+## Optional: Concentration Gini and inequality Gini
+
+Azoic's prediction-ordered **concentration Gini** is
+
+$$
+G = 1 - 2\int_0^1 C(u)\,du
+  = 2\int_0^1 \bigl(u-C(u)\bigr)\,du,
+$$
+
+where $u$ is cumulative exposure share and $C(u)$ is cumulative claim share,
+ordered by increasing predicted rate. This is twice the **signed** area from
+the curve to the diagonal: it can be negative, and positive area in one part
+can offset negative area elsewhere. Zero Gini does not prove random ranking.
+Azoic integrates tied-score blocks; its result equals the midrank formula,
+but the implementation does not evaluate pairwise differences.
+
+The pairwise absolute-difference **inequality Gini** instead measures dispersion
+of observed rates independently of model predictions. Its exposure-weighted form is
+
+$$
+G_{\mathrm{ineq}}=
+\frac{\sum_i\sum_j w_iw_j|r_i-r_j|}
+     {2(\sum_i w_i)(\sum_i w_i r_i)}.
+$$
+
+It equals the concentration Gini when the ordering score is the observed
+rate itself. Reversing model predictions flips concentration Gini's sign and
+leaves inequality Gini unchanged. With rates $[1,3]$ and exposures $[1,2]$,
+claims are $[1,6]$ and the observed-rate curve passes through
+$(0,0)$, $(1/3,1/7)$, $(1,1)$. Its two trapezoids have areas $1/42$ and
+$8/21$: total $17/42$. Thus $G=2(1/2-17/42)=4/21$, not one even with
+perfect observed-rate ordering.
+
+```{python}
+example_rate = np.array([1.0, 3.0])
+example_exposure = np.array([1.0, 2.0])
+example_claims = example_rate * example_exposure
+inequality_gini = np.sum(
+    example_exposure[:, None] * example_exposure[None, :]
+    * abs(example_rate[:, None] - example_rate[None, :])
+) / (2 * example_exposure.sum() * example_claims.sum())
+example_curve = lorenz(example_claims, example_rate, example_exposure)
+np.testing.assert_allclose(example_curve.exposure_pct, [0, 1 / 3, 1])
+np.testing.assert_allclose(example_curve.claims_pct, [0, 1 / 7, 1])
+np.testing.assert_allclose(example_curve.gini, 2 * (0.5 - 17 / 42))
+for score, sign in [(example_rate, 1), (-example_rate, -1)]:
+    np.testing.assert_allclose(gini(example_claims, score, example_exposure), sign * inequality_gini)
+print(f"Inequality: {inequality_gini:.6f}; forward: {example_curve.gini:.6f}; "
+      f"reversed: {gini(example_claims, -example_rate, example_exposure):.6f}")
+```
+
+Any strictly increasing transformation that preserves the prediction ties
+preserves concentration Gini. In particular, the frozen positive training
+factors leave ranking unchanged; the holdout table verifies this for all three main
+models while showing the change in level diagnostics.
+
+## Optional: Why model families do not guarantee balance
+
+Write observed rate as $r_i$, predicted rate as $\mu_i$, and exposure as $w_i$.
+Poisson, Gamma, and Tweedie deviances target conditional means; they do not
+inherently target a rate below the mean. Model restrictions, regularization,
+finite boosting iterations, and numerical convergence affect the achieved fit.
+Neither the GLM label nor a Poisson GBM objective guarantees portfolio balance.
+
+From [glum's deviance derivative and log-link definitions](https://glum.readthedocs.io/en/latest/glm.html),
+$\partial d(r,\mu)/\partial\mu=2(\mu-r)/\mu^p$ and
+$\partial\mu/\partial\beta_0=\mu$. Our derivation for a converged, unpenalized
+log-link GLM with an intercept therefore gives
+
+$$
+\frac{\partial}{\partial\beta_0}\sum_i w_i d(r_i,\mu_i)
+=2\sum_i w_i(\mu_i-r_i)\mu_i^{1-p}=0.
+$$
+
+For Poisson ($p=1$), this implies training total balance,
+$\sum_i w_i\mu_i=\sum_i w_i r_i$. For Gamma ($p=2$) and Tweedie
+($1<p<2$), the extra prediction-dependent factor prevents that conclusion in
+general. None of these training equations guarantees held-out balance, and
+balance of a frequency component does not establish balance of a
+frequency–severity product.
+
+This small network-free example fits each family with just an intercept (the
+feature is zero), then with one varying feature. Every intercept-only fit
+recovers the exposure-weighted mean. The varying-feature Gamma and Tweedie
+fits satisfy their intercept equations while their O/P ratios differ from one;
+the Poisson fit is the control. The assertions allow solver error, rather than
+requiring particular fitted totals.
+
+```{python}
+example_rate = np.array([1.0, 3.0, 2.0, 8.0, 4.0])
+example_exposure = np.array([1.0, 2.0, 1.0, 3.0, 2.0])
+balance_examples = []
+for family, power in [("poisson", 1), ("tweedie", 1.5), ("gamma", 2)]:
+    for varying in [False, True]:
+        example_X = pd.DataFrame({
+            "x": np.arange(-2.0, 3.0) if varying else np.zeros(5),
+            "exposure": example_exposure,
+        })
+        example_model = RiskGLM(
+            family=family, tweedie_power=power, link="log", alpha=0,
+            exposure_col="exposure", gradient_tol=1e-9,
+        ).fit(example_X, example_rate)
+        example_prediction = example_model.predict(example_X)
+        intercept_score = np.average(
+            (example_prediction - example_rate) * example_prediction ** (1 - power),
+            weights=example_exposure,
+        )
+        ratio = op_ratio(
+            example_rate * example_exposure, example_prediction, example_exposure
+        )
+        assert abs(intercept_score) < 1e-8
+        if not varying:
+            np.testing.assert_allclose(
+                example_prediction, np.average(example_rate, weights=example_exposure),
+                rtol=1e-8,
+            )
+        if not varying or power == 1:
+            assert np.isclose(ratio, 1, rtol=0, atol=1e-8)
+        else:
+            assert abs(ratio - 1) > 1e-3
+        balance_examples.append({
+            "family": family, "varying_feature": varying,
+            "training_O/P": ratio, "mean_intercept_score": intercept_score,
+        })
+display(pd.DataFrame(balance_examples))
+```
+
+## Optional: How to read these tables and charts
+
+Four diagnostics answer four questions; a fifth (business sense) is checked by
+humans, not the model. The full guide lives in the
+[docs site](https://thomasbury.github.io/azoic/guide/actuarial-workflow/);
+the condensed version used here:
+
+- **Concentration Gini** measures prediction ordering, not premium level. A
+  positive scalar leaves it unchanged. It is twice the signed area from the
+  prediction-ordered curve to the diagonal and may be negative. Pairwise
+  inequality Gini measures observed-rate dispersion; observed-rate ordering
+  recovers that value. Azoic integrates tied-score blocks, equivalently
+  the midrank formula, so row order within ties cannot affect the result.
+- **Weighted deviance** is the proper score matched to the response distribution
+  (Poisson for frequency, Gamma for severity, Tweedie for pure premium). Smaller
+  is better; one unit does not translate directly to euros. When the true
+  distribution differs from the assumed, deviance is a proxy for accuracy, not
+  a measurement of it.
+- **$D^2$** = $1 - \text{deviance}/\text{null deviance}$, the explained-deviance share against
+  the weighted-mean null. Higher is better. $D^2$ is only comparable between models
+  of the same response and same family; a frequency $D^2$ cannot be ranked against
+  a severity $D^2$.
+- **O/P (observed / predicted), also called A/E**, is $\sum_i w_i r_i / \sum_i w_i \mu_i$. A/E near 1 is necessary
+  but not sufficient: a portfolio can hit 1.0 with offsetting biases that cancel
+  across segments. Always segment-check (the one-way charts above are exactly
+  that check).
+- **Concentration curve** — Gini is twice the signed area to the diagonal. A
+  lower curve dominates another only if it is nowhere above it; crossing
+  curves do not establish dominance. The diagonal is the random-ranking
+  reference and also results from constant prediction scores.
+- **Lift chart** — observed and predicted per decile. The two should track on
+  absolute level (calibration) and the observed should rise with the decile
+  (ranking). Crossing signals that the model over-estimates in some deciles and
+  under-estimates in others. The decile range is the rank-quality part; the
+  gap between observed and predicted is the calibration part.
+- **One-way chart** — the predicted lines should sit close to the observed line
+  per feature level. A bowed observed line without a matching predicted line is
+  systematic miscalibration by segment, not bad ranking.
+- **Double-lift chart** — compare each predicted rate with observations within
+  A/B ratio groups. Observed direction alone does not identify the better
+  model. Extreme groups capture the largest relative disagreements; inspect
+  their exposure and claims credibility. These are absolute-rate curves.
+- **Hexbin (actual vs predicted)** — exposure density locates common outcomes,
+  including the claim-free band at observed rate zero. The default scatter
+  axes span their respective observed and predicted ranges, which can differ
+  greatly when a few losses dominate the observed rates.
+  A dense residual band need not estimate the conditional mean: zero-heavy
+  outcomes often produce a band near $-\mu$ even for a well-calibrated model.
+
+## Optional: Additive and multiplicative residual patterns
+
+Residuals are observed rate minus predicted rate: $e_i=r_i-\mu_i$. Interpret
+**credible, exposure-weighted grouped means** before attributing a pattern to
+model structure. A constant non-zero conditional mean residual is an additive
+discrepancy. If instead $r_i=c\mu_i$, then
+
+$$
+e_i=(c-1)\mu_i.
+$$
+
+That slope can be entirely multiplicative and removable by one factor. Remaining
+curvature after checking level can motivate reviewing features, the link, or
+interactions; density stripes alone do not diagnose their cause. Increasing
+spread is compatible with Poisson, Gamma, and Tweedie variance and is not by
+itself evidence of bias.
+
+In the following deterministic grouped-mean examples, $r=\mu+5$ leaves residuals
+$[5,5,5]$. Its portfolio O/P factor is 1.25, but applying it leaves
+$[2.5,0,-2.5]$: one multiplier cannot generally remove an additive error.
+For $r=2\mu$, residuals initially equal $\mu$ and multiplying predictions by
+two removes every error.
+
+```{python}
+example_prediction = np.array([10.0, 20.0, 30.0])
+example_exposure = np.array([1.0, 2.0, 1.0])
+for pattern, example_rate in [
+    ("additive", example_prediction + 5),
+    ("multiplicative", 2 * example_prediction),
+]:
+    factor = op_ratio(example_rate * example_exposure, example_prediction, example_exposure)
+    residual = example_rate - example_prediction
+    adjusted_residual = example_rate - factor * example_prediction
+    np.testing.assert_allclose(residual, 5 if pattern == "additive" else example_prediction)
+    np.testing.assert_allclose(
+        adjusted_residual, [2.5, 0, -2.5] if pattern == "additive" else [0, 0, 0]
+    )
+    display(pd.DataFrame({
+        "pattern": pattern, "prediction": example_prediction, "observed_rate": example_rate,
+        "residual": residual, "factor": factor, "adjusted_residual": adjusted_residual,
+    }))
+```
+
+For the adjusted working model, the calibration bins already provide grouped
+mean residuals. Exposure and claim totals help assess how much evidence each
+bin contains; this table does not estimate uncertainty.
+
+```{python}
+grouped_residuals = calibration_table(y_test, benchmark_pred, w_test, n_bins=10)
+grouped_residuals["mean_rate_residual"] = (
+    grouped_residuals.observed_pure_premium - grouped_residuals.predicted_pure_premium
+)
+grouped_residuals["prediction_scale"] = CHART_SCALE
+display(grouped_residuals[["group", "exposure", "claim_amount", "mean_rate_residual"]]
+        .rename(columns={"claim_amount": "claims", "mean_rate_residual": "mean rate residual"}))
+```

@@ -1,0 +1,108 @@
+# Protected-group audit
+
+Azoic keeps protected attributes inside the dataset contract but **out of the
+model features**: `DatasetSpec(protected_cols=...)` validates that a protected
+column cannot overlap outcome or weight columns, and `run_experiment` excludes
+it from candidates while retaining it for held-out subgroup calibration
+evidence.
+
+This chapter demonstrates the mechanism on freMTPL2 with a derived age-band
+column declared as protected. This is an illustrative stand-in for the
+reporting mechanism. Driver age itself remains a rating feature here, so the
+model still has the information used to form the bands. A real audit would
+declare the relevant protected attributes supplied by the business and excluded
+from rating.
+
+{{< include _shared.qmd >}}
+
+```{python}
+portfolio = load_portfolio()
+audit_subset = (
+    portfolio.sample(n=min(100_000, len(portfolio)), random_state=RANDOM_STATE, replace=False)
+    .sort_values("policy_id")
+    .reset_index(drop=True)
+)
+audit_subset["driver_age_band"] = pd.cut(
+    audit_subset["driver_age"],
+    bins=[17, 30, 55, 120],
+    labels=["30_and_under", "over_30_to_55", "over_55"],
+).astype(str)
+audit_path = ARTIFACT_DIR / "protected_audit.parquet"
+audit_subset.to_parquet(audit_path, index=False)
+assert "driver_age_band" in audit_subset.columns
+```
+
+```{python}
+audit_config = ExperimentConfig(
+    name="fremtpl2-protected-audit",
+    data_path=str(audit_path),
+    spec=DatasetSpec(
+        target="claim_amount",
+        exposure="exposure",
+        claim_count="claim_count",
+        protected_cols=["driver_age_band"],
+    ),
+    features=FEATURES,
+    split="random",
+    test_size=0.2,
+    random_state=RANDOM_STATE,
+    models={
+        "tweedie-glm": ModelSpec(
+            kind="glm",
+            params={
+                "family": "tweedie",
+                "link": "log",
+                "tweedie_power": 1.5,
+                "alpha": 0.001,
+            },
+        ),
+    },
+)
+assert "driver_age_band" not in audit_config.features
+assert audit_config.spec.protected_cols == ["driver_age_band"]
+run = run_experiment(audit_config)
+```
+
+```{python}
+result = run.models["tweedie-glm"]
+assert set(result.protected_calibration) == {"driver_age_band"}
+table = result.protected_calibration["driver_age_band"]
+test_frame = audit_subset.iloc[list(run.test_indices)]
+np.testing.assert_allclose(
+    table["exposure"].sum(), test_frame["exposure"].sum()
+)
+np.testing.assert_allclose(
+    table["claim_amount"].sum(), test_frame["claim_amount"].sum()
+)
+display(table.rename(columns={
+    "claim_amount": "Observed claims", "predicted_claim_amount": "Predicted claims",
+    "observed_pure_premium": "Observed rate", "predicted_pure_premium": "Predicted rate",
+    "o_p_ratio": "O/P",
+}))
+```
+
+Reconciliation checks accounting consistency: all held-out exposure and claims
+are represented. It does **not** establish equal calibration across groups.
+Aggregate balance can conceal subgroup errors, including errors that offset.
+
+With the default 100,000-row subset, overall O/P is about 0.869 and the over-55
+group is about 0.653. Both indicate overprediction, which is more pronounced in
+the older group. This is a reason to review group exposure, claim support, and
+model structure, not a fairness pass. Different sample settings change these
+values; compare the current table with this run's overall result:
+
+```{python}
+print(f"Overall held-out O/P: {result.metrics['op_ratio_test']:.3f}")
+```
+
+```{python}
+card = model_card(run)
+assert "protected columns" in card
+assert "driver_age_band" in card
+print("\n".join(card.splitlines()[:40]))
+```
+
+The audit stops at evidence: Azoic reports per-group calibration without
+universal fairness thresholds or legal conclusions. Reviewing those tables,
+deciding whether a differential is acceptable, and documenting the judgement
+remain actuarial and compliance work outside the library.

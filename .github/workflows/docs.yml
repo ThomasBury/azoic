@@ -22,9 +22,9 @@ jobs:
       - uses: astral-sh/setup-uv@v7
       - uses: quarto-dev/quarto-actions/setup@v2
       - run: uv sync --all-extras --all-groups
-      - run: uv run quarto render examples/fremtpl2.qmd --to html
+      - run: uv run quarto render examples/
       - run: uv run zensical build --strict
-      - run: mkdir -p site/tutorial && cp examples/fremtpl2.html site/tutorial/fremtpl2.html
+      - run: mkdir -p site/tutorial && cp -r examples/_book/. site/tutorial/
       - uses: actions/upload-pages-artifact@v5
         with:
           path: site

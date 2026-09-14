@@ -10,7 +10,10 @@ and verify the same held-out workflow.
 - Replace `riskforge` commands with `azoic`.
 - Refit pickle or joblib estimators because their old module paths no longer
   resolve.
-- Update automation to the canonical documentation and tutorial URLs.
+- Update automation to the canonical documentation and tutorial URLs. The
+  tutorial is now a numbered Quarto book rooted at
+  `https://thomasbury.github.io/azoic/tutorial/index.html`; the old
+  single-page `/azoic/tutorial/fremtpl2.html` URL expired deliberately.
 
 No compatibility package or CLI alias is provided.
 

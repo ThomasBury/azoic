@@ -36,9 +36,9 @@ format:
 check:
     uv run ruff check . && uv run ty check && uv run pytest
 
-# Render the executable freMTPL2 tutorial (Quarto must be on PATH).
+# Render the numbered tutorial book (Quarto must be on PATH).
 demo:
-    uv run quarto render examples/fremtpl2.qmd --to html
+    uv run quarto render examples/
 
 # Build the static documentation site.
 docs-build:

@@ -1,0 +1,146 @@
+# Manual tariff recipes
+
+A multiplicative tariff is a **decision object**: after the fitted model, an
+actuary may revise selected factors deliberately. Azoic supports that without
+a new model class — `extract_tariff` decomposes a fitted log-link GLM into a
+factor dictionary, `apply_tariff` scores a (possibly edited) dictionary, and
+`recalibrate_for_total` shifts the base to restore a portfolio total.
+
+Treat judgemental factor changes as a **revised tariff**, not a tweak of the
+fitted model: editing the dictionary does not update the fitted pipeline or a
+previously exported workbook, and changing bin boundaries or group membership
+requires refitting the downstream model. Record the original factors and the
+reasons for each change.
+
+{{< include _shared.qmd >}}
+
+```{python}
+from azoic.tariff import extract_tariff, recalibrate_for_total
+
+portfolio = load_portfolio()
+glm_config, _ = make_experiment_configs(str(PORTFOLIO_PATH))
+glm_config = glm_config.model_copy(
+    update={"models": {"direct-tweedie-glm": glm_config.models["direct-tweedie-glm"]}}
+)
+glm_run, glm_estimators = run_experiment(glm_config, return_estimators=True)
+train_frame = portfolio.iloc[list(glm_run.train_indices)].copy()
+test_frame = portfolio.iloc[list(glm_run.test_indices)].copy()
+y_train = train_frame["claim_amount"].to_numpy()
+w_train = train_frame["exposure"].to_numpy()
+y_test = test_frame["claim_amount"].to_numpy()
+w_test = test_frame["exposure"].to_numpy()
+
+glm_pipeline = glm_estimators["direct-tweedie-glm"]
+fitted_preprocessing = glm_pipeline[:-1]
+fitted_glm = glm_pipeline[-1]
+special_predict_columns = [*FEATURES, "exposure", "claim_amount", "claim_count"]
+transformed_test = fitted_preprocessing.transform(test_frame[special_predict_columns])
+```
+
+## Extract and reproduce
+
+`extract_tariff` returns `base_rate` (intercept folded with reference-level
+coefficients), per-unit numeric coefficients, categorical relativities against
+a chosen reference level, and a mapping table. Applying the untouched
+dictionary on the same transformed features reproduces the fitted prediction.
+
+```{python}
+tariff = extract_tariff(fitted_glm)
+model_rate = np.asarray(glm_pipeline.predict(test_frame[[*FEATURES, "exposure"]]), dtype=float)
+applied_rate = apply_tariff(tariff, transformed_test)
+np.testing.assert_allclose(applied_rate, model_rate, rtol=1e-6, atol=1e-8)
+display(pd.DataFrame(
+    {
+        "base_rate": [tariff["base_rate"]],
+        "numeric_features": [len(tariff["numeric"])],
+        "categorical_features": [len(tariff["categorical"])],
+    }
+))
+display(tariff["mapping"].head(15))
+```
+
+## Revise one factor, then restore the total
+
+Below, one grouped level of `region` gets a deliberate +10% factor. This
+local change affects only that segment and can change ranking between policies.
+The original training O/P is already close to, but not exactly, one (about
+0.99817 with the default data); the edit changes that level further.
+
+`recalibrate_for_total` then supplies a new base rate that balances the edited
+tariff to observed training claims. This second step is a common positive
+multiplier: it preserves the edited tariff's ranking, not necessarily the
+original model's ranking. We put the new base into a separate dictionary and
+freeze it for testing; neither the fitted model nor a workbook is updated.
+
+```{python}
+revised = {
+    "base_rate": tariff["base_rate"],
+    "numeric": dict(tariff["numeric"]),
+    "categorical": {feat: dict(levels) for feat, levels in tariff["categorical"].items()},
+}
+feature = "region"
+levels = revised["categorical"][feature]
+edited_level = next(level for level, factor in levels.items() if not np.isclose(factor, 1.0))
+levels[edited_level] *= 1.10
+
+original_op = op_ratio(y_train, np.asarray(glm_pipeline.predict(
+    train_frame[[*FEATURES, "exposure"]]), dtype=float), w_train)
+transformed_train = fitted_preprocessing.transform(train_frame[special_predict_columns])
+revised_rate_train = apply_tariff(revised, transformed_train)
+revised_op = op_ratio(y_train, revised_rate_train, w_train)
+assert abs(revised_op - original_op) > 1e-3
+
+new_base = recalibrate_for_total(
+    revised,
+    predicted_total=float(revised_rate_train @ w_train),
+    observed_total=float(y_train.sum()),
+)
+revised_recalibrated = {**revised, "base_rate": new_base}
+restored_rate_train = apply_tariff(revised_recalibrated, transformed_train)
+np.testing.assert_allclose(
+    op_ratio(y_train, restored_rate_train, w_train), 1, rtol=0, atol=1e-10
+)
+display(pd.DataFrame(
+    {
+        "variant": ["fitted GLM", "edited factor", "edited + recalibrated"],
+        "training_O/P": [
+            original_op,
+            revised_op,
+            op_ratio(y_train, restored_rate_train, w_train),
+        ],
+    }
+))
+```
+
+The same totals check belongs on the held-out rows: recalibrating to training
+totals fixes the training level but does not claim to fix test calibration or
+any segment-level bias.
+
+```{python}
+restored_rate_test = apply_tariff(revised_recalibrated, transformed_test)
+display(pd.DataFrame(
+    {
+        "variant": ["fitted GLM", "edited factor", "edited + recalibrated"],
+        "test_O/P": [
+            op_ratio(y_test, model_rate, w_test),
+            op_ratio(y_test, apply_tariff(revised, transformed_test), w_test),
+            op_ratio(y_test, restored_rate_test, w_test),
+        ],
+        "test_deviance": [
+            mean_tweedie_deviance(y_test / w_test, model_rate, sample_weight=w_test, power=1.5),
+            mean_tweedie_deviance(
+                y_test / w_test, apply_tariff(revised, transformed_test),
+                sample_weight=w_test, power=1.5,
+            ),
+            mean_tweedie_deviance(
+                y_test / w_test, restored_rate_test, sample_weight=w_test, power=1.5,
+            ),
+        ],
+    }
+))
+```
+
+For changes to model flexibility or sparse-risk pooling, return to
+[the experiment controls](02-experiments.qmd#regularization-controls).
+Choose those settings inside training data. Revisions prompted by the inspected
+holdout need fresh evaluation data; this illustration does not provide it.

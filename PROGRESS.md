@@ -7,8 +7,846 @@ Legend: ☐ pending · ◐ in progress · ☑ done
 
 > Implement exactly one pending milestone per session. Mark it ◐ before implementation, run its acceptance checks, mark it ☑ only when green, then stop with a handoff. Do not start the next milestone automatically.
 
+## Current focus
+
+- **Goal:** make the existing tutorial understandable and adaptable by a pricing
+  analyst comfortable with Python DataFrames and train/test separation, without
+  assuming prior Azoic, GLM/GBM, Quarto, or MLflow experience.
+- **Active milestone:** none. **Next task: M15 release review, in a separate session.**
+- **Delivery order:** M25 → M26 → M27 → M28 → M29 → M30; then return to the
+  separate M15 release handoff. Publication is outside this tutorial plan.
+- **State:** M25 completed on 2026-09-13; M26–M30 completed on 2026-09-14.
+  All six tutorial milestones are green. The
+  review found broad feature coverage but weak adaptation and worked-decision
+  examples. This plan improves the existing book, not the library's public API.
+- **Review baseline:** `just check` passed Ruff/Ty and **682 tests, 4 upstream
+  skips**. All ten chapter sources were reviewed; representative existing
+  rendered outputs were inspected. No fresh book render or OpenML download was
+  performed during the review. These are baseline results, not milestone acceptance.
+- **Plan verification (2026-09-13):** after saving the plan, `just check`
+  passed Ruff/Ty and **682 tests, 4 upstream skips**; `git diff --check`
+  passed. This session changed only `PROGRESS.md`, `PRD.md`, and `AGENTS.md`;
+  no implementation milestone was started and no tutorial render was needed.
+- **Resume here:** inspect `git status --short`, read M30's completion checkpoint
+  and M15's release requirements. Repeat distribution builds and isolated CLI
+  checks on the corrected source before any publication decision. The working tree already
+  contains substantial tutorial and library edits; preserve them.
+
+This section and the delivery order below supersede historical statements that
+M15 is next. Completed milestones and their evidence remain historical records.
+
+## Tutorial improvement plan — 2026-09-13
+
+### Scope and completion rules
+
+Keep the existing numbered book, default styling, network-free first-model
+guide, library APIs, dependencies, and artifact ignore rules. No new tutorial
+framework, model persistence layer, standalone workbook loader, deployment,
+automated model selection, or new pricing algorithm is required. Preserve the
+existing freMTPL2 cleaning decisions, model parameters, and partitions except
+for the explicitly revised tuning experiment. Hide plumbing, but show the
+configuration and calculations the reader must understand and change.
+
+| Status | Milestone | Review finding addressed | Dependency |
+|---|---|---|---|
+| ☑ | M25 — repair executable examples and labels | Broken YAML path; age-band boundary label | None |
+| ☑ | M26 — explain the priced population | Missing exclusion evidence and column meanings | M25 |
+| ☑ | M27 — teach an adaptable experiment | Hidden configuration; understated prerequisites | M26 |
+| ☑ | M28 — work through one policy price | Incomplete scoring and direct-tariff handoff | M27 |
+| ☑ | M29 — explain frequency and severity separately | Product-only diagnostics; unrelated tracking | M28 |
+| ☑ | M30 — make tuning choices and gains interpretable | Hidden search space; missing comparable baseline | M29 |
+
+For every milestone:
+
+1. Update its status to ◐ and record the starting checkpoint. Complete only its
+   scope; incidental findings go in the checkpoint for a later decision.
+2. Check off work as it is completed. For changed numerical logic or a defect,
+   add the smallest synthetic regression that would catch the error. Reuse
+   existing tests; do not add prose snapshots or tests that merely repeat code.
+3. Run focused checks, `just check`, `just docs-build`, and `git diff --check`.
+   For changed QMD/shared cells, also run
+   `OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2 MKL_NUM_THREADS=2 just demo` and
+   inspect the affected rendered sections, tables, figures, links, and alt text.
+4. Execute each affected chapter independently in a fresh temporary directory
+   with only its declared cached inputs when its setup/data flow changes. Use
+   a bounded sample for this independent check and record the size. Full-book
+   rendering and isolated execution are distinct evidence. Automated tests use
+   synthetic inputs only; real-data downloads remain manual-render work.
+5. Record commands, results, limitations, and generated-artifact locations in
+   the checkpoint. Mark ☑ only when required acceptance checks pass, advance
+   **Current focus** to the next milestone, and stop. If interrupted or blocked,
+   retain ◐ and give the exact remaining action; do not count old checks as new.
+
+Append dated checkpoints under the relevant milestone using this short form:
+
+```text
+Checkpoint: YYYY-MM-DD — pending / in progress / complete
+Changed: files and completed behaviour
+Verified: exact commands, results, and input/sample/cache conditions
+Remaining: unchecked work or failed/missing checks
+Blockers: concrete condition, or none
+Next action: one specific edit or command
+```
+
+### M25 — repair executable examples and labels
+
+Make the smallest advertised checkout example runnable and the protected-group
+labels faithful to their boundaries.
+
+- [x] Set `examples/tweedie.yaml` to `data_path: synthetic.parquet`. Update the
+  matching snippets in the experiment guide and configuration reference,
+  explicitly retaining resolution relative to the YAML directory.
+- [x] Add a regression that loads the actual shipped YAML (copied beside
+  generated synthetic input in a temporary directory) without overriding
+  `data_path`, and invokes its fit workflow/CLI from a different working
+  directory. Do not substitute a separately constructed test configuration.
+- [x] Preserve the protected-group partition and rename the first two labels
+  to `30_and_under` and `over_30_to_55`; keep `over_55`. Check ages 29, 30, 31,
+  55, and 56 against the chapter's actual construction.
+- [x] Run the documented synthetic-data generation and CLI fit from the repo
+  root, the common checks above, and render/inspect the protected-group chapter.
+  Predictions and group memberships must be unchanged by the label correction.
+
+Initial checkpoint: pending; the review reproduced the resolved path
+`examples/examples/synthetic.parquet`. No correction has been applied.
+Next action: fix the shipped YAML and its two matching documentation snippets.
+
+Checkpoint: 2026-09-13 — in progress
+Changed: started M25; preserved the existing tutorial/library working-tree edits.
+Verified: current focus, delivery order, M25 scope, and existing regression patterns.
+Remaining: YAML/snippet correction, actual-example and age-boundary regressions,
+documented CLI execution, suite/docs checks, and full-book render/inspection.
+Blockers: none.
+Next action: add regressions for the shipped YAML and chapter age-band construction.
+
+Checkpoint: 2026-09-13 — in progress
+Changed: corrected the shipped YAML and both guide/reference paths; renamed
+only the chapter's first two age-band labels. Added actual-YAML CLI and actual
+chapter-construction regressions (ages 29, 30, 31, 55, 56).
+Verified: both regressions failed before the correction and pass afterward;
+`just check`: Ruff/Ty green, 684 passed, 4 upstream skips; `just docs-build`:
+strict-green; threaded `just demo`: all 11 pages / 115 Python cells passed using
+the existing cleaned cache. Generated 20,000 synthetic rows with the documented
+command. No model parameters, bins, or library implementation changed.
+Remaining: documented CLI result, before/after prediction comparison, rendered
+protected-group table inspection, and final diff/ignored-artifact checks.
+Blockers: none.
+Next action: inspect the rendered table and verify prediction/membership invariance.
+
+Checkpoint: 2026-09-13 — complete
+Changed: `examples/tweedie.yaml`, the experiment guide and configuration
+reference now use `data_path: synthetic.parquet` and explain YAML-directory
+resolution. The protected-group chapter uses `30_and_under`, `over_30_to_55`,
+and `over_55` with its existing boundaries. Two synthetic regressions exercise
+the unchanged shipped configuration and the chapter's actual age-band assignment.
+Verified:
+- `uv run pytest tests/test_cli.py::test_cli_fit_shipped_yaml_from_another_directory
+  tests/test_tutorial.py::test_protected_age_band_labels_match_chapter_boundaries -q`:
+  both failed for the reported defects before correction; both pass afterward.
+- From the repository root, ran the documented generation command:
+  `uv run python -c "from tests.conftest import make_synthetic_portfolio as m; m(n=20000, seed=42).to_parquet('examples/synthetic.parquet')"`,
+  then `uv run azoic fit --config examples/tweedie.yaml`: both configured models
+  completed on 20,000 rows (16,000 train / 4,000 test) without path overrides.
+- `just check`: Ruff/Ty green, **684 passed, 4 upstream array-API skips**;
+  `just docs-build`: strict-green; `uv run ruff format tests/test_cli.py
+  tests/test_tutorial.py` and `git diff --check` passed.
+- `OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2 MKL_NUM_THREADS=2 just demo`:
+  **11 pages / 115 Python cells** executed using the existing 667,673-row
+  cleaned cache; the protected-group recipe used its default 100,000-row subset.
+  No OpenML download was performed; download/clean-cache rebuilding was not tested.
+- `uv run python /tmp/azoic-m25-verify.py`: executed shared setup and all protected
+  chapter cells in two fresh processes/directories using only a declared 20,000-row
+  cleaned-cache sample, with downloads rejected. Before/after label versions have
+  exact policy memberships and train/test positions; predictions agree at
+  `rtol=1e-12, atol=1e-10`. The comparison requests returned estimators and scores
+  only declared features plus exposure. Initial verification-script errors (extra
+  input columns and bitwise float comparison) were corrected without source changes.
+  Successful logs and arrays: `/tmp/azoic-m25-ancv1lsn/{before,after}/`.
+- Headless browser and visual inspection of `examples/_book/09-protected-group.html`
+  confirmed readable corrected labels, unchanged default O/P values, and no broken
+  images or MathJax errors. All 18 local chapter links resolve. The chapter has no
+  figures; no alt text changed. Screenshot: `/tmp/azoic-m25-table.png`.
+- `git check-ignore` confirms `examples/synthetic.parquet`, `examples/_book/`,
+  `examples/_artifacts/fremtpl2/`, and `site/` outputs remain ignored. Existing
+  unrelated source edits were preserved; no commit or publication was performed.
+Remaining: none for M25. M26–M30 remain pending.
+Blockers: none.
+Next action: in the next session, mark M26 in progress and expose the existing
+cleaning stages with a sequential audit, preserving every filter and claim cap.
+
+### M26 — explain the priced population
+
+Make data preparation inspectable without changing the population or loss layer.
+Primary sources: `examples/01-portfolio.qmd` and `examples/_shared.qmd`.
+
+- [x] Add a compact dictionary for the retained columns: meaning, unit or
+  categorical encoding, and role (identifier, outcome, exposure, or predictor).
+  Distinguish policy aggregate claim amount from individually capped claims.
+- [x] Display a sequential exclusion summary with named rules, removed and
+  retained policies, exposure, claim counts, and capped claim amounts. Use
+  first-failing-rule attribution so overlapping invalid rows count once.
+  Present raw-versus-capped claim totals separately, before exclusions.
+- [x] Compute the summary in the existing cleaning path and save an ignored
+  `cleaning_audit_v1.csv` beside the cleaned parquet. If the cleaned parquet
+  exists but its audit does not, rebuild both from the cached raw OpenML inputs.
+  Reuse raw downloads; do not invent audit values from already-cleaned rows.
+  Document deletion of both derived caches after cap/cleaning-rule changes.
+- [x] Test reconciliation and overlapping exclusions using tiny synthetic raw
+  frames. Verify fresh-build and cache-reuse summaries agree and the cleaned
+  rows, dtypes, and order match the pre-change loader for identical inputs.
+- [x] Run the common checks and isolated portfolio execution with declared raw
+  cached inputs. Inspect the audit table and verify the default retained count
+  remains 667,673; numerical totals describe the actual configured cap/sample.
+
+Initial checkpoint: pending. Next action: expose the existing cleaning stages
+and define their sequential audit without changing any filter or cap.
+
+Checkpoint: 2026-09-13 — in progress
+Changed: started M26; existing unrelated working-tree edits are preserved.
+Verified: read current focus, M26 scope, the loader and all chapter callers,
+and the existing synthetic reporting smoke test.
+Remaining: dictionary, sequential audit/cache handling, synthetic regressions,
+full checks/render, isolated raw-cache execution, and rendered-table inspection.
+Blockers: none.
+Next action: record each existing cleaning rule's first-failure totals in the loader.
+
+Checkpoint: 2026-09-13 — in progress
+Changed: added the retained-column dictionary and live cap/exclusion/sample tables;
+loader saves `cleaning_audit_v1.csv` and rebuilds both derived caches if either is
+missing. Existing masks, join, cap, column selection, and sampling are preserved.
+The reporting smoke now creates both caches through the real loader from synthetic
+raw frames. No new dependency, library API, model parameter, or partition changed.
+Verified: synthetic audit test passes for 13 raw policies, overlapping failures,
+per-claim cap, unmatched severity, signed/missing totals, reconciliation, sampling,
+cache reuse, and each missing-cache rebuild. Reporting and age-label smokes passed.
+Initial test-only dtype assumptions and arithmetic totals were corrected.
+Remaining: baseline loader comparison, full suite/docs/book checks, isolated
+portfolio raw-cache execution, rendered tables/links, and artifact ignore checks.
+Blockers: none.
+Next action: compare the old/new loaders on identical raw inputs and run acceptance.
+
+Checkpoint: 2026-09-13 — in progress
+Changed: documented the paired-cache convention in `AGENTS.md` and `PRD.md`;
+hid audit-table formatting code after inspecting the rendered reading flow.
+Verified: `just check`: Ruff/Ty green, 685 passed, 4 upstream skips;
+`just docs-build`: strict-green; threaded `just demo`: all 11 pages executed.
+`uv run python /tmp/azoic-m26-verify.py`: two fresh processes with copied raw
+OpenML caches and downloads rejected; old/new cleaned frames and 20,000-policy
+samples match exactly, including dtypes and order. Full retained count: 667,673.
+The current portfolio chapter's 11 cells execute independently, with matching
+fresh-build/reuse audits. Evidence: `/tmp/azoic-m26-uiy0_emv/{before,after}/`.
+Remaining: rerender after hiding formatting code; final visual/table/link checks
+and completion handoff. Generated audit, parquet, book, and site remain ignored.
+Blockers: none.
+Next action: inspect the final rendered portfolio tables and record acceptance.
+
+Checkpoint: 2026-09-14 — complete
+Changed: `examples/01-portfolio.qmd` explains all 13 retained columns and shows
+separate live claim-cap, sequential exclusion, and modelling-sample totals.
+`examples/_shared.qmd` saves `cleaning_audit_v1.csv` alongside the cleaned parquet;
+either missing cache triggers rebuilding both from raw inputs. First-failing-rule
+attribution preserves all existing filters and per-claim capping. Paired-cache
+invalidation is documented in the chapter, `AGENTS.md`, and `PRD.md`.
+Verified:
+- `uv run pytest tests/test_tutorial.py::test_portfolio_audit_reconciles_first_failures_and_cache_rebuilds -q`:
+  passed. Thirteen synthetic raw policies exercise overlapping failures, missing
+  and signed values, per-claim capping, unmatched severity IDs, reconciliation,
+  row order/dtypes, sampling, cache reuse, and rebuilding either missing cache.
+  The existing fresh-process reporting smoke creates both caches through the
+  real loader from synthetic raw frames and rejects downloads during execution.
+- `just check`: Ruff/Ty green, **685 passed, 4 upstream array-API skips**.
+  `uv run ruff format tests/test_tutorial.py` passed. `just docs-build` passed
+  strict mode, including a repeat after the final convention/documentation edits.
+- `OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2 MKL_NUM_THREADS=2 just demo`:
+  final render passed **11 pages / 117 Python cells**. The first render rebuilt
+  the previously unaudited cleaned cache from the existing raw OpenML cache;
+  the final render reused the paired caches. Main chapters use all 667,673
+  cleaned policies; tuning/protected-group recipes retain their 100,000-row cap.
+- `uv run python /tmp/azoic-m26-verify.py`: old and new loader executions in
+  separate fresh processes/directories, each with only copied raw OpenML cached
+  inputs and downloads rejected. Exact DataFrame equality verifies all **667,673
+  cleaned rows**, dtypes, column/row order, and the **20,000-policy** sample.
+  The new portfolio chapter's 11 cells execute independently; repeated loading
+  reproduces the same sample and audit. Logs and artifacts are under
+  `/tmp/azoic-m26-uiy0_emv/{before,after}/`. Fresh network downloads were not tested.
+- The full audit starts with **678,013** joined policies, removes **1,224** for
+  exposure and then **9,116** for inconsistent count/amount; other rules remove
+  zero on these pinned inputs. Retained totals are **352,530.648031 policy-years**,
+  **26,391 claims**, and **EUR 49,214,268.67**. Raw severity totals before joining
+  are **EUR 60,697,930.68**, capped to **EUR 49,964,409.11** at **EUR 100,000 per
+  claim**. Every sequential policy/exposure/count/amount total reconciles.
+- `uv run python /tmp/azoic-m26-final-checks.py`: **71 local links/anchors**
+  resolve, and the rendered audit/cleaned cache exactly equal the independently
+  rebuilt versions. Final headless inspection and screenshots confirm readable
+  dictionary, cap, and both exclusion tables; all eight chapter tables fit the
+  749-pixel content column. Zero MathJax errors or broken images; this chapter
+  contains no figures, so no figure alt text changed. Screenshots:
+  `/tmp/azoic-m26-{dictionary,cap,audit-final}.png`. Early browser attempts during
+  the rerender were repeated successfully after Quarto recreated the output.
+- `git diff --check` and artifact ignore checks passed. The audit CSV, parquet
+  caches, generated book, and docs site remain ignored. Existing unrelated edits
+  were preserved; no commit, dependency change, or publication was performed.
+Remaining: none for M26. M27–M30 remain pending.
+Blockers: none.
+Next action: in the next session, mark M27 in progress and introduce the model
+roles and visible experiment configuration without changing the fitted candidates.
+
+### M27 — teach an adaptable experiment
+
+Readers should understand and modify the experiment before invoking a helper.
+Primary sources: `examples/index.qmd`, `examples/02-experiments.qmd`, and the
+existing first-model/experiment guides.
+
+- [x] Define GLM (generalized linear model), GBM (gradient-boosted trees), the
+  log link, and why direct Tweedie fits a zero-heavy non-negative claim-cost
+  target. Explain each model's practical role before its settings. Link the
+  existing network-free first-model guide from the book's entry page.
+- [x] Assemble the current configurations in short visible, executable cells:
+  dataset contract and features, preprocessing, named models, then experiment.
+  Introduce the direct GLM baseline before the raw-feature GBM benchmark.
+  Keep the structured teacher's explanation/specification collapsible and
+  optional; preserve all three candidates, two run identities, and parameters.
+- [x] Keep `_shared.qmd` as the canonical reusable configuration for other
+  chapters; check that the chapter's explicit configuration equals its helper
+  output. Hide plotting/download setup and move detailed merge mechanics to
+  the fitted-structure inspection. Do not change the calibration/split safeguards.
+- [x] Add a compact "Use your own portfolio" example with explicit imports,
+  Parquet input, named outcome/exposure columns, feature list, and one GLM.
+  Show `return_estimators=True`, `predict`, and rate-to-cost conversion. Explain
+  that YAML paths are config-relative, Python paths use the working directory,
+  and identifiers/outcomes/protected attributes are excluded from features.
+  Use random splitting when no real time field exists; link the temporal recipe.
+- [x] Execute that exact adaptation snippet on synthetic data, check visible
+  config/helper parity, and confirm existing run identities and train/test
+  positions. Run common checks and isolated experiment execution; inspect the
+  reading order and links without relying on the shared source being visible.
+
+Initial checkpoint: pending. Next action: introduce the model roles and expose
+the existing configuration in the experiment chapter, without altering fits.
+
+Checkpoint: 2026-09-14 — in progress
+Changed: started M27; preserving all pre-existing working-tree edits.
+Verified: read current focus, M27 scope, shared configurations and chapter flow.
+Remaining: visible configuration, adaptation example, synthetic execution/parity,
+common acceptance checks, isolated chapter execution, and rendered inspection.
+Blockers: none.
+Next action: expose the existing configurations in teaching order.
+
+Checkpoint: 2026-09-14 — in progress
+Changed: entry page links the network-free first model and explains Quarto setup;
+experiment chapter defines model roles, exposes dataset/preprocessing/models/run
+configuration, defers merge details and the optional teacher, and adds a standalone
+Parquet-to-rate-to-cost example. Shared configuration and model parameters unchanged.
+Verified: strict `just docs-build` passed. Initial synthetic checks caught tuple
+indexing in the new snippet and an incorrect test assumption about the random split;
+both corrected. Tests now compare partitions to the canonical helper's actual run.
+Remaining: corrected focused/full checks, full render, isolated 20,000-row chapter
+execution, final reading-order/link/visual checks and artifact verification.
+Blockers: none.
+Next action: collect acceptance results and inspect the rendered experiment chapter.
+
+Checkpoint: 2026-09-14 — complete
+Changed: `examples/index.qmd` links the network-free first-model guide and explains
+Quarto prerequisites. `examples/02-experiments.qmd` defines GLM, GBM, log link,
+and Tweedie suitability before showing executable data, preprocessing, candidate,
+and experiment configuration. Teacher details are collapsed; merge mechanics
+follow fitting. The standalone own-portfolio snippet imports its dependencies,
+loads named Parquet columns, fits one GLM, scores without outcomes, and converts
+raw rates to period costs. It explains feature exclusions, path resolution,
+random/temporal splitting, and the simple numeric-age model's boundary.
+Verified:
+- `uv run pytest tests/test_tutorial.py -q`: **5 passed**. Existing fresh-process
+  assembly smoke now also executes the experiment chapter using 4,000 synthetic
+  policies, only paired input caches, and rejected downloads. Visible configs equal
+  the unchanged helper output, both run names and all three candidates persist,
+  and train/test positions exactly match a separate canonical-helper run.
+  The exact standalone snippet runs on 1,000 synthetic policies (200 held out),
+  predicts finite positive rates, and computes rate times exposure. Doubling
+  scoring exposure leaves predicted rates unchanged.
+- Final `just check`: Ruff/Ty green, **687 passed, 4 upstream array-API skips**.
+  The first full-suite process had collected the old split-test assumption and
+  failed that test; the fresh corrected suite passed. `uv run ruff format
+  tests/test_tutorial.py`, `just docs-build` (strict), and `git diff --check` passed.
+- `OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2 MKL_NUM_THREADS=2 just demo`:
+  **11 pages / 122 Python cells** passed using existing paired caches. Main
+  chapters used 667,673 cleaned policies; capped recipes retained their defaults.
+  After correcting the snippet during that render, separately refreshed
+  `examples/index.qmd` and `examples/02-experiments.qmd` with the same thread limits
+  and `uv run quarto render`; the final experiment refresh passed all 15 cells.
+- `uv run python /tmp/azoic-m27-verify.py`: all experiment cells ran in a fresh
+  process/directory with only a declared 20,000-policy cleaned-cache sample and
+  companion audit, with downloads rejected. No prior estimator/report/workbook
+  was supplied. Config parity and exact canonical-run positions passed (16,000
+  train / 4,000 test). Evidence: `/tmp/azoic-m27-p28e0pgl/execution.log`.
+  Network downloading and raw-cache rebuilding were not part of this milestone.
+- `uv run python /tmp/azoic-m27-links.py`: **205** local links/anchors and
+  published-guide targets in the local strict site build resolve. Context7's
+  current Quarto documentation confirmed the separate CLI/Python prerequisites.
+  Headless browser and screenshot inspection verified reading order, visible
+  settings, collapsed teacher, training-structure tables, entry link, and corrected
+  adaptation snippet. No broken images or MathJax errors; these pages add no figures.
+  Screenshots: `/tmp/azoic-m27-{entry,configuration,adaptation}.png`.
+- `git check-ignore examples/_book/ examples/_artifacts/fremtpl2/ site/` confirms
+  generated outputs remain ignored. Shared configuration, library APIs, model
+  settings, dependencies, and pre-existing unrelated edits were preserved.
+Remaining: none for M27. M28–M30 remain pending.
+Blockers: none.
+Next action: in the next session, mark M28 in progress and add the outcome-free
+worked policy immediately after direct GLM export in `04-scoring-tariff.qmd`.
+
+### M28 — work through one policy price
+
+Complete the main path with an inspectable direct GLM calculation before the
+optional distillation extension. Primary source: `examples/04-scoring-tariff.qmd`.
+
+- [x] Select the held-out policy with the lowest policy ID, without consulting
+  its outcomes or predicted cost. Display its ID, raw rating inputs, exposure,
+  and fitted bin/group assignments; retain IDs in the scored output.
+- [x] Read the direct workbook's base/factors and show each selected factor
+  and their multiplication into this policy's raw rate. Reuse fitted
+  preprocessing and the existing workbook-factor application recipe; explain
+  that this is not standalone reconstruction from Excel mappings.
+- [x] Show raw rate, frozen training O/P multiplier, adjusted rate, and both
+  expected period costs (`rate * exposure`) in one compact result. Explain
+  the workbook remains raw and adjustment is external. Add the corresponding
+  expected-cost columns to the scored DataFrame, with explicit scale labels.
+- [x] Verify workbook/manual-factor application equals raw GLM prediction
+  (`rtol=1e-6`, `atol=1e-8`), adjusted output equals the scoring result, and
+  cost equals rate times exposure. The worked scoring path must use no claim
+  columns. Reuse synthetic tariff checks and execute the actual chapter cells.
+- [x] Run common checks and isolated scoring/tariff execution with no existing
+  workbook or estimator. Inspect the worked policy before the stated stopping
+  point; retain the existing distillation and held-out claims comparisons.
+
+Initial checkpoint: pending. Next action: add the outcome-free worked policy
+immediately after the direct GLM export, using that chapter's fitted objects.
+
+Checkpoint: 2026-09-14 — in progress
+Changed: started M28; preserving all pre-existing working-tree edits.
+Verified: read current focus, M28 scope, scoring/export flow, workbook application,
+and the synthetic chapter assembly checks.
+Remaining: worked policy, labelled rates/costs and IDs, synthetic checks, full
+checks/render, isolated scoring execution, and rendered inspection.
+Blockers: none.
+Next action: extend scoring output and apply direct-workbook factors to the
+lowest-ID held-out policy using only rating inputs and exposure.
+
+Checkpoint: 2026-09-14 — in progress
+Changed: scoring retains policy IDs/exposure and explicit raw/adjusted rate and
+period-cost columns. The lowest-ID held-out policy shows raw inputs, fitted
+levels, selected workbook factors, base/product, frozen training O/P, and costs.
+Both workbook examples reuse the existing factor-reading recipe in a local
+chapter function; the direct workbook remains raw. No library/config changes.
+Verified: the new synthetic chapter regression first failed because the worked
+policy was absent. It executes the full chapter and replays scoring after removing
+outcomes and doubling exposure. Acceptance execution is in progress.
+Remaining: focused/full checks, docs/book build, isolated 20,000-policy execution,
+rendered table/figure/link inspection, and final artifact/diff checks.
+Blockers: none.
+Next action: collect the synthetic regression and run common acceptance checks.
+
+Checkpoint: 2026-09-14 — in progress
+Changed: completed the worked-price cells and reused workbook reading in the
+optional extension; moved numerical verification out of the visible calculation.
+Verified: focused synthetic scoring test passed (4,000 policies); strict
+`just docs-build` passed; `git diff --check` and generated-output ignore checks
+passed. `uv run python /tmp/azoic-m28-verify.py` passed in a fresh process/directory
+with only a 20,000-policy cleaned-cache sample and companion audit; downloads
+were rejected and both workbooks/models were built afresh. All chapter cells,
+eight optional comparison rows, and canonical partition equality passed (16,000
+train / 4,000 test). Evidence: `/tmp/azoic-m28-mkh_ns1g/execution.log`.
+Remaining: running `just check` and threaded `just demo`, rendered inspection,
+and final completion checkpoint.
+Blockers: none.
+Next action: inspect the fresh scoring chapter once the full-book render reaches it.
+
+Checkpoint: 2026-09-14 — in progress
+Changed: no further implementation changes.
+Verified: `just check` passed Ruff/Ty and **688 tests, 4 upstream array-API skips**.
+The full scoring render has passed the worked policy's workbook/model/scoring
+assertions and is finishing its retained optional figures.
+Remaining: complete full-book rendering and visual/link/table inspection.
+Blockers: none.
+Next action: inspect the rendered worked-policy tables and retain M28 in progress
+until the complete book render passes.
+
+Checkpoint: 2026-09-14 — in progress
+Changed: visual review found the worked-price equation exceeded the reading
+column; split it into two aligned lines and wrapped two visible Python lines.
+Verified: staged scoring HTML has readable nine-factor and compact price tables,
+all five images load, and MathJax reports no errors. Full-data policy 811 has
+exposure 0.76, raw rate 121.965359, adjusted rate 121.742112, and expected costs
+92.693673 / 92.524005. Tables fit the default theme's 749-pixel reading column.
+Remaining: finish full render, refresh scoring HTML after the equation-only
+presentation fix, inspect final equation/links/figures, and complete the checkpoint.
+Blockers: none. Early inspection attempted `_book` before Quarto assembled it;
+staged `examples/04-scoring-tariff.html` was available and inspected instead.
+Next action: after `just demo`, render `examples/04-scoring-tariff.qmd` once more
+with the same thread limits, then inspect the final page.
+
+Checkpoint: 2026-09-14 — complete
+Changed: `examples/04-scoring-tariff.qmd` retains policy IDs/exposure and explicit
+raw/adjusted rate and expected-period-cost columns for every candidate. The
+lowest-ID held-out policy shows its outcome-free inputs, nine fitted levels and
+workbook factors, base/product, raw rate, frozen training O/P, adjusted rate, and
+both costs before the main-path stopping point. A local chapter function reuses
+the existing workbook-factor recipe for both exports; fitted preprocessing is
+still required and the direct workbook remains raw. The optional distillation
+and held-out claims comparisons remain intact. `tests/test_tutorial.py` extends
+the existing fresh-process synthetic assembly test; no library/API/dependency,
+shared configuration, cleaning, model parameter, or partition changes were made.
+Verified:
+- `uv run pytest 'tests/test_tutorial.py::test_chapter_builds_its_own_artifacts_in_fresh_process[04-scoring-tariff.qmd]' -q`:
+  failed first on the missing worked policy, then passed, including a final repeat
+  after the equation/line-wrapping edit. The full chapter runs on 4,000 synthetic
+  policies with only paired input caches and rejected downloads. Replaying actual
+  scoring cells after removing claim columns and shuffling held-out rows preserves
+  IDs/prices; doubling exposure preserves rates and doubles period costs. Manual
+  factors, workbook application, GLM prediction, and scoring agree at the required
+  tolerance; the eight optional claims-comparison rows still execute.
+- `just check`: Ruff/Ty green, **688 passed, 4 upstream array-API skips**.
+  `uv run ruff format tests/test_tutorial.py`, strict `just docs-build`, and
+  `git diff --check` passed. Subsequent edits only wrapped the displayed equation
+  and two Python expressions; the focused test and chapter execution passed again.
+- `OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2 MKL_NUM_THREADS=2 just demo`:
+  **11 pages / 127 Python cells** passed with existing paired caches. After the
+  visual layout correction, `OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2 MKL_NUM_THREADS=2
+  uv run quarto render examples/04-scoring-tariff.qmd` passed all **21 cells**.
+  No OpenML download or raw-cache rebuilding was tested in this milestone.
+- `uv run python /tmp/azoic-m28-verify.py`: all scoring chapter cells passed in a
+  fresh process/directory with only a declared **20,000-policy** cleaned-cache
+  sample and companion audit, downloads rejected, and no workbook or estimator
+  supplied. Both exports were rebuilt, all eight claims-comparison rows executed,
+  and exact canonical-run positions agreed (**16,000 train / 4,000 test**).
+  Evidence: `/tmp/azoic-m28-mkh_ns1g/execution.log` and its artifact directory.
+- Final `uv run python /tmp/azoic-m28-links.py`: **317 links/anchors** resolve.
+  Headless inspection with `/tmp/azoic-m28-inspect.py` and screenshots verified the
+  factor/result tables, raw/adjusted units, external multiplier, and stopping point
+  before the optional extension. The corrected equation is 472 pixels wide in
+  the 749-pixel reading column; no MathJax errors. All five retained figures load
+  with descriptive alt text and were visually inspected. Screenshots:
+  `/tmp/azoic-m28-factors-final.png`, `/tmp/azoic-m28-price-final.png`, and
+  `/tmp/azoic-m28-plots-review.png`.
+- Full-data worked policy **811** has exposure **0.76**, base **48.053870**, factor
+  product **2.538096**, raw/adjusted rates **121.965359 / 121.742112**, and expected
+  costs **92.693673 / 92.524005**. These are rendered evidence, not solver goldens.
+- `git check-ignore examples/_book/ examples/_artifacts/fremtpl2/ site/` confirms
+  generated artifacts stay ignored. All pre-existing unrelated edits were preserved;
+  no commit or publication was performed.
+Remaining: none for M28. M29–M30 remain pending.
+Blockers: none.
+Next action: in the next session, mark M29 in progress and obtain component
+predictions from the existing frequency/severity models for weighted diagnostics.
+
+### M29 — explain frequency and severity separately
+
+Make the decomposition useful for diagnosis and remove operations unrelated to
+the lesson. Primary source: `examples/06-frequency-severity.qmd`.
+
+- [x] Explain when separate incidence and claim-size models help interpretation
+  and why the product still needs its own calibration assessment. Use public
+  fitted `freq_` and `sev_` attributes, with the existing fitted preprocessing
+  for the GLM; do not add prediction wrappers or a new library interface.
+- [x] Show raw predicted frequency, severity, and their product for a small
+  policy sample. Verify the product reproduces the composite raw prediction.
+  A training O/P adjustment applies to the product, not to both components.
+- [x] Add held-out component calibration tables for each GLM/GBM alternative:
+  frequency compares claim counts with rates using exposure weights on all
+  rows; severity compares claim amounts with cost-per-claim predictions using
+  claim-count weights on positive-claim rows only. Show supporting exposure or
+  claim counts and interpret a concrete discrepancy from the rendered results.
+- [x] Explain the actual product comparison with direct Tweedie on the same
+  holdout, without claiming superiority from one split. Remove this chapter's
+  automatic MLflow setup/logging and report/dashboard writes; link reporting
+  for those optional operations. Retain the in-page model comparison.
+- [x] Test component weights, positive-claim filtering for severity diagnostics,
+  product equality, and outcome-free prediction using synthetic chapter cells.
+  Run common checks and isolated chapter execution without an MLflow store or
+  earlier reports. Training populations and existing product fits stay unchanged.
+
+Initial checkpoint: pending. Next action: obtain component predictions from
+the existing fitted models before their product-level adjustment.
+
+Checkpoint: 2026-09-14 — in progress
+Changed: started M29; preserved all existing working-tree changes.
+Verified: component attributes, fitted preprocessing, calibration-table units,
+and existing synthetic chapter assembly checks.
+Remaining: component examples/tables, interpretation, operations removal,
+synthetic regression, isolated execution, full render and common checks.
+Blockers: none.
+Next action: expose raw component predictions and correctly weighted diagnostics.
+
+Checkpoint: 2026-09-14 — in progress
+Changed: chapter uses fitted component attributes and GLM preprocessing, shows
+raw policy examples and four weighted calibration tables, and retains raw/adjusted
+product comparisons. Removed chapter MLflow setup/logging and report/dashboard
+writes; linked the existing operations recipe. Added a synthetic chapter regression.
+Verified: `uv run pytest tests/test_tutorial.py -k 06-frequency -q`: 1 passed;
+checks exact diagnostic arrays/weights, positive-claim filtering, product equality,
+outcome-free prediction, and absence of operations artifacts with MLflow blocked.
+`just docs-build`: strict-green. Ruff formatting passed.
+Remaining: concrete full-data interpretation, full suite/book render, isolated
+20,000-row execution, rendered inspection and final diff checks (running).
+Blockers: none.
+Next action: inspect rendered component and product results and explain discrepancies.
+
+Checkpoint: 2026-09-14 — in progress
+Changed: implementation and synthetic regression complete; full-data interpretation
+and rendered inspection remain.
+Verified: `just check`: Ruff/Ty green, **689 passed, 4 upstream array-API skips**.
+`uv run python /tmp/azoic-m29-verify.py`: fresh process/directory, 20,000 cached
+policies, 16,000 train / 4,000 test, paired cleaned cache/audit only; downloads
+and MLflow imports rejected. Component/product assertions passed, with only
+three parquet/audit cache files present afterward. Evidence is under
+`/tmp/azoic-m29-tz644r57/`. The bounded sample emitted the existing warning for
+categorical levels with no positive training claims; no fit settings were changed.
+`git diff --check` and generated-artifact ignore checks passed.
+Remaining: full book render (now in optional recipes), concrete interpretation,
+visual and link review, final checkpoint.
+Blockers: none.
+Next action: read the full-data component tables after chapter 06 renders.
+
+Checkpoint: 2026-09-14 — in progress
+Changed: added concrete interpretation of full-data GLM/GBM component discrepancies
+and product tradeoffs against direct Tweedie, with the default population stated.
+Verified: threaded `just demo` passed **11 pages / 131 Python cells** on existing
+667,673-row paired caches. Chapter 06 passed its 12 cells and stored-partition,
+component-product, raw-run metric, training-factor, and Gini-invariance assertions.
+Raw product deviances remain **75.237864 / 74.560943** for GLM/GBM, matching the
+previous implementation. Browser inspection checked all nine tables: no page
+overflow, broken images, or MathJax errors; this chapter has no figures.
+Remaining: chapter refresh for the added prose, final rendered link/visual check,
+and completion checkpoint. No numerical cells changed after the green suite/render.
+Blockers: none.
+Next action: inspect the final refreshed chapter and mark M29 complete.
+
+Checkpoint: 2026-09-14 — complete
+Changed: `examples/06-frequency-severity.qmd` now explains the component units,
+uses public `freq_`/`sev_` with existing fitted preprocessing, shows five common
+held-out policies and four correctly weighted component tables, and interprets
+observed discrepancies and direct-Tweedie product tradeoffs. The training factor
+applies once to the product. Removed automatic MLflow/report/dashboard writes and
+linked the operations recipe. `tests/test_tutorial.py` exercises the actual chapter
+cells with synthetic data, including exact weights/filtering, product equality,
+outcome-free predictions, and cache-only artifacts while MLflow is unavailable.
+Verified:
+- `uv run pytest tests/test_tutorial.py -k 06-frequency -q`: **1 passed**.
+- `just check`: Ruff/Ty green, **689 passed, 4 upstream array-API skips**;
+  `just docs-build`: strict-green. Later chapter edits added explanatory prose only.
+- `OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2 MKL_NUM_THREADS=2 just demo`:
+  **11 pages / 131 Python cells** passed using existing paired caches, including
+  all full-portfolio component/product assertions. No OpenML download or cache
+  rebuilding was needed; those paths were not retested in M29.
+- After adding the interpretation, `OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2
+  MKL_NUM_THREADS=2 uv run quarto render examples/06-frequency-severity.qmd`
+  passed all **12 cells** on **667,673 policies**, with **534,138 training /
+  133,535 test** rows. Product fits/metrics are unchanged.
+- `uv run python /tmp/azoic-m29-verify.py`: isolated **20,000-row** execution
+  passed with only the declared paired caches, no downloads, no MLflow store,
+  and no earlier reports; evidence in `/tmp/azoic-m29-tz644r57/execution.log`.
+- `uv run python /tmp/azoic-m29-inspect.py examples/_book/06-frequency-severity.html`:
+  all nine tables inspected, units/support and scale labels visible, no page
+  overflow or MathJax errors; no figures were added. Screenshots are under
+  `/tmp/azoic-m29-table-*.png`. The reused local-link checker resolved **151**
+  links/anchors, including the operations recipe. Whitespace and ignore checks
+  passed; generated book/cache outputs remain ignored.
+Remaining: none for M29. M30 remains pending; no library APIs, dependencies,
+model settings, training populations, or partitions changed.
+Blockers: none.
+Next action: in the next session, mark M30 in progress and expose its bounded
+tuning spaces and comparable untuned baseline. Stop here.
+
+### M30 — make tuning choices and gains interpretable
+
+Teach a bounded, predeclared experiment rather than an unexplained search.
+Primary source: `examples/07-tuning.qmd`; reuse the operations/configuration
+guides for the existing typed search-space contract.
+
+- [x] Keep the seeded subset of at most 100,000 rows and eight Python trials
+  per model. Declare explicit custom spaces: GLM `alpha` logarithmically from
+  `1e-4` to `0.1`; structured GBM `num_leaves` from 8 to 32 in steps of 8.
+  Other base parameters remain fixed. Explain that each custom model space
+  replaces that model's built-in space and why these bounds are illustrative.
+- [x] Keep `calibration_penalty=1.0` and show that O/P 1.10 contributes 0.10
+  to the objective. Compare the penalty contribution with deviance; select
+  any future penalty or search bounds inside training data, never from the
+  displayed outer-test result.
+- [x] Define the untuned baseline config before either evaluation, using the
+  same subset, features, preprocessing, seed, and outer partition. Fit it once
+  and compare baseline/tuned raw outer-test deviance, O/P, and Gini side by
+  side. Assert equal fingerprints and exact train/test positions. A gain is
+  measured, not required; do not compare these numbers with the full portfolio.
+- [x] Retain the selected-estimator scoring/export handoff and four-trial CLI
+  example as a separately labelled search. Show readable YAML for the explicit
+  spaces and point to existing CLI precedence documentation.
+- [x] Extend synthetic chapter coverage for declared ranges, baseline/selected
+  partition equality, fixed parameters, and the existing untouched-holdout
+  guarantee. Run common checks and isolated tuning execution, including its
+  own YAML, CLI report, and workbook outputs.
+- [x] At the final handoff, confirm all six milestones are green, inspect the
+  complete book's main path and optional links, and record fresh whole-book,
+  strict-docs, and suite evidence. List any real-download or deployment checks
+  not performed. Set the next task to the separate M15 release review and stop.
+
+Initial checkpoint: pending. Next action: declare both search spaces and the
+untuned baseline before running any study or displaying outer-test results.
+
+Checkpoint: 2026-09-14 — in progress
+Changed: started M30; preserving all pre-existing working-tree edits.
+Verified: current focus, M30 scope, shared configuration, tuning implementation,
+and the existing synthetic chapter assembly checks.
+Remaining: explicit spaces/baseline, penalty explanation, comparison and YAML,
+synthetic/isolated checks, full suite/docs/book render and final book inspection.
+Blockers: none.
+Next action: extend the synthetic chapter regression, then declare both bounded
+spaces and the baseline before evaluation.
+
+Checkpoint: 2026-09-14 — in progress
+Changed: explicit GLM alpha and GBM leaf-count spaces, predeclared untuned
+baseline, worked penalty, raw side-by-side holdout metrics/gains, generated YAML,
+and links to the existing search contract/CLI precedence. The synthetic assembly
+test now executes tuning, its real CLI command, and an altered-outer-claims rerun.
+Verified: focused tuning chapter test passed on 4,000 synthetic policies, including
+fixed parameters, exact partitions/fingerprints, metric reproduction, YAML reload,
+report/workbook outputs, and unchanged selections after holdout claims changed.
+The first CLI smoke exposed missing project metadata in the temporary test harness;
+a minimal project table plus the existing offline environment fixes that setup.
+Strict docs passed. Full check stopped on one 102-character test line, now wrapped.
+Remaining: rerun full check, complete book render, isolated tuning and final
+whole-book visual/link checks. Generated outputs remain ignored.
+Blockers: none.
+Next action: run isolated 20,000-policy tuning including its own CLI/YAML/workbook.
+
+Checkpoint: 2026-09-14 — in progress
+Changed: no further implementation changes after the lint-only line wrap.
+Verified: `just check` passed Ruff/Ty and 690 tests, 4 upstream array-API skips;
+`just docs-build` passed strict mode. `uv run python /tmp/azoic-m30-verify.py`
+passed all tuning cells in a fresh directory with only 20,000 cached policies
+and the companion audit, downloads rejected. Baseline/selected positions and
+fingerprints match (16,000 train / 4,000 test); its own Python report, raw workbook,
+YAML reload, and real four-trial CLI report passed. Evidence is under
+`/tmp/azoic-m30-fapky_cs/`. Whitespace and generated-output ignore checks passed.
+Remaining: full render is executing chapter 07; inspect its results and the
+complete book's main-path/optional links before the final M15 handoff.
+Blockers: none.
+Next action: inspect the fresh tuning HTML, then run whole-book browser/link checks.
+
+Checkpoint: 2026-09-14 — complete
+Changed: `examples/07-tuning.qmd` declares logarithmic GLM alpha [1e-4, 0.1]
+and structured-GBM leaves {8, 16, 24, 32}, eight Python trials per model, and an
+untuned baseline before fitting. It explains custom-space replacement, fixed
+settings, the 0.10 penalty contribution at O/P 1.10, and training-only choices.
+Raw baseline/tuned deviance, O/P, and Gini appear side by side with measured gains.
+Selected-estimator scoring/raw export remain executable; readable generated YAML
+and the separately labelled four-trial CLI search link to existing precedence docs.
+`tests/test_tutorial.py` extends the existing fresh-process assembly check, with
+minimal project metadata and the installed offline environment for its real CLI.
+Verified:
+- `uv run pytest tests/test_tutorial.py -k 07-tuning -q`: **1 passed**, including
+  a final repeat after display-only line wrapping. On 4,000 synthetic policies it
+  checks declared bounds, only the intended sampled parameters, fixed settings,
+  exact baseline/selected fingerprints and partitions, raw metric reproduction,
+  YAML reload, CLI report, and workbook. Multiplying only outer-test claims by ten
+  leaves selected parameters and inner objectives unchanged while outer deviance
+  changes. The existing random/temporal untouched-holdout regressions also pass.
+- `just check`: Ruff/Ty green, **690 passed, 4 upstream array-API skips**.
+  `just docs-build`: strict-green. The only subsequent executable-source changes
+  split two displayed Python lines without changing expressions; the focused
+  regression and full tuning chapter passed again. Ruff format and final
+  `git diff --check` passed.
+- `OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2 MKL_NUM_THREADS=2 just demo`:
+  **11 pages / 136 Python cells** passed with existing paired caches for the
+  **667,673-policy** cleaned portfolio. Tuning uses its seeded **100,000-policy**
+  subset and identical **80,000 train / 20,000 test** partitions. After visual
+  line wrapping, the same thread limits with `uv run quarto render
+  examples/07-tuning.qmd` passed all **16 cells**, including the separate CLI.
+  Logs: `/tmp/azoic-m30-{demo,chapter,check,docs}.log`.
+- `uv run python /tmp/azoic-m30-verify.py`: isolated **20,000-policy** execution
+  passed in a fresh process/directory with only the cleaned-cache sample and its
+  companion audit, downloads rejected, and no supplied models, YAML, reports, or
+  workbook. Baseline/selected partitions agree (**16,000 / 4,000**); the chapter
+  created its own Python report, raw workbook, YAML, and real CLI report.
+  Evidence: `/tmp/azoic-m30-fapky_cs/execution.log` and its artifact directory.
+- `uv run python /tmp/azoic-m30-book-inspect.py examples/_book` inspected all
+  **11 pages**: all **12 figures** load with alt text, with no MathJax errors or
+  page overflow. Main-path entry, column meanings, adaptable experiment,
+  diagnostics, worked price, stopping points, and optional navigation were
+  reviewed. Tuning tables, fixed ranges, penalty, and YAML were visually checked;
+  its two clipped code lines were wrapped and the refreshed comparison rechecked.
+  Browser reports/screenshots are `/tmp/azoic-m30-*inspection*` and
+  `/tmp/azoic-m30-*.png`. The final `/tmp/azoic-m30-links.py` resolves **1,710**
+  local links/anchors and corresponding published-guide targets in the local site.
+- On the declared subset, raw GLM deviance changes **68.209744 → 67.972580**,
+  O/P **0.875615 → 0.889797**, Gini **0.253194 → 0.258404**. Structured GBM
+  changes **68.582483 → 67.092046**, **1.126262 → 0.985628**, and
+  **0.271255 → 0.305912** respectively. Selected alpha is about **0.071145**;
+  selected leaves are **8**. These are one-split rendered observations, not
+  required improvements or exact solver goldens; no full-portfolio gain is claimed.
+- Context7's current Optuna documentation confirmed logarithmic and stepped
+  distributions. No public APIs, dependencies, shared model settings, cleaning,
+  or main-path partitions changed. Generated book/site/cache/report/workbook
+  artifacts remain ignored; all pre-existing unrelated edits were preserved.
+Limitations: no fresh OpenML download or raw-cache rebuild was performed. No
+new distribution build, release publication, deployment, or live-site check was
+performed; M15 must repeat its release checks on the corrected source.
+Remaining: none for M30. **M25–M30 are all complete.**
+Blockers: none.
+Next action: in a separate session, perform the M15 release review and repeat
+its distribution builds and isolated CLI checks before publication. Stop here.
+
 ## Milestones
 
+- ☑ **Tutorial editorial and execution revision** — completed 2026-09-11
+  within M24's scope; no new implementation milestone.
+  - [x] Reporting creates and logs only its own reports; both CLI workbooks use
+    `--no-recalibrate` to preserve the evaluation boundary.
+  - [x] Replaced unsupported pass claims with actual-result interpretation and
+    open review questions; restored capped-loss impact and operational limits.
+  - [x] Main path ends at scoring and direct GLM tariff review. Deeper diagnostics,
+    distillation, and later recipes are optional. Shared setup is hidden, tables
+    fit the reading column, all 12 plots have alt text, and inline math renders.
+  - [x] Documented manual cleaned-cache invalidation and bounded recipe samples
+    by available rows; tuned estimators now feed executable scoring/export.
+  - [x] Added a fresh-process synthetic reporting assembly test (real setup,
+    fits, reports, and MLflow). It exposed a final-two-bin merge error:
+    `_merge_small_bins` now pops the last weight before adding it to the remaining
+    neighbour. A minimal two-bin regression covers the shared exposure/claim floor.
+  - [x] `just check`: Ruff/Ty green, **682 passed, 4 upstream skips**;
+    `just docs-build`: strict-green; final `just demo`: **11 pages / 115 Python
+    cells**, with OMP/OpenBLAS/MKL threads limited to two. The existing numerical
+    tutorial regression also passed after display changes.
+  - [x] Independently executed reporting (including CLI), tuning (including
+    export), and protected-group reporting in separate fresh directories with
+    only cached input and `SAMPLE_SIZE=20_000`. This additionally checks the
+    below-100k recipe path. No fitted estimators or workbooks were supplied.
+  - [x] Desktop Chrome inspected all 11 pages: no table overflow in the 749-pixel
+    reading column, visible shared helper definitions, broken images, missing
+    alt text, or MathJax errors. Reviewed representative screenshots. Local link,
+    fragment, and image-target checks passed. Generated outputs remain ignored.
+  Full sequential rendering and independent chapter execution are distinct checks;
+  independent execution was checked for the three recipes above, not every page.
+  Cached input was reused; a fresh OpenML download and deployment were not tested.
+  The Pages workflow runs after pushes to main, not as a pre-merge gate.
+  Handoff: this requested revision is complete; M15 remains next.
+
+- ☑ **M24 — ordered tutorial series** — converted `examples/` into a numbered
+  Quarto book: `_quarto.yml` declares index, portfolio, experiments,
+  diagnostics, scoring and tariff, reporting and operations, frequency–severity,
+  tuning, temporal stability, protected-group audit, and manual tariff recipes.
+  A shared `_shared.qmd` include (hidden cells) carries imports, the
+  deterministic fetch/clean/cache loader, config builders, a local MLflow
+  helper, and `holdout_diagnostics`; chapters refit their own models — only the
+  pinned OpenML parquet caches persist. New executable coverage: `tune_experiment`
+  with a 100k-row subset (outer holdout untouched), synthetic
+  `temporal_split`-backed `stability_table`, a `protected_cols` subgroup audit,
+  and `extract_tariff`/`apply_tariff`/`recalibrate_for_total` recipes. Completed
+  2026-09-11: `just check` passed Ruff, Ty, and 680 tests (4 upstream skips);
+  `just docs-build` strict-green; `just demo` rendered all 11 pages in ~11
+  minutes; visual check of the lift/calibration grid passes; the tutorial-cell
+  test in `tests/test_workflow.py` now binds to the chapter structure.
+  `docs/guide/fremtpl2.md` is the series hub; README, installation, migration,
+  PRD §3/§9/§10, AGENTS, justfile, CI docs workflow, and `.gitignore` updated.
+  Generated `_book/` and artifacts stay ignored. Handoff: M15 stays next.
 - ☑ **Tutorial age-chart presentation** — prioritize raw-value one-ways for
   both ages, retain fitted-group diagnostics, and replace the manual single-policy
   curve with a link to the existing sklearn PDP/ICE recipe. Separate exposure
@@ -78,7 +916,8 @@ Legend: ☐ pending · ◐ in progress · ☑ done
   stability, remove obsolete MLflow roadmap language, and validate wheel and
   source distributions before a least-privilege publish job.
 - ☐ **M15 — first public release** — publish and verify `azoic==0.4.1` through
-  GitHub Releases and PyPI trusted publishing, after M16–M23 are green.
+  GitHub Releases and PyPI trusted publishing, after M16–M30 are green.
+  Follow **Current focus**; this tutorial plan does not authorize publication.
 - ☑ **M16 — preserve the experiment holdout** — immutable fit/test positions
   reused by tutorial diagnostics, training calibration, and CLI distillation.
 - ☑ **M17 — reject inconsistent frequency-severity outcomes** — issue 2.
@@ -90,7 +929,7 @@ Legend: ☐ pending · ◐ in progress · ☑ done
 - ☑ **M22 — show what fitted preprocessing does**.
 - ☑ **M23 — evaluate the exported tariff against claims**.
 
-## Current focus
+## Earlier remediation status (historical)
 
 - M14 and M16–M21 are complete. The thirteen correctness findings supplied
   on 2026-09-05 are covered by the remediation evidence below. M22 and M23 are complete;
@@ -115,8 +954,9 @@ Legend: ☐ pending · ◐ in progress · ☑ done
   replaces the manual fixed-policy curve with raw-value one-ways for both ages.
 - **M23 is complete.** The applied workbook is evaluated against held-out claims
   alongside the three main models, with separate raw/adjusted and fidelity evidence.
-- Next implementation session: **M15 only** repeats distribution and isolated CLI
-  checks before publication. This session stops at the M23 handoff.
+- Historical M23 handoff: **M15** repeats distribution and isolated CLI checks
+  before publication. The current tutorial improvement order above supersedes
+  that next-session instruction.
 
 ## Correctness remediation plan — 2026-09-05
 

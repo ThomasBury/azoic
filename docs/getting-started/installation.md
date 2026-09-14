@@ -3,7 +3,34 @@
 Azoic requires Python 3.12 or newer. Use a virtual environment so its compiled
 `glum` and LightGBM dependencies do not conflict with another project.
 
-## Install the package
+## Work from a checkout
+
+The checkout is the only install route until the first public release lands on
+PyPI:
+
+```bash
+git clone https://github.com/ThomasBury/azoic.git
+cd azoic
+uv sync
+uv run pytest -x
+```
+
+`uv sync` installs the default development group. Other useful environments are:
+
+| Goal | Command |
+|---|---|
+| Runtime only | `uv sync --no-dev` |
+| Default contributor environment | `uv sync` |
+| Every extra and dependency group | `uv sync --all-extras --all-groups` |
+| Lint, type-check, and test | `just check` |
+
+## Install from PyPI
+
+!!! note "Pending first public release"
+
+    `azoic` is not on PyPI yet; the 0.4.1 release publishes it. Until then
+    `uv add azoic` and `pip install azoic` fail with `No matching
+    distribution` -- use the checkout above.
 
 With [uv](https://docs.astral.sh/uv/):
 
@@ -45,24 +72,6 @@ For pip, replace `uv add` with `python -m pip install`.
     needs them. A missing extra raises an error with its install command; it does
     not prevent importing Azoic.
 
-## Work from a checkout
-
-```bash
-git clone https://github.com/ThomasBury/azoic.git
-cd azoic
-uv sync
-uv run pytest -x
-```
-
-`uv sync` installs the default development group. Other useful environments are:
-
-| Goal | Command |
-|---|---|
-| Runtime only | `uv sync --no-dev` |
-| Default contributor environment | `uv sync` |
-| Every extra and dependency group | `uv sync --all-extras --all-groups` |
-| Lint, type-check, and test | `just check` |
-
 ## Build the documentation
 
 The site uses Zensical from the `docs` dependency group.
@@ -74,19 +83,22 @@ just docs-build
 
 The strict build writes the ignored site to `site/`.
 
-## Render the freMTPL2 tutorial
+## Render the tutorial series
 
-The executable tutorial needs the Jupyter demo group, the MLflow and Plotly
-extras, and a separate [Quarto](https://quarto.org/docs/get-started/) installation.
+The numbered executable tutorial chapters need the Jupyter demo group, the
+MLflow, Plotly, and tuning extras, and a separate
+[Quarto](https://quarto.org/docs/get-started/) installation.
 
 ```bash
-uv sync --group demo --extra mlops --extra plot
+uv sync --group demo --extra mlops --extra plot --extra tune
 quarto --version
 just demo
 ```
 
-The render fetches public OpenML data. Automated tests and the First Model page
-remain network-free.
+`just demo` renders the whole Quarto book under `examples/` into the ignored
+`examples/_book/` directory. The render fetches public OpenML data for the
+freMTPL2 chapters; the temporal-stability chapter is synthetic and
+network-free. Automated tests and the First Model page remain network-free.
 
 ## Common failures
 

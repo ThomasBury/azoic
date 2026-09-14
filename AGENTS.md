@@ -18,6 +18,18 @@ policy admin, Guidewire integration.
 
 > Implement exactly one pending milestone per session. Mark it ◐ before implementation, run its acceptance checks, mark it ☑ only when green, then stop with a handoff. Do not start the next milestone automatically.
 
+On a new session or after context compaction, read `PROGRESS.md`'s **Current
+focus**, the active milestone, and its latest checkpoint before editing. Resume
+an in-progress milestone first; otherwise use the explicit delivery order, not
+the lowest milestone number or an older handoff. The tutorial improvement plan
+is M25–M30; its scope is mirrored in `PRD.md` section 6.
+
+Update the milestone checklist and checkpoint after each meaningful chunk and
+before handing off: changes, checks actually run and their results, remaining
+work, blockers, and the exact next action. Leave interrupted or unverified work
+◐. Keep historical evidence; `PROGRESS.md` is the execution record and `PRD.md`
+defines scope. A planning session records pending work without starting it.
+
 ## Setup commands
 
 - Install runtime only: `uv sync --no-dev`
@@ -52,7 +64,7 @@ src/azoic/
   tune.py           # tune_experiment (optuna, lazy import) -- v0.2 part 1 / M7
   cli.py            # Typer entry point
 tests/              # pytest; synthetic portfolio fixture in conftest.py
-examples/fremtpl2.qmd # source-only executable freMTPL2 tutorial
+examples/           # numbered Quarto tutorial book (only .qmd/.yml committed)
 ```
 
 13 flat modules. No `utils`. No subpackages. Don't create either without
@@ -64,9 +76,10 @@ Documentation is task-first:
 docs/
   getting-started/  # installation and one network-free first model
   guide/            # workflow plus five focused task guides and tutorial bridge
-  reference/        # generated Python API plus comprehensive config/CLI schema
+  reference/        # generated Python API, config/CLI schema, and glossary
   javascripts/      # official Zensical MathJax integration only
-examples/fremtpl2.qmd  # Quarto source; linked, not restyled, by Zensical
+examples/*.qmd        # numbered Quarto book chapters; linked, not restyled, by Zensical
+examples/_quarto.yml  # main path and optional recipes; only sources committed, _book/ ignored
 ```
 
 ## Code style
@@ -125,11 +138,19 @@ examples/fremtpl2.qmd  # Quarto source; linked, not restyled, by Zensical
 - Every estimator/transformer passes
   `sklearn.utils.estimator_checks.parametrize_with_checks`.
 - No network, no S3, no real data in automated tests. Real-data fetching is
-  permitted only during manual rendering of `examples/fremtpl2.qmd`.
+   permitted only during manual rendering of the `examples/` tutorial book.
 - New module -> new `tests/test_<module>.py` with at least one runnable
   check.
 - Keep tutorial HTML, Quarto caches/support files, fetched data, workbooks,
   reports, and MLflow state ignored; only the `.qmd` is source-controlled.
+- Tutorial cleaning caches pair `fremtpl2_joined_v3.parquet` with
+  `cleaning_audit_v1.csv`; rebuild both from cached raw inputs if either is
+  missing. Delete both after changing the claim cap or cleaning rules.
+- Tutorial chapters create their own artifacts; shared setup uses `include: false`.
+  Keep essential diagnostics/scoring on the main path, mark deeper sections and
+  later recipes optional, and supply figure alternative text. The synthetic
+  reporting assembly smoke test covers setup through MLflow; full sequential
+  rendering and isolated chapter rendering are separate manual checks.
 - Run `just check` (or `uv run ruff check . && uv run ty check && uv run pytest`) before
   finishing any task.
 

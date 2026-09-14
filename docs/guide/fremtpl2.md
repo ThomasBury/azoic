@@ -1,11 +1,13 @@
 # freMTPL2 tutorial
 
-The freMTPL2 tutorial is the complete Azoic workflow on the public French motor
-third-party-liability portfolio. It is an executable Quarto document rendered
-as one standalone HTML page.
+The tutorial series is the complete Azoic workflow as an executable Quarto
+book: the freMTPL2 chapters walk the public French motor third-party-liability
+portfolio from claims data to an exported multiplicative tariff, and later
+chapters cover the remaining library features on freMTPL2 subsets or small
+synthetic portfolios.
 
-[Open the tutorial](https://thomasbury.github.io/azoic/tutorial/fremtpl2.html){ .md-button .md-button--primary }
-[View the QMD source](https://github.com/ThomasBury/azoic/blob/main/examples/fremtpl2.qmd){ .md-button }
+[Open the tutorial series](https://thomasbury.github.io/azoic/tutorial/index.html){ .md-button .md-button--primary }
+[View the QMD sources](https://github.com/ThomasBury/azoic/tree/main/examples){ .md-button }
 
 ## Prerequisites for a local render
 
@@ -13,33 +15,63 @@ From a checkout, install the tutorial environment and ensure Quarto is on
 `PATH`:
 
 ```bash
-uv sync --group demo --extra mlops --extra plot
+uv sync --group demo --extra mlops --extra plot --extra tune
 quarto --version
 just demo
 ```
 
-The render fetches pinned OpenML datasets 41214 and 41215, so this page is the
-only onboarding path that needs network access. Generated data, caches,
-workbooks, reports, MLflow state, and `examples/fremtpl2.html` stay ignored.
+The render fetches pinned OpenML datasets 41214 and 41215 for the freMTPL2
+chapters, so those pages are the only onboarding path that needs network
+access. Generated data, caches, workbooks, reports, MLflow state, and the
+rendered book stay under ignored `examples/_artifacts/` and `examples/_book/`.
+Chapters refit their own models and create every artifact they need. The loader
+reuses its cleaned cache and regenerates the sampled portfolio parquet. Changing
+the claim cap or cleaning rules requires rebuilding the cleaned cache; see the
+book's portfolio chapter. Shared functions in `_shared.qmd` are tutorial helpers,
+not public Azoic APIs.
 
-## What it covers
+Read index → portfolio → experiments → essential diagnostics → scoring and
+tariff review first. Stop after scoring if policy rates are the deliverable;
+stop after direct GLM tariff review if a workbook is enough. Distillation,
+diagnostic derivations, and all subsequent chapters are optional recipes.
 
-- deterministic cleaning, sampling, and portfolio validation;
-- profiling, screening, and fitted bins/groups with training totals;
-- direct Tweedie GLM tariff baseline, raw LightGBM benchmark, and structured teacher;
-- raw-value driver/vehicle-age one-ways and supporting fitted-group GLM diagnostics;
-- executable Poisson-frequency times Gamma-severity appendix;
-- held-out Gini, Lorenz, lift, calibration, one-way, double-lift, and
-  actual-versus-predicted diagnostics;
-- outcome-free scoring checks;
-- model cards, comparison output, MLflow logging, and tariff export;
-- four-candidate claims evaluation including the applied workbook, raw and
-  training-adjusted metrics, raw ages and common age bins, and separate teacher/student fidelity.
+## Chapter map
+
+1. **Index** — what the series builds, conventions, and setup.
+2. **Portfolio ingestion and review** — pinned OpenML fetch, deterministic
+   cleaning, portfolio summary, profiling, and screening.
+3. **Two reproducible experiments** — direct Tweedie GLM baseline, raw
+   LightGBM benchmark, tariff-structured teacher, and the fitted bins/groups
+   inspection with exact partitions.
+4. **Held-out diagnostics** — frozen training recalibration, held-out
+   Gini/Lorenz/lift/calibration and age one-ways, then evidence and open review
+   questions. Derivations, grouped views, double-lift, and residuals are optional.
+5. **Scoring and tariff export** — outcome-free scoring and a direct GLM
+   workbook; optional GBM distillation, workbook application using the fitted
+   preprocessing pipeline, fidelity, and four-candidate claims evaluation.
+6. **Reporting, MLflow, and the CLI** — model cards, comparison table and
+   dashboard, local MLflow logging, and the `azoic` CLI walkthrough.
+7. **Frequency–severity alternatives** — Poisson × Gamma GLM and GBM variants
+   on the same partition.
+8. **Configuration-driven tuning** — `tune_experiment` with a typed YAML
+   `tuning:` block on a bounded subset; the outer holdout stays untouched.
+9. **Temporal stability diagnostics** — synthetic period portfolio,
+   `temporal_split` experiment, and reconciled `stability_table` rows.
+10. **Protected-group audit** — `protected_cols` subgroup calibration evidence
+    on a synthetic protected attribute.
+11. **Manual tariff recipes** — `extract_tariff`, `apply_tariff`, and
+    `recalibrate_for_total` factor revisions. Regularization guidance appears
+    earlier with experiment configuration.
 
 !!! note "Rendering boundary"
 
     The tutorial keeps its existing Quarto rendering and styling. Zensical links
-    to the generated HTML but does not parse or restyle the QMD.
+    to the generated book pages but does not parse or restyle the QMD.
+
+A full sequential render checks all 11 pages. It does not prove each chapter
+can run alone; a separate synthetic fresh-process check covers reporting setup
+through MLflow logging. The Pages workflow renders after pushes to main and
+is not a pre-merge tutorial gate.
 
 ## Related guides
 

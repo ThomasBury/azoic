@@ -1,0 +1,336 @@
+# Two reproducible experiments
+
+## Choose the model roles
+
+The **direct Tweedie GLM is the tariff baseline**. A generalized linear model
+(GLM) adds feature contributions on a chosen scale. Here its **log link** means
+`log(expected rate) = intercept + feature contributions`: exponentiating gives
+a positive rate, and coefficients become multiplicative tariff factors. Bins
+and groups give the GLM discrete rating levels that we can inspect and export.
+
+Tweedie with power 1.5 describes a non-negative cost outcome with both exact
+zeros and positive continuous values. This suits a portfolio with many no-claim
+policies and a few costly claims. We model the rate `claim_amount / exposure`,
+using exposure as the weight; predictions are expected cost per policy-year.
+The workflow derives that rate from the aggregate target column below.
+
+The **raw-feature GBM is the flexible benchmark**. A gradient-boosted tree model
+(GBM) adds trees sequentially to improve the fit. It can capture nonlinear
+relationships and interactions without our explicit rating bins, but does not
+directly give a simple multiplicative tariff. These roles are not a validated
+model selection; we assess ranking and calibration in the next chapter.
+
+{{< include _shared.qmd >}}
+
+## Declare the data contract
+
+`DatasetSpec.target` names aggregate policy claim cost, not a pre-divided rate.
+The feature list deliberately excludes policy IDs, outcomes, exposure, and
+review-only protected attributes. Special columns remain available to the
+workflow for weighting and supervised preprocessing, without becoming predictors.
+
+```{python}
+from azoic.data import DatasetSpec
+from azoic.workflow import ExperimentConfig, ModelSpec, PreprocessingSpec, run_experiment
+
+portfolio = load_portfolio()
+spec = DatasetSpec(
+    target="claim_amount", exposure="exposure", claim_count="claim_count",
+)
+features = [
+    "driver_age", "vehicle_age", "bonus_malus", "density", "region",
+    "vehicle_brand", "veh_power", "veh_gas", "area",
+]
+```
+
+`load_portfolio()` supplies this book's cleaned Parquet input. The standalone
+[own-portfolio example](#use-your-own-portfolio) below replaces it with your file.
+
+## Set training-only preprocessing
+
+Tree bins pool numeric values; similarity groups pool categorical levels with
+similar observed loss rates. The exposure and claim-count floors limit sparse
+groups. All boundaries and memberships are learned **after splitting, on training
+rows only**. Detailed merging rules and fitted memberships appear later.
+
+```{python}
+preprocessing = PreprocessingSpec(
+    binner={
+        "cols": ["driver_age", "vehicle_age", "bonus_malus", "density"],
+        "strategy": "tree", "max_bins": 8, "min_exposure": 1000,
+        "min_claims": 50, "random_state": 42,
+    },
+    grouper={
+        "cols": ["region", "vehicle_brand", "veh_power", "veh_gas", "area"],
+        "strategy": "similarity", "max_groups": 8, "min_exposure": 2000,
+        "min_claims": 50,
+    },
+)
+```
+
+## Name the candidates
+
+The GLM uses the log link and a small coefficient penalty (`alpha`) to temper
+large fitted effects. Its Tweedie power stays at 1.5 throughout this comparison.
+
+```{python}
+direct_glm = ModelSpec(
+    kind="glm",
+    params={"family": "tweedie", "link": "log", "tweedie_power": 1.5, "alpha": 0.001},
+)
+```
+
+The benchmark uses 100 trees with at most 31 leaves each; `learning_rate`
+controls each tree's contribution. These are fixed tutorial settings, not a
+claim that tuning has selected them.
+
+```{python}
+raw_gbm = ModelSpec(
+    kind="gbm",
+    params={
+        "objective": "tweedie", "tweedie_variance_power": 1.5,
+        "n_estimators": 100, "num_leaves": 31, "learning_rate": 0.05,
+        "random_state": 42,
+    },
+)
+```
+
+::: {.callout-note collapse="true"}
+## Optional: the structured teacher
+
+The third candidate is a GBM with the same tree settings, fitted after the
+same kind of bins and groups as the GLM. Later, distillation fits a simple tariff
+to this teacher's predictions. This extra candidate prepares that optional
+lesson; understanding distillation is not required to fit the baseline.
+The cell still executes when this explanation is collapsed.
+
+```{python}
+structured_teacher = raw_gbm.model_copy(deep=True)
+```
+
+:::
+
+## Assemble and run the experiments
+
+freMTPL2 has no suitable policy-time field. Both experiments therefore use the
+same random seed and 20% holdout on the same ordered data. One experiment shares
+preprocessing between its GLM and structured teacher; the other uses raw features.
+The names identify these two runs and their three candidates in later chapters.
+
+```{python}
+glm_config = ExperimentConfig(
+    name="fremtpl2-tariff-structured", data_path=str(PORTFOLIO_PATH),
+    spec=spec, features=features, preprocessing=preprocessing,
+    split="random", test_size=0.2, random_state=42,
+    models={
+        "direct-tweedie-glm": direct_glm,
+        "tweedie-lightgbm-tariff": structured_teacher,
+    },
+)
+gbm_config = ExperimentConfig(
+    name="fremtpl2-raw-feature", data_path=str(PORTFOLIO_PATH),
+    spec=spec.model_copy(), features=features,
+    split="random", test_size=0.2, random_state=42,
+    models={"tweedie-lightgbm": raw_gbm},
+)
+```
+
+Other chapters use `make_experiment_configs` from `_shared.qmd` as the canonical
+reusable configuration. This check prevents the visible version from drifting:
+
+```{python}
+assert (glm_config, gbm_config) == make_experiment_configs(str(PORTFOLIO_PATH))
+```
+
+Request fitted estimators explicitly so we can inspect and score with them.
+The returned `Run` objects record metrics and the actual training/test positions.
+
+```{python}
+glm_run, glm_estimators = run_experiment(glm_config, return_estimators=True)
+gbm_run, gbm_estimators = run_experiment(gbm_config, return_estimators=True)
+runs = [glm_run, gbm_run]
+estimators = {**glm_estimators, **gbm_estimators}
+assert set(glm_run.models) == set(glm_config.models)
+assert set(gbm_run.models) == set(gbm_config.models)
+assert glm_run.data_fingerprint == gbm_run.data_fingerprint
+assert glm_run.train_indices == gbm_run.train_indices
+assert glm_run.test_indices == gbm_run.test_indices
+pd.testing.assert_frame_equal(portfolio, pd.read_parquet(PORTFOLIO_PATH))
+
+train_idx = np.asarray(glm_run.train_indices, dtype=int)
+test_idx = np.asarray(glm_run.test_indices, dtype=int)
+assert len(train_idx) == glm_run.n_train
+assert len(test_idx) == glm_run.n_test
+assert np.intersect1d(train_idx, test_idx).size == 0
+np.testing.assert_array_equal(
+    np.sort(np.concatenate([train_idx, test_idx])), np.arange(len(portfolio))
+)
+```
+
+The split happens before pipeline fitting, so the held-out outcomes cannot
+influence the learned bins or groups. The returned positions identify the actual
+random holdout; no second split is made. Positions refer to the exact input
+frame in its original row order, not to index labels or policy IDs.
+
+## Inspect the fitted tariff structure
+
+Grouping relativities are `sum(claim_amount) / sum(exposure)`, and `min_claims`
+is an aggregate claim-count floor. Nominal levels are stably sorted by risk;
+ordered categories keep their declared order. Under-credible groups merge with
+their closest-risk neighbour, then the closest adjacent pairs merge until the
+group limit is met. Each merge recomputes aggregate risk, with distance ties
+going left.
+
+These are **training-fitted candidates for review**. Exposure and claim-count
+floors do not establish statistical certainty. Tree cuts may change across
+samples. Similarity grouping uses loss rates before adjustment for other
+predictors, so membership is not an adjusted causal effect.
+
+```{python}
+train_frame = portfolio.iloc[train_idx].copy()
+pd.testing.assert_index_equal(
+    train_frame.index, portfolio.index.take(glm_run.train_indices)
+)
+y_train = train_frame["claim_amount"].to_numpy()
+w_train = train_frame["exposure"].to_numpy()
+
+raw_predict_columns = [*FEATURES, "exposure"]
+special_predict_columns = [*FEATURES, "exposure", "claim_amount", "claim_count"]
+
+glm_pipeline = glm_estimators["direct-tweedie-glm"]
+fitted_preprocessing = glm_pipeline[:-1]
+fitted_binner = glm_pipeline.named_steps["binner"]
+fitted_grouper = glm_pipeline.named_steps["grouper"]
+bin_snapshot = {name: edges.copy() for name, edges in fitted_binner.mapping_.items()}
+group_snapshot = {name: mapping.copy() for name, mapping in fitted_grouper.mapping_.items()}
+train_grouped = fitted_preprocessing.transform(train_frame[special_predict_columns])
+train_grouped[["claim_count", "claim_amount"]] = train_frame[["claim_count", "claim_amount"]]
+
+for feature in FEATURES:
+    grouped = train_grouped.groupby(feature, observed=True, sort=True, dropna=False)
+    summary = grouped.agg(
+        policies=("exposure", "size"), exposure=("exposure", "sum"),
+        claim_count=("claim_count", "sum"), claim_amount=("claim_amount", "sum"),
+    )
+    summary["observed_pure_premium"] = summary.claim_amount / summary.exposure
+    if feature in fitted_grouper.mapping_:
+        mapping = fitted_grouper.mapping_[feature]
+        summary["members"] = [
+            ", ".join(str(level) for level, group in mapping.items() if group == label)
+            for label in summary.index
+        ]
+    assert summary.policies.sum() == len(train_frame)
+    np.testing.assert_allclose(
+        summary[["exposure", "claim_count", "claim_amount"]].sum(),
+        train_frame[["exposure", "claim_count", "claim_amount"]].sum(),
+    )
+    display(summary.drop(columns="claim_amount").reset_index().rename(columns={
+        "claim_count": "claims", "observed_pure_premium": "observed rate",
+    }))
+```
+
+Intervals are lower-inclusive and upper-exclusive at finite boundaries. Within
+each chapter, scoring and diagnostics reuse its training-fitted pipeline without
+refitting mappings. Other chapters recreate the same experiment in their own kernel.
+
+Continue to [essential diagnostics](03-diagnostics.qmd) to assess these candidates.
+
+## Use your own portfolio
+
+Start with one GLM and explicit columns. This standalone example needs Azoic,
+pandas, and a Parquet file named `my_portfolio.parquet` in your working directory;
+it does not use the book's loader or shared helpers. Each row is a policy period,
+`paid_claims` is its non-negative aggregate cost, `insured_years` is strictly
+positive exposure in years, and `driver_age` and `vehicle_age` are numeric.
+Clean missing/invalid values and choose a consistent loss layer before fitting.
+
+```python
+import pandas as pd
+
+from azoic.data import DatasetSpec
+from azoic.workflow import ExperimentConfig, ModelSpec, run_experiment
+
+my_features = ["driver_age", "vehicle_age"]
+my_config = ExperimentConfig(
+    name="my-first-tariff",
+    data_path="my_portfolio.parquet",
+    spec=DatasetSpec(target="paid_claims", exposure="insured_years"),
+    features=my_features,
+    split="random", test_size=0.2, random_state=42,
+    models={
+        "direct-glm": ModelSpec(
+            kind="glm",
+            params={"family": "tweedie", "link": "log", "tweedie_power": 1.5,
+                    "alpha": 0.001},
+        ),
+    },
+)
+my_run, my_estimators = run_experiment(my_config, return_estimators=True)
+my_portfolio = pd.read_parquet(my_config.data_path)
+scoring_rows = my_portfolio.iloc[list(my_run.test_indices)][[*my_features, "insured_years"]]
+scored = scoring_rows.copy()
+scored["raw_rate"] = my_estimators["direct-glm"].predict(scoring_rows)
+scored["expected_period_cost"] = scored["raw_rate"] * scored["insured_years"]
+print(scored.head())
+```
+
+The scoring frame contains no claim outcomes. These are raw model rates: no
+training O/P adjustment has been applied. The simple GLM here uses numeric ages
+directly, so log rate is linear in each age; add the preprocessing shown above
+when discrete rating levels are needed. Do not copy freMTPL2 credibility floors
+without considering your portfolio's exposure and claims volume.
+
+Keep identifiers, outcomes, and protected attributes out of `features`; name any
+review-only protected columns in `DatasetSpec.protected_cols`. Exposure is a
+weight, carried into prediction as shown, not a rating feature. Keep the source
+row order unchanged when using the returned positions.
+
+Python relative paths use the process working directory. With
+`ExperimentConfig.from_yaml`, relative data paths instead resolve from the YAML
+file's directory; see the [experiment guide](https://thomasbury.github.io/azoic/guide/experiment-configuration/).
+Use a random split when no real time field exists. If deployment means pricing
+future periods, use a genuine policy-time column and the
+[temporal recipe](08-temporal-stability.qmd); never invent time from row order.
+Choose revisions inside training data and reserve fresh evaluation data once
+you have used the displayed holdout to make decisions.
+
+## Optional: pool sparse risks and limit model flexibility {#regularization-controls}
+
+Sparse ages or vehicle categories can show large changes in predicted pure
+premium because a small amount of data has too much influence. Use the existing
+`PreprocessingSpec` and `ModelSpec.params` settings to compare a few deliberate
+alternatives:
+
+| Action in Azoic | What it can achieve | What it does not guarantee |
+|---|---|---|
+| Increase `AutoBinner.min_exposure` or `min_claims`, or reduce `max_bins`. | Merge neighbouring age intervals so sparse tails share information with a larger group. | Smooth transitions between bins, or enough evidence for every combination of rating factors. |
+| Use the learned bins for a GBM as well as a GLM. | Prevent age distinctions inside a bin, holding other inputs fixed. | The best possible GBM: pooling can hide real differences, and other features can still split a bin into sparse leaves. |
+| Increase `AutoGrouper.min_exposure` or `min_claims`, or reduce `max_groups`. | Pool sparse categorical levels, such as vehicle brands, using the configured grouping strategy. | Similar risk after accounting for other features: similarity grouping uses unadjusted loss rates. |
+| Increase `RiskGLM.alpha`, keeping `l1_ratio=0` for an L2 penalty. | Pull fitted coefficients towards zero and temper extreme effects. | Similar factors for adjacent ages: the penalty does not connect neighbouring bins. |
+| Reduce `RiskGBM.num_leaves`, set a smaller positive `max_depth`, increase `min_child_samples`, or increase `reg_lambda`. | Limit detailed interactions or shrink leaf estimates, making isolated fluctuations harder to fit. | A minimum exposure per leaf: `min_child_samples` controls observation support, not an exposure floor. |
+
+If ages 80–95 share one bin, the model cannot use that age feature to charge an
+otherwise identical 93-year-old differently from an 82-year-old. Bins create
+flat steps with possible boundary jumps, not continuous curves. LightGBM's
+internal histogram bins do not replace Azoic's exposure and claim-count floors.
+
+Use a direction constraint only when the risk relationship supports it.
+`RiskGBM.monotone_constraints` can require a numeric feature's predicted effect
+to increase or decrease, holding other inputs fixed. Azoic rejects nonzero
+constraints on categorical features, including `AutoBinner` interval categories.
+Driver age need not have one direction across the whole age range.
+`AutoBinner.monotonic` influences how training bins are merged; it does **not**
+constrain the premiums subsequently fitted by the GLM or GBM.
+
+## Check that stability has improved
+
+Compare the raw-feature GBM, the binned GBM, and the simpler tariff on the same
+validation rows. Review exposure-weighted Tweedie deviance, portfolio and
+segment O/P, and age profiles. Refit on repeated training samples to see whether
+tail premiums and learned boundaries move substantially. Relearn supervised bins
+and groups within each training fold, and choose settings using validation
+inside the outer training data. Keep the final test set for one evaluation.
+
+Prefer the simpler candidate when predictive performance is comparable and
+tail premiums are materially more stable. The evidence comes from these
+comparisons, not from a smooth line or an exposure threshold alone.

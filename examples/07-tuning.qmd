@@ -1,0 +1,280 @@
+# Configuration-driven tuning
+
+`tune_experiment` runs one optuna study per named model with an actuarial-aware
+objective (`deviance_test + calibration_penalty * |1 - op_ratio_test|`). Trials
+use an **inner split of the outer training data**; best params are refit on all
+outer training data and evaluated once on the untouched outer test. Identity
+parameters — family, link, objective, Tweedie powers, exposure routing, and
+random seeds — are never sampled.
+
+The demo tunes a bounded number of trials on a sampled subset so the chapter
+renders quickly; the search protocol and leakage boundary are identical to a
+full-portfolio run.
+
+{{< include _shared.qmd >}}
+
+```{python}
+from azoic.tune import tune_experiment
+from azoic.workflow import FloatDistribution, IntDistribution, TuningSpec
+
+portfolio = load_portfolio()
+tuning_subset = (
+    portfolio.sample(n=min(100_000, len(portfolio)), random_state=RANDOM_STATE, replace=False)
+    .sort_values("policy_id")
+    .reset_index(drop=True)
+)
+subset_path = ARTIFACT_DIR / "tuning_subset.parquet"
+tuning_subset.to_parquet(subset_path, index=False)
+assert len(tuning_subset) == min(100_000, len(portfolio))
+```
+
+## Declare the comparison before fitting
+
+Keep the direct GLM and structured GBM from the main path as **untuned
+baselines**, now fitted on this subset. Both alternatives use the same rating
+features, preprocessing settings, seed, and outer train/test partition. We
+freeze the baseline and search before either evaluation:
+
+```{python}
+baseline_config, _ = make_experiment_configs(str(subset_path))
+baseline_config = baseline_config.model_copy(update={
+    "name": "fremtpl2-tuning-baseline",
+    "tuning": None,
+})
+tuning_config = baseline_config.model_copy(update={
+    "name": "fremtpl2-tuning-demo",
+    "tuning": TuningSpec(
+        n_trials=8,
+        calibration_penalty=1.0,
+        search_space={
+            "direct-tweedie-glm": {
+                "alpha": FloatDistribution(
+                    type="float", low=1e-4, high=0.1, log=True,
+                ),
+            },
+            "tweedie-lightgbm-tariff": {
+                "num_leaves": IntDistribution(
+                    type="int", low=8, high=32, step=8,
+                ),
+            },
+        },
+    ),
+})
+```
+
+| Model | Untuned setting | What eight trials may change | Why try it? |
+|---|---|---|---|
+| Direct GLM | `alpha=0.001` | `alpha` from `0.0001` to `0.1`, on a logarithmic scale | Regularization shrinks coefficients; compare weaker and stronger shrinkage across orders of magnitude. |
+| Structured GBM | `num_leaves=31` | `num_leaves` in `8, 16, 24, 32` | Fewer leaves limit each tree's complexity; compare smaller trees with a bound near the baseline. |
+
+Each custom model space **replaces that model's built-in space**, so these are
+the only sampled parameters. GLM `l1_ratio` stays at its default; the GBM retains
+100 trees, learning rate 0.05, and its other base settings. Family, link,
+Tweedie power 1.5, exposure routing, seeds, and preprocessing settings stay fixed.
+Preprocessing is fitted afresh on each trial's inner training rows, then on all
+outer training rows for the selected refit.
+
+These bounds are illustrative, not validated limits for another portfolio.
+The discrete search may repeat a leaf count; eight trials do not promise eight
+different settings or exhaustive coverage. The baseline's 31 leaves are not
+in the grid, so tuning is not guaranteed to recover or improve on the baseline.
+[Optuna's parameter distributions](https://optuna.readthedocs.io/en/stable/tutorial/10_key_features/002_configurations.html)
+describe logarithmic and stepped sampling. Azoic's
+[typed search-space contract](https://thomasbury.github.io/azoic/reference/configuration-cli/#tuning-settings)
+lists supported settings and validation rules.
+
+## Understand the calibration penalty
+
+Trials minimize exposure-weighted Tweedie deviance at power 1.5 plus
+`calibration_penalty * abs(1 - O/P)` on the **inner validation rows**. O/P is
+observed total claims divided by predicted total claims: 1.10 means observed
+claims are 10% above the predicted total. With the predeclared penalty of 1.0:
+
+```{python}
+penalty_contribution = tuning_config.tuning.calibration_penalty * abs(1 - 1.10)
+display(pd.Series({
+    "Illustrative inner deviance": 75.0,
+    "Penalty at O/P 1.10": penalty_contribution,
+    "Combined objective": 75.0 + penalty_contribution,
+}, name="Worked objective (illustrative)").to_frame())
+```
+
+The contribution is 0.10, about 0.13% of a deviance of 75. A deviance reduction
+larger than 0.10 can outweigh moving from O/P 1.00 to 1.10. This is a soft
+tradeoff, not a calibration constraint or an automatic total adjustment.
+Deviance scale depends on the portfolio and monetary units, so 1.0 is not a
+universal penalty. Choose any future penalty, bounds, or trial budget using
+training data; do not revise them in response to the outer-test table below.
+The [operations guide](https://thomasbury.github.io/azoic/guide/operations/#tune-without-touching-outer-test)
+explains the same selection boundary.
+
+## Run once and compare raw holdout performance
+
+Fit the untuned baseline once. Each study then selects on inner validation,
+refits its chosen setting on all outer training rows, and evaluates outer test
+once. Both fits predict **raw rates**, with no burn-cost multiplier applied.
+
+```{python}
+baseline_run = run_experiment(baseline_config)
+result = tune_experiment(tuning_config, return_estimators=True)
+```
+
+```{python}
+#| include: false
+assert set(result.best_params) == set(tuning_config.models)
+assert result.n_trials == 8
+assert baseline_run.data_fingerprint == result.run.data_fingerprint
+assert result.run.data_fingerprint is not None
+assert baseline_run.train_indices == result.run.train_indices
+assert baseline_run.test_indices == result.run.test_indices
+for name, params in result.best_params.items():
+    assert set(params) == set(tuning_config.tuning.search_space[name])
+    for key, value in baseline_run.models[name].params.items():
+        if key not in params:
+            assert result.run.models[name].params[key] == value
+    for metric in result.run.models[name].metrics.values():
+        assert np.isfinite(metric)
+    assert not result.run.models[name].calibration_table.empty
+```
+
+The best inner objective below selects the parameters. It is separate from
+outer-test performance and must not be compared with an outer-test deviance.
+
+```{python}
+model_labels = {
+    "direct-tweedie-glm": "GLM",
+    "tweedie-lightgbm-tariff": "Structured GBM",
+}
+selection = pd.DataFrame([
+    {
+        "Model": model_labels[name],
+        "Parameter": next(iter(params)),
+        "Selected value": next(iter(params.values())),
+        "Best inner objective": result.best_values[name],
+    }
+    for name, params in result.best_params.items()
+]).set_index("Model")
+display(selection)
+
+metric_names = {
+    "Deviance": "deviance_test",
+    "O/P": "op_ratio_test",
+    "Gini": "gini_test",
+}
+comparison = pd.concat({
+    label: pd.DataFrame({
+        name: {column: model.metrics[key] for column, key in metric_names.items()}
+        for name, model in run.models.items()
+    }).T
+    for label, run in [("Untuned", baseline_run), ("Tuned", result.run)]
+}, axis=1)
+display(comparison.rename(index=model_labels))
+```
+
+Read each row across: lower deviance is better, O/P closer to one means better
+total calibration, and higher concentration Gini means better ranking. These
+criteria can disagree. The following measured deviance gain is
+`untuned - tuned`; a negative value means tuning made held-out deviance worse.
+
+```{python}
+for name in tuning_config.models:
+    before = comparison.loc[name, "Untuned"]
+    after = comparison.loc[name, "Tuned"]
+    print(
+        f"{model_labels[name]}: deviance gain "
+        f"{before['Deviance'] - after['Deviance']:.4f}; "
+        f"O/P {before['O/P']:.4f} -> {after['O/P']:.4f}; "
+        f"Gini {before['Gini']:.4f} -> {after['Gini']:.4f}."
+    )
+```
+
+This is a **separate subset experiment**, with one common outer holdout for
+baseline and tuned models. It measures the observed change from this declared
+search; one split does not establish a reliable improvement on future data.
+Do not compare these numbers with the earlier full-portfolio results, and do
+not use them to start another search on the same test set.
+
+## Hand off reports, scoring, and export
+
+`result.run` contains metrics and the exact outer train/test positions for
+reporting. `result.estimators`, requested above, maps model names to fitted
+pipelines for `predict` and export. A `Run` alone cannot score or export a model.
+Here the selected direct GLM produces a raw workbook; a selected GBM would need
+the [distillation recipe](04-scoring-tariff.qmd#distil-the-gbm-into-an-executable-tariff).
+
+```{python}
+assert result.estimators is not None
+selected_glm = result.estimators["direct-tweedie-glm"]
+report_path = ARTIFACT_DIR / "tuned_python_model_card.md"
+report_path.write_text(model_card(result.run), encoding="utf-8")
+
+outer_train = tuning_subset.iloc[list(result.run.train_indices)]
+outer_test = tuning_subset.iloc[list(result.run.test_indices)]
+selected_rates = selected_glm.predict(outer_test[[*FEATURES, "exposure"]])
+assert np.isfinite(selected_rates).all() and (selected_rates > 0).all()
+np.testing.assert_allclose(
+    op_ratio(outer_test.claim_amount, selected_rates, outer_test.exposure),
+    result.run.models["direct-tweedie-glm"].metrics["op_ratio_test"],
+)
+tuned_tariff_path = ARTIFACT_DIR / "tuned_direct_glm.xlsx"
+export_tariff(
+    selected_glm, tuned_tariff_path,
+    X=outer_train[[*FEATURES, "exposure", "claim_amount", "claim_count"]],
+    recalibrate=False,
+)
+assert report_path.stat().st_size > 0 and tuned_tariff_path.stat().st_size > 0
+```
+
+The workbook retains raw rates: no outer-test outcomes set its level. These
+rows verify the handoff for the chosen parameters; they are not a further search
+or a new independent evaluation. Review any later changes on fresh data.
+
+## CLI equivalent
+
+The saved YAML carries the full configuration, including this explicit
+`tuning:` block (shown from the actual configuration):
+
+```{python}
+#| echo: false
+import yaml
+from IPython.display import Markdown
+
+display(Markdown("```yaml\n" + yaml.safe_dump(
+    {"tuning": tuning_config.tuning.model_dump(exclude_none=True)},
+    sort_keys=False,
+) + "```"))
+```
+
+The CLI example performs a **separate four-trial search** using the same frozen
+spaces; its report need not match the eight-trial Python result or workbook.
+It demonstrates the command, not an additional candidate in the comparison.
+`--trials 4` overrides the stored eight trials; the omitted
+`--calibration-penalty` keeps the YAML value of 1.0. See
+[CLI precedence](https://thomasbury.github.io/azoic/reference/configuration-cli/#tuning-settings)
+for the explicit-argument, YAML, and default order.
+
+```{python}
+import subprocess
+
+tuning_yaml = ARTIFACT_DIR / "tuning_config.yaml"
+tuning_yaml.write_text(
+    yaml.safe_dump(tuning_config.model_dump(exclude_none=True), sort_keys=False),
+    encoding="utf-8",
+)
+tuned_card = ARTIFACT_DIR / "tuned_model_card.md"
+completed = subprocess.run(
+    [
+        "uv", "run", "azoic", "tune",
+        "--config", str(tuning_yaml),
+        "--trials", "4",
+        "--out", str(tuned_card),
+        "--quiet",
+    ],
+    cwd=ROOT,
+    check=True,
+    capture_output=True,
+    text=True,
+)
+assert tuned_card.stat().st_size > 0
+print(completed.stdout)
+```

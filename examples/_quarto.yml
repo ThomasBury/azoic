@@ -1,0 +1,32 @@
+project:
+  type: book
+
+book:
+  title: "From claims data to an executable tariff"
+  chapters:
+    - index.qmd
+    - part: "Main path"
+      chapters:
+        - 01-portfolio.qmd
+        - 02-experiments.qmd
+        - 03-diagnostics.qmd
+        - 04-scoring-tariff.qmd
+    - part: "Optional recipes"
+      chapters:
+        - 05-reporting-mlops.qmd
+        - 06-frequency-severity.qmd
+        - 07-tuning.qmd
+        - 08-temporal-stability.qmd
+        - 09-protected-group.qmd
+        - 10-manual-tariff.qmd
+
+format:
+  html:
+    toc: true
+    code-fold: false
+
+jupyter: python3
+
+execute:
+  echo: true
+  warning: false

@@ -1,0 +1,98 @@
+# Azoic tutorial series
+
+A **technical tariff** estimates expected claim cost before expenses, commission,
+profit, taxes, and other commercial loadings. For policy $i$:
+
+- **exposure** is the insured time at risk and is the modelling weight;
+- **frequency** is expected claims per exposure unit;
+- **severity** is expected cost per claim, fitted only where claims occurred;
+- **pure premium** is expected claim cost per exposure unit, either modelled
+  directly or as frequency × severity.
+
+This series uses the French freMTPL2 portfolio because one dataset supports
+direct Tweedie, frequency–severity, preprocessing, diagnostics, tariff export,
+reporting, tuning, and experiment tracking. The
+[Swedish motorcycle study](https://link.springer.com/article/10.1007/s13385-021-00264-3)
+is a useful methodological reference, but is narrower and is not duplicated on
+purpose.
+
+## What to read first
+
+You should be comfortable with Python DataFrames and the idea of fitting a model
+on training data and evaluating it on separate data. Exposure, claim counts,
+claim costs, and pure-premium units are defined above; no MLflow or tuning
+experience is needed for the main path. The experiment chapter introduces GLMs,
+GBMs, and the log link before their settings. For a smaller first step, run the
+[network-free first-model guide](https://thomasbury.github.io/azoic/getting-started/first-model/)
+with synthetic data before this full real-data book.
+
+| Main path | Practical question |
+|---|---|
+| [Portfolio](01-portfolio.qmd) | What population and loss layer am I pricing? |
+| [Experiments](02-experiments.qmd) | How do I fit comparable candidates safely? |
+| [Essential diagnostics](03-diagnostics.qmd) | Where do predictions rank and calibrate well? |
+| [Scoring and tariff](04-scoring-tariff.qmd) | How do I score policies and review an export? |
+
+**First stopping point:** after outcome-free scoring, you can produce expected
+claim rates and convert them to policy costs using exposure. **Second stopping
+point:** after tariff review, you can explain the workbook's factors, prediction
+scale, and held-out limitations. GBM distillation is an optional extension within
+that chapter; the direct GLM already exports a multiplicative tariff.
+
+Choose later recipes only when needed: [reporting and operations](05-reporting-mlops.qmd),
+[frequency–severity](06-frequency-severity.qmd), [tuning](07-tuning.qmd),
+[period diagnostics](08-temporal-stability.qmd),
+[protected-group review](09-protected-group.qmd), or
+[manual factor revisions](10-manual-tariff.qmd).
+
+## Execution and tutorial helpers
+
+Every chapter runs in a fresh kernel and fits its own models. No chapter needs a
+workbook, report, or fitted estimator from an earlier chapter. The shared loader
+reuses its cleaned data cache and regenerates the sampled portfolio parquet;
+reports and workbooks are outputs, not chapter prerequisites. A sequential book
+render checks the full sequence but cannot by itself prove that each chapter
+works with only its declared inputs.
+
+`load_portfolio`, `make_experiment_configs`, `holdout_diagnostics`, and
+`setup_mlflow_tracking` are **tutorial helpers**, not public Azoic functions.
+Their source and the editable sample/claim-cap constants live in
+[`examples/_shared.qmd`](https://github.com/ThomasBury/azoic/blob/main/examples/_shared.qmd).
+Shared imports and helper definitions execute silently; chapter cells show the
+steps relevant to the lesson. See the [cache contract](01-portfolio.qmd#cache-and-sample-controls)
+before changing the loss layer or sample.
+
+## Setup
+
+Install the tutorial stack from a checkout and render the book with `just demo`:
+
+```bash
+uv sync --group demo --extra mlops --extra plot --extra tune
+quarto --version
+OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2 MKL_NUM_THREADS=2 just demo
+```
+
+The thread limits keep numerical libraries from competing for all available
+cores during repeated fits. For one chapter, for example:
+
+```bash
+OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2 MKL_NUM_THREADS=2 \
+  uv run quarto render examples/05-reporting-mlops.qmd
+```
+
+Quarto executes the Python cells and assembles the chapters into HTML. Install
+its [CLI separately](https://quarto.org/docs/get-started/) before running the commands above; `uv sync` installs the
+Python tutorial dependencies, not Quarto itself. Run from the repository root
+with `uv`, `just`, and Quarto available on your PATH.
+
+Quarto is an external system prerequisite. The render fetches pinned OpenML
+datasets, so this is the only onboarding path that needs network access. Only
+the tutorial sources are committed; fetched data, caches, workbooks, reports,
+MLflow state, and the generated book stay under ignored
+`examples/_artifacts/` and `examples/_book/`.
+
+This is historical capped-layer modelling, not a final commercial price. Large
+losses, claims development, inflation, commercial loadings, and deployment need
+separate decisions. Once the displayed holdout influences a revision, assess that
+revision on fresh evaluation data; see the
+[operational boundaries](05-reporting-mlops.qmd#operational-boundaries).
