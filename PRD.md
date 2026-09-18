@@ -394,6 +394,40 @@ The completed 2026-09-05 priorities and regression criteria remain in the
 Preserve that evidence; the new tutorial plan does not reopen completed work or
 expand the optional roadmap below.
 
+### M31–M32 — fail-closed hardening (planned 2026-09-14)
+
+A post-tutorial review found eight places where invalid inputs or configuration
+are silently accepted, producing valid-looking but wrong numbers (fail-open).
+All were reproduced against the green M25–M30 baseline. Fix them by validating
+at the trust boundary and raising (or warning, where noted) instead of
+correcting silently. No public API additions, no new dependencies, no
+behaviour change for valid inputs. Implement one green milestone per session:
+
+- **M31 — diagnostics and exposure weighting:** validate finite/non-negative
+  inputs in `metrics._as_arrays` (and `double_lift_table`'s `pred_b`,
+  `calibration_table`'s `claim_count`), mirroring `stability_table`'s
+  strictness while keeping `y_pred` sign-permissive (Poisson GBM zeros are
+  legitimate); make `_pop_weight` raise in `fit`/`score` when a configured
+  `exposure_col` is absent from X (`predict` stays permissive — new data need
+  not carry exposure).
+- **M32 — configuration, labels, scoring, and recorded params:**
+  `DatasetSpec` special-column names must be distinct; `AutoBinner`/
+  `AutoGrouper` raise on unknown requested columns and unknown strategies
+  (similarity grouping without a target raises, or warns if estimator checks
+  require otherwise); `ModelSpec` warns on ill-posed frequency/severity
+  component families and `FrequencySeverityModel.predict` warns when it clips
+  negative component predictions; `AutoGrouper` synthetic `group_{i}` labels
+  are namespaced against real levels and `one_way_table` keeps genuine `"nan"`
+  strings distinct from missing; `RiskGBM.score` raises with a `scoring=`
+  pointer for objectives outside the deviance map (L2 aliases map to power 0);
+  `ModelSpec.build` raises on an `exposure_col` contradicting `spec.exposure`
+  and recorded params come from a single `effective_params` source shared with
+  `build`.
+
+Acceptance per milestone: focused synthetic regressions for each fixed
+reproduction, `just check`, `git diff --check`. Checklists, decisions, and
+evidence live in [PROGRESS.md](PROGRESS.md#fail-closed-hardening-plan--2026-09-14).
+
 ## 7. Later iterations (optional, none blocking)
 
 - **v0.2** — optuna objective (`deviance + calibration penalty`) **(M7 -- done)**,

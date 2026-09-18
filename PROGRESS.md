@@ -9,31 +9,158 @@ Legend: ☐ pending · ◐ in progress · ☑ done
 
 ## Current focus
 
-- **Goal:** make the existing tutorial understandable and adaptable by a pricing
-  analyst comfortable with Python DataFrames and train/test separation, without
-  assuming prior Azoic, GLM/GBM, Quarto, or MLflow experience.
-- **Active milestone:** none. **Next task: M15 release review, in a separate session.**
-- **Delivery order:** M25 → M26 → M27 → M28 → M29 → M30; then return to the
-  separate M15 release handoff. Publication is outside this tutorial plan.
-- **State:** M25 completed on 2026-09-13; M26–M30 completed on 2026-09-14.
-  All six tutorial milestones are green. The
-  review found broad feature coverage but weak adaptation and worked-decision
-  examples. This plan improves the existing book, not the library's public API.
-- **Review baseline:** `just check` passed Ruff/Ty and **682 tests, 4 upstream
-  skips**. All ten chapter sources were reviewed; representative existing
-  rendered outputs were inspected. No fresh book render or OpenML download was
-  performed during the review. These are baseline results, not milestone acceptance.
-- **Plan verification (2026-09-13):** after saving the plan, `just check`
-  passed Ruff/Ty and **682 tests, 4 upstream skips**; `git diff --check`
-  passed. This session changed only `PROGRESS.md`, `PRD.md`, and `AGENTS.md`;
-  no implementation milestone was started and no tutorial render was needed.
-- **Resume here:** inspect `git status --short`, read M30's completion checkpoint
-  and M15's release requirements. Repeat distribution builds and isolated CLI
-  checks on the corrected source before any publication decision. The working tree already
-  contains substantial tutorial and library edits; preserve them.
+- **Goal:** close the eight fail-open paths found by the 2026-09-14 hardening
+  review: invalid inputs or configuration silently producing valid-looking but
+  wrong numbers. Library-only changes; the tutorial book is untouched.
+- **Active milestone:** none; M31 ☑ and M32 ☑ completed 2026-09-14. **Next:
+  the separate M15 release review in a new session.**
+- **State:** M25 completed 2026-09-13; M26–M30 completed 2026-09-14 (all six
+  tutorial milestones green). The hardening review then reproduced all eight
+  findings against that baseline; the review's own `just check` passed
+  Ruff/Ty and **690 tests, 4 upstream skips** with a clean worktree.
+- **Scope for M31 (P1):** input validation in `metrics._as_arrays` (plus
+  `double_lift_table` `pred_b` and `calibration_table` `claim_count`);
+  `_pop_weight` raises in `fit`/`score` when a configured `exposure_col` is
+  missing from X. `predict` stays permissive.
+- **Scope for M32 (P2):** DatasetSpec distinctness; preprocessing
+  column/strategy validation; freq-sev component and clipping warnings;
+  group-label and `"nan"` namespacing; `RiskGBM.score` unknown-objective
+  raise; `ModelSpec` exposure contradiction raise + `effective_params`.
+- **Resume here:** inspect `git status --short`, read M31's latest checkpoint
+  in the hardening plan below. Run the milestone's acceptance checks fresh;
+  do not count the review session's green run as M31 evidence.
 
 This section and the delivery order below supersede historical statements that
 M15 is next. Completed milestones and their evidence remain historical records.
+
+## Fail-closed hardening plan — 2026-09-14
+
+### Scope and completion rules
+
+Library-only fixes. No public API additions, no new dependencies, no behaviour
+change for valid inputs, no tutorial changes (no `just demo` required).
+Decisions locked at planning: freq-sev component families **warn only**;
+`RiskGBM.score` **raises** with a `scoring=` pointer for unmapped objectives;
+`ModelSpec.build` **raises** on an `exposure_col` contradicting
+`spec.exposure`; recorded params come from one `effective_params` source.
+
+For every milestone:
+
+1. Update its status to ◐ and record the starting checkpoint. Complete only its
+   scope; incidental findings go in the checkpoint for a later decision.
+2. For each fixed reproduction, add the smallest synthetic regression that
+   would catch it. Reuse existing fixtures; no prose snapshots.
+3. Run focused tests, `just check`, and `git diff --check`.
+4. Record commands, results, and limitations in the checkpoint. Mark ☑ only
+   when green, advance **Current focus**, and stop. If interrupted, retain ◐
+   and give the exact remaining action.
+
+| Status | Milestone | Findings addressed |
+|---|---|---|
+| ☑ | M31 — diagnostics and exposure weighting | #1 non-finite diagnostics corruption; #2 silent loss of exposure weighting |
+| ☑ | M32 — configuration, labels, scoring, recorded params | #3 spec aliasing; #4 preprocessing fail-open; #5 freq-sev components/clipping; #6 label collisions; #7 unrelated score; #8 param drift |
+
+### M31 — diagnostics and exposure weighting
+
+- [x] `metrics._as_arrays` validates: `y_true` finite non-negative, `y_pred`
+  finite (sign-permissive; Poisson GBM zeros are legitimate), `sample_weight`
+  finite non-negative, one-dimensional, equal length. Messages mirror
+  `stability_table`'s wording.
+- [x] `double_lift_table` validates `pred_b` identically; `calibration_table`
+  validates `claim_count` finite non-negative when provided.
+- [x] `_pop_weight(..., require_exposure=True)` in `RiskGLM.fit/score` and
+  `RiskGBM.fit/score` raises when `exposure_col` is set but absent from X (or
+  X is not a DataFrame). `predict` keeps `require_exposure=False`.
+- [x] Regressions: the reported three-row double-lift case (1,030 claims)
+  raises instead of returning 30; NaN/inf/negative payloads raise across
+  gini/lorenz/op_ratio/calibration/one_way/double_lift; unweighted fit/score
+  with a missing configured exposure column raises; predict without the
+  column still works; estimator checks stay green.
+
+Checkpoint: 2026-09-14 — in progress
+Changed: recorded M31/M32 in PRD.md section 6 and this plan; marked M31 ◐.
+Verified: all eight findings reproduced read-only against the M25–M30 baseline
+(three-row double lift returned 30 of 1,030 claims; missing-column GLM fit
+succeeded unweighted; spec aliasing, strategy/column typos, `group_0` and
+`"nan"` collisions, `regression_l1` score fallback raising on non-positive
+predictions, and fitted-vs-recorded `exposure_col` drift all confirmed).
+`parametrize_with_checks` uses default-param instances, so the new raises stay
+check-green; `distill_gbm` validates exposure presence itself; no test relies
+on silent column-dropping.
+Remaining: both fixes, regressions, focused tests, `just check`, diff check.
+Blockers: none.
+Next action: implement `_as_arrays` validation in `src/azoic/metrics.py`.
+
+Checkpoint: 2026-09-14 — complete
+Changed: `src/azoic/metrics.py` (`_as_arrays` validation; `double_lift_table`
+pred_b check; `calibration_table` claim_count check); `src/azoic/models.py`
+(`_pop_weight` gains `require_exposure`; fit/score of RiskGLM/RiskGBM pass it);
+`tests/test_metrics.py` (+70 parametrized regressions; the existing
+`test_diagnostic_quantiles_ignore_missing_exposure` codified the old silent
+drop for calibration/double_lift and was updated to assert the raise -- its
+one_way missing-*feature* path is unchanged); `tests/test_models.py` (+4
+regressions incl. the freq-sev sub-estimator exposure-col side effect);
+PRD.md section 6 + this plan recorded.
+Verified: focused `pytest tests/test_metrics.py tests/test_models.py` 352
+passed; `just check` Ruff/Ty green, **764 passed, 4 upstream skips** (baseline
+690); `git diff --check` clean; both P1 reproductions now raise
+("y_pred must contain only finite predictions",
+"exposure_col 'exposure' not found in X ...") and predict without the exposure
+column still works. Estimator checks green (default-param instances).
+Remaining: none for M31. M32 untouched.
+Blockers: none.
+Next action: start M32 in a new session (DatasetSpec distinctness first).
+
+### M32 — configuration, labels, scoring, recorded params
+
+- [x] `DatasetSpec` requires distinct names across target/exposure/
+  claim_count/time_col.
+- [x] `AutoBinner`/`AutoGrouper` raise on unknown requested `cols` and unknown
+  `strategy`; similarity grouping without a target raises (estimator checks
+  stayed green -- sklearn's transformer checks pass `y`, so no downgrade to
+  UserWarning was needed).
+- [x] `ModelSpec` warns on ill-posed frequency/severity families;
+  `FrequencySeverityModel.predict` warns when clipping negatives.
+- [x] `AutoGrouper` synthetic labels namespaced against real levels;
+  `one_way_table` keeps genuine `"nan"` distinct from missing.
+- [x] `RiskGBM.score` raises with a `scoring=` pointer for unmapped
+  objectives; L2 aliases map to power 0.
+- [x] `ModelSpec.build` raises on contradictory `exposure_col`;
+  `effective_params` is the single source for build and recorded params.
+
+Checkpoint: 2026-09-14 — in progress
+Changed: marked M32 ◐; no code edits yet.
+Verified: M31 completion checkpoint (764 tests green) is the baseline; the six
+M32 reproductions were confirmed read-only in the review session.
+Remaining: all six fixes, regressions, focused tests, `just check`, diff check.
+Blockers: none.
+Next action: DatasetSpec distinctness validator in `src/azoic/data.py`.
+
+Checkpoint: 2026-09-14 — complete
+Changed: `src/azoic/data.py` (special-column distinctness validator);
+`src/azoic/preprocessing.py` (unknown-cols and unknown-strategy raises in both
+classes, similarity-requires-target raise, synthetic-label namespacing via a
+`taken` set with suffix bumping); `src/azoic/metrics.py` (`one_way_table`
+keeps true NA as the level key so genuine `"nan"` strings stay distinct);
+`src/azoic/models.py` (`_GBM_OBJECTIVE_POWER` extended with L2 aliases,
+unmapped objectives raise with a `scoring=` pointer, `FrequencySeverityModel.predict`
+warns on actual clipping); `src/azoic/workflow.py` (`ModelSpec` warns on
+negative-support freq/sev families, `effective_params` is the single source
+for `build` and `ModelResult.params`, contradictory `exposure_col` raises).
+Tests: +28 regressions across test_data/test_preprocessing/test_metrics/
+test_models/test_workflow. Four pre-existing tests codified target-less
+similarity fits and were minimally retargeted (pass `target_col`/`y`); one
+tuning test's freq-sev components made well-posed to keep the suite
+warning-clean.
+Verified: focused five-file run 600 passed; `just check` Ruff/Ty green,
+**792 passed, 4 upstream skips** (M31 baseline 764); `git diff --check` clean;
+all six reproductions confirmed raising/warning in a pre-test smoke probe
+(incl. `group_0` real level preserved as `{'B': 'group_0_1', 'A': 'group_0_1',
+'group_0': 'group_0'}` and genuine-`"nan"`-vs-missing split into separate
+one-way rows).
+Remaining: none. M15 release review is next in a new session.
+Blockers: none.
+Next action: M15 release review (see its historical handoff below).
 
 ## Tutorial improvement plan — 2026-09-13
 
