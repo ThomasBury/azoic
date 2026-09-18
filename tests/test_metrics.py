@@ -320,9 +320,16 @@ def test_diagnostic_quantiles_ignore_missing_exposure(kind) -> None:
         w = np.r_[exposure, 1e9] if missing else exposure
         amounts = np.r_[claims, 10000] if missing else claims
         if kind == "calibration":
+            if missing:
+                # M31: a NaN prediction raises instead of silently dropping the row.
+                with pytest.raises(ValueError, match="finite"):
+                    calibration_table(amounts, v, w, n_bins=3)
+                continue
             table = calibration_table(amounts, v, w, n_bins=3)
             table = table.loc[table["group"] >= 0]
         elif kind == "one_way":
+            # A missing *feature* value keeps its own segment (documented); the
+            # prediction vector stays finite, so totals must reconcile.
             table = one_way_table(
                 pd.DataFrame({"value": v}), "value", amounts, np.full(len(v), 100), w, n_bins=3
             )
@@ -334,10 +341,16 @@ def test_diagnostic_quantiles_ignore_missing_exposure(kind) -> None:
                 assert table.loc[table["level_label"] == "Missing", "claim_amount"].item() == 10000
             table = table.loc[table["level_center"].notna()]
         else:
+            if missing:
+                # M31: same fail-closed contract for the ratio strata.
+                with pytest.raises(ValueError, match="finite"):
+                    double_lift_table(amounts, v, np.ones(len(v)), w, n_bins=3)
+                continue
             table = double_lift_table(amounts, v, np.ones(len(v)), w, n_bins=3)
         tables.append(table.reset_index(drop=True))
-    assert len(tables[0]) == 3
-    pd.testing.assert_frame_equal(tables[1], tables[0])
+    if kind == "one_way":
+        assert len(tables[0]) == 3
+        pd.testing.assert_frame_equal(tables[1], tables[0])
 
 
 @pytest.mark.parametrize("n_bins", [None, 10, 1])
@@ -520,3 +533,105 @@ def test_one_way_ordered_intervals_keep_order_observed_groups_and_missing_totals
     assert table.exposure.sum() == exposure.sum()
     assert table.claim_amount.sum() == claims.sum()
     assert table.predicted_claim_amount.sum() == 10 * exposure.sum()
+
+
+# ---------------------------------------------------------------------------
+# Non-finite / invalid input validation (M31 -- fail-closed diagnostics)
+# ---------------------------------------------------------------------------
+
+
+def _diag_inputs():
+    y_true = np.array([100.0, 0.0, 50.0, 25.0, 10.0])
+    y_pred = np.array([1.0, 0.0, 2.0, 1.5, 0.8])  # exact zero stays legitimate
+    w = np.array([1.0, 2.0, 1.0, 1.0, 0.5])
+    return y_true, y_pred, w
+
+
+def _call_diag(func, y_true, y_pred, w):
+    if func is one_way_table:
+        X = pd.DataFrame({"f": ["a"] * len(y_true)})
+        return func(X, "f", y_true, y_pred, w, n_bins=None)
+    if func is double_lift_table:
+        return func(y_true, y_pred, np.full(len(y_true), 1.1), w)
+    return func(y_true, y_pred, w)
+
+
+@pytest.mark.parametrize(
+    "func", [gini, lorenz, op_ratio, calibration_table, one_way_table, double_lift_table]
+)
+@pytest.mark.parametrize("bad", [np.nan, np.inf, -np.inf])
+@pytest.mark.parametrize("slot", ["y_true", "y_pred", "sample_weight"])
+def test_diagnostics_reject_nonfinite_inputs(func, slot, bad) -> None:
+    arrays = {"y_true": None, "y_pred": None, "sample_weight": None}
+    y_true, y_pred, w = _diag_inputs()
+    arrays.update({"y_true": y_true, "y_pred": y_pred, "sample_weight": w})
+    arrays[slot] = arrays[slot].copy()
+    arrays[slot][2] = bad
+    with pytest.raises(ValueError, match="finite"):
+        _call_diag(func, arrays["y_true"], arrays["y_pred"], arrays["sample_weight"])
+
+
+@pytest.mark.parametrize(
+    "func", [gini, lorenz, op_ratio, calibration_table, one_way_table, double_lift_table]
+)
+def test_diagnostics_reject_negative_claims_and_weights(func) -> None:
+    y_true, y_pred, w = _diag_inputs()
+    with pytest.raises(ValueError, match="non-negative finite claim amounts"):
+        _call_diag(func, -y_true, y_pred, w)
+    with pytest.raises(ValueError, match="finite non-negative exposures"):
+        _call_diag(func, y_true, y_pred, -w)
+
+
+@pytest.mark.parametrize(
+    "func", [gini, lorenz, op_ratio, calibration_table, one_way_table, double_lift_table]
+)
+def test_diagnostics_reject_mismatched_or_multidimensional_inputs(func) -> None:
+    y_true, y_pred, w = _diag_inputs()
+    with pytest.raises(ValueError, match="same length"):
+        _call_diag(func, y_true, y_pred[:-1], w)
+    with pytest.raises(ValueError, match="one-dimensional"):
+        _call_diag(func, y_true.reshape(-1, 1), y_pred, w)
+
+
+def test_diagnostics_accept_exact_zero_predictions() -> None:
+    y_true, y_pred, w = _diag_inputs()
+    assert np.isfinite(gini(y_true, y_pred, w))
+    table = calibration_table(y_true, y_pred, w, n_bins=2)
+    assert np.isfinite(table["o_p_ratio"].fillna(1.0)).all()
+
+
+def test_double_lift_rejects_nonfinite_pred_b() -> None:
+    y_true, y_pred, w = _diag_inputs()
+    pred_b = np.array([1.0, np.nan, 2.0, 1.0, 0.5])
+    with pytest.raises(ValueError, match="pred_b must contain only finite predictions"):
+        double_lift_table(y_true, y_pred, pred_b, w)
+
+
+def test_double_lift_nan_prediction_raises_instead_of_dropping_claims() -> None:
+    """Reported reproduction: a 3-row portfolio with 1,030 claims reported only
+    30 -- the NaN-prediction row was silently dropped by the strata filter."""
+    y_true = np.array([1000.0, 20.0, 10.0])
+    pred_a = np.array([np.nan, 1.0, 2.0])
+    pred_b = np.array([5.0, 1.0, 1.0])
+    w = np.ones(3)
+    with pytest.raises(ValueError, match="finite"):
+        double_lift_table(y_true, pred_a, pred_b, w, n_bins=2)
+
+
+def test_calibration_table_rejects_invalid_claim_count() -> None:
+    y_true, y_pred, w = _diag_inputs()
+    for bad_counts in ([1, 2, np.nan, 0, 1], [1, 2, -3, 0, 1]):
+        with pytest.raises(ValueError, match="claim_count"):
+            calibration_table(y_true, y_pred, w, claim_count=bad_counts)
+
+
+def test_one_way_table_keeps_genuine_nan_string_distinct_from_missing() -> None:
+    """A genuine "nan" string level must not merge with true missing values."""
+    X = pd.DataFrame({"feat": pd.array(["nan", "a", None, "a"], dtype=object)})
+    table = one_way_table(X, "feat", [1.0, 2.0, 3.0, 4.0], [1.0] * 4, [1.0] * 4, n_bins=None)
+    assert len(table) == 3
+    genuine = table.loc[table["level"] == "nan"]
+    missing = table.loc[table["level"].isna()]
+    assert genuine["claim_amount"].item() == 1.0
+    assert missing["claim_amount"].item() == 3.0
+    assert missing["level_label"].item() == "nan"

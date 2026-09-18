@@ -47,12 +47,29 @@ __all__ = [
 
 
 def _as_arrays(y_true, y_pred, sample_weight=None):
+    """Convert to float arrays and reject silent-corruption payloads.
+
+    ``y_pred`` is sign-permissive: Poisson GBMs legitimately emit exact zeros
+    (``double_lift_table`` floors them at ``_RATIO_EPS``). NaN/inf in any input
+    must raise here -- pandas groupby sums and the ratio-strata filter would
+    otherwise drop or misattribute rows without a word.
+    """
     y_true = np.asarray(y_true, dtype=float)
     y_pred = np.asarray(y_pred, dtype=float)
     if sample_weight is None:
         sample_weight = np.ones_like(y_true)
     else:
         sample_weight = np.asarray(sample_weight, dtype=float)
+    if any(values.ndim != 1 for values in (y_true, y_pred, sample_weight)):
+        raise ValueError("inputs must be one-dimensional")
+    if len({len(y_true), len(y_pred), len(sample_weight)}) != 1:
+        raise ValueError("inputs must have the same length")
+    if not np.isfinite(y_true).all() or np.any(y_true < 0):
+        raise ValueError("y_true must contain only non-negative finite claim amounts")
+    if not np.isfinite(y_pred).all():
+        raise ValueError("y_pred must contain only finite predictions")
+    if not np.isfinite(sample_weight).all() or np.any(sample_weight < 0):
+        raise ValueError("sample_weight must contain only finite non-negative exposures")
     return y_true, y_pred, sample_weight
 
 
@@ -282,7 +299,10 @@ def calibration_table(
         predicted_claim_amount=("predicted_claim_amount", "sum"),
     )
     if claim_count is not None:
-        df["claim_count"] = np.asarray(claim_count, dtype=float)
+        claim_count = np.asarray(claim_count, dtype=float)
+        if not np.isfinite(claim_count).all() or np.any(claim_count < 0):
+            raise ValueError("claim_count must contain only non-negative finite values")
+        df["claim_count"] = claim_count
         out["claim_count"] = grouped["claim_count"].sum()
     out["observed_pure_premium"] = out["claim_amount"] / out["exposure"]
     out["predicted_pure_premium"] = out["predicted_claim_amount"] / out["exposure"]
@@ -352,8 +372,15 @@ def one_way_table(
         centers = raw
     else:
         raw = values.astype(object).to_numpy()
-        levels = np.where(pd.isna(raw), "nan", raw).astype(object)
-        labels = np.array([str(v) for v in levels.tolist()], dtype=object)
+        missing = pd.isna(raw)
+        levels = raw
+        labels = np.array(
+            [
+                "nan" if is_missing else str(value)
+                for value, is_missing in zip(raw, missing, strict=True)
+            ],
+            dtype=object,
+        )
         centers = np.full(len(raw), np.nan, dtype=float)
     df = pd.DataFrame(
         {
@@ -437,6 +464,8 @@ def double_lift_table(
     pred_b = np.asarray(pred_b, dtype=float)
     if pred_b.shape != pred_a.shape:
         raise ValueError(f"pred_b shape {pred_b.shape} does not match pred_a shape {pred_a.shape}")
+    if not np.isfinite(pred_b).all():
+        raise ValueError("pred_b must contain only finite predictions")
     a = np.maximum(pred_a, _RATIO_EPS)
     b = np.maximum(pred_b, _RATIO_EPS)
     ratio = a / b
