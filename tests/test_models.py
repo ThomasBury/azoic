@@ -11,6 +11,8 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 import pytest
+from sklearn.base import BaseEstimator, RegressorMixin
+from sklearn.metrics import d2_tweedie_score
 from sklearn.utils.estimator_checks import parametrize_with_checks
 
 from azoic.models import FrequencySeverityModel, RiskGBM, RiskGLM
@@ -588,3 +590,102 @@ def test_log_glm_mean_target_and_intercept_balance(family, power, varying_featur
         assert ratio == pytest.approx(1, abs=1e-8)
     else:
         assert abs(ratio - 1) > 1e-3
+
+
+# ---------------------------------------------------------------------------
+# Configured exposure column is fail-closed (M31)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "estimator",
+    [
+        RiskGLM(family="poisson", exposure_col="exposure"),
+        RiskGBM(objective="tweedie", exposure_col="exposure", n_estimators=10),
+    ],
+    ids=["glm", "gbm"],
+)
+def test_fit_score_raise_when_configured_exposure_col_missing(estimator) -> None:
+    """A configured exposure_col absent from X must not silently fit unweighted
+    (the exposure-weight pure-premium convention). predict stays permissive:
+    new data need not carry the exposure column."""
+    df = _df()
+    X = _features(df)
+    y = (df["claim_amount"] / df["exposure"]).to_numpy()
+    X_missing = X.drop(columns=["exposure"])
+    with pytest.raises(ValueError, match="exposure_col 'exposure' not found in X"):
+        estimator.fit(X_missing, y)
+    estimator.fit(X, y)
+    with pytest.raises(ValueError, match="exposure_col 'exposure' not found in X"):
+        estimator.score(X_missing, y)
+    pred = estimator.predict(X_missing)
+    assert np.isfinite(pred).all()
+
+
+def test_exposure_col_with_ndarray_raises_at_fit() -> None:
+    glm = RiskGLM(exposure_col="exposure")
+    with pytest.raises(ValueError, match="not found in X"):
+        glm.fit(np.zeros((5, 2)), np.ones(5))
+
+
+def test_freq_sev_subestimator_with_exposure_col_raises() -> None:
+    """FrequencySeverityModel strips the special columns before component fits,
+    so a sub-estimator configured with exposure_col previously fit silently
+    unweighted; it now raises at the boundary."""
+    df = _df()
+    model = FrequencySeverityModel(
+        freq=RiskGLM(family="poisson", exposure_col="exposure"),
+        sev=RiskGLM(family="gamma"),
+    )
+    with pytest.raises(ValueError, match="exposure_col 'exposure' not found in X"):
+        model.fit(df)
+
+
+# ---------------------------------------------------------------------------
+# Score objective mapping + clipping warning (M32)
+# ---------------------------------------------------------------------------
+
+
+def test_riskgbm_score_raises_for_unmapped_objective() -> None:
+    df = _df(n=2000)
+    X = _features(df)
+    y = (df["claim_amount"] / df["exposure"]).to_numpy()
+    gbm = RiskGBM(objective="regression_l1", n_estimators=10, exposure_col="exposure")
+    gbm.fit(X, y)
+    with pytest.raises(ValueError, match="no Tweedie-deviance mapping.*scoring="):
+        gbm.score(X, y)
+
+
+@pytest.mark.parametrize(
+    "objective", ["regression", "regression_l2", "rmse", "l2", "mean_squared_error", "mse"]
+)
+def test_riskgbm_score_l2_aliases_use_normal_deviance(objective: str) -> None:
+    df = _df(n=2000)
+    X = _features(df)
+    y = (df["claim_amount"] / df["exposure"]).to_numpy()
+    gbm = RiskGBM(objective=objective, n_estimators=10, exposure_col="exposure")
+    gbm.fit(X, y)
+    score = gbm.score(X, y)
+    assert np.isfinite(score)
+    expected = d2_tweedie_score(y, gbm.predict(X), power=0.0, sample_weight=df["exposure"])
+    assert score == pytest.approx(expected)
+
+
+def test_freq_sev_predict_warns_when_clipping_negative_components() -> None:
+    class _ConstantRegressor(RegressorMixin, BaseEstimator):
+        def __init__(self, value=-1.0):
+            self.value = value
+
+        def fit(self, X, y, sample_weight=None):
+            return self
+
+        def predict(self, X):
+            return np.full(len(X), self.value)
+
+    df = _df()
+    model = FrequencySeverityModel(
+        freq=_ConstantRegressor(-1.0), sev=_ConstantRegressor(2.0)
+    ).fit(df)
+    with pytest.warns(UserWarning, match="clipped .* negative component"):
+        pred = model.predict(df)
+    assert (pred == 0.0).all()  # -1 clipped to 0, x 2

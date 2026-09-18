@@ -32,10 +32,19 @@ __all__ = ["RiskGLM", "RiskGBM", "FrequencySeverityModel"]
 
 _GLM_POSITIVE_FAMILIES = {"poisson", "gamma", "tweedie"}
 _GBM_POSITIVE_OBJECTIVES = {"poisson", "gamma", "tweedie"}
-_GBM_OBJECTIVE_POWER = {"poisson": 1.0, "gamma": 2.0, "regression": 0.0, "rmse": 0.0}
+_GBM_OBJECTIVE_POWER = {
+    "poisson": 1.0,
+    "gamma": 2.0,
+    "regression": 0.0,
+    "regression_l2": 0.0,
+    "rmse": 0.0,
+    "l2": 0.0,
+    "mean_squared_error": 0.0,
+    "mse": 0.0,
+}
 
 
-def _pop_weight(X, exposure_col, sample_weight):
+def _pop_weight(X, exposure_col, sample_weight, *, require_exposure=False):
     """Return (X_features, weight_array).
 
     Drops ``exposure_col`` from a DataFrame ``X`` when it would otherwise leak
@@ -43,6 +52,11 @@ def _pop_weight(X, exposure_col, sample_weight):
     passed an explicit ``sample_weight`` (used by FrequencySeverityModel to
     route ``claim_count`` as the severity weight). Raises when every weight is
     zero -- a weighted fit cannot move.
+
+    ``require_exposure=True`` (fit/score) raises when a configured
+    ``exposure_col`` is absent: silently falling back to an unweighted fit
+    would break the exposure-weight pure-premium convention (rule 1).
+    ``predict`` passes False -- new data need not carry the exposure column.
     """
     if isinstance(X, pd.DataFrame) and exposure_col and exposure_col in X.columns:
         features = X.drop(columns=[exposure_col])
@@ -51,6 +65,11 @@ def _pop_weight(X, exposure_col, sample_weight):
         else:
             w = np.asarray(sample_weight, dtype=float)
     else:
+        if require_exposure and exposure_col:
+            raise ValueError(
+                f"exposure_col {exposure_col!r} not found in X; exposure weighting is "
+                "configured but the column is missing (fit/score would be unweighted)"
+            )
         features, w = X, sample_weight
     if w is not None and not np.asarray(w).any():
         raise ValueError("All sample_weight entries are zero; cannot fit a weighted model.")
@@ -179,7 +198,7 @@ class RiskGLM(RegressorMixin, BaseEstimator):
 
     def fit(self, X, y, sample_weight=None):
         _store_fit_meta(self, X)
-        X_features, w = _pop_weight(X, self.exposure_col, sample_weight)
+        X_features, w = _pop_weight(X, self.exposure_col, sample_weight, require_exposure=True)
         backend = self._make_backend()
         backend.fit(_categorize_strings(X_features), np.asarray(y, dtype=float), sample_weight=w)
         self.backend_ = backend
@@ -195,7 +214,7 @@ class RiskGLM(RegressorMixin, BaseEstimator):
 
     def score(self, X, y, sample_weight=None):
         check_is_fitted(self, "backend_")
-        X_features, w = _pop_weight(X, self.exposure_col, sample_weight)
+        X_features, w = _pop_weight(X, self.exposure_col, sample_weight, require_exposure=True)
         return self.backend_.score(
             _categorize_strings(X_features), np.asarray(y, dtype=float), sample_weight=w
         )
@@ -374,7 +393,7 @@ class RiskGBM(RegressorMixin, BaseEstimator):
 
     def fit(self, X, y, sample_weight=None):
         _store_fit_meta(self, X)
-        X_features, w = _pop_weight(X, self.exposure_col, sample_weight)
+        X_features, w = _pop_weight(X, self.exposure_col, sample_weight, require_exposure=True)
         X_backend = _categorize_strings(X_features)
         feature_names = list(X_backend.columns) if isinstance(X_backend, pd.DataFrame) else None
         categorical_names = (
@@ -405,11 +424,23 @@ class RiskGBM(RegressorMixin, BaseEstimator):
     def _objective_power(self):
         if self.objective == "tweedie":
             return self.tweedie_variance_power
-        return _GBM_OBJECTIVE_POWER.get(self.objective, self.tweedie_variance_power)
+        if self.objective not in _GBM_OBJECTIVE_POWER:
+            raise ValueError(
+                f"RiskGBM.score has no Tweedie-deviance mapping for objective "
+                f"{self.objective!r}; pass an explicit scoring= to GridSearchCV / "
+                "cross_val_score instead of the estimator's default score"
+            )
+        return _GBM_OBJECTIVE_POWER[self.objective]
 
     def score(self, X, y, sample_weight=None):
+        """D^2 of the deviance matching ``objective`` (Tweedie power map).
+
+        Only objectives in ``_GBM_OBJECTIVE_POWER`` (poisson, gamma, the L2
+        family) plus tweedie are scorable this way; anything else raises --
+        pass an explicit ``scoring=`` to GridSearchCV / cross_val_score.
+        """
         check_is_fitted(self, "backend_")
-        X_features, w = _pop_weight(X, self.exposure_col, sample_weight)
+        X_features, w = _pop_weight(X, self.exposure_col, sample_weight, require_exposure=True)
         y = np.asarray(y, dtype=float)
         y_pred = self.backend_.predict(_categorize_strings(X_features))
         return d2_tweedie_score(y, y_pred, power=self._objective_power(), sample_weight=w)
@@ -567,9 +598,18 @@ class FrequencySeverityModel(RegressorMixin, BaseEstimator):
     def predict(self, X):
         check_is_fitted(self, "freq_")
         X_features = self._strip_specials(X) if isinstance(X, pd.DataFrame) else X
-        freq_pred = np.maximum(self.freq_.predict(X_features), 0.0)
-        sev_pred = np.maximum(self.sev_.predict(X_features), 0.0)
-        return freq_pred * sev_pred
+        freq_pred = np.asarray(self.freq_.predict(X_features), dtype=float)
+        sev_pred = np.asarray(self.sev_.predict(X_features), dtype=float)
+        clipped = int((freq_pred < 0).sum() + (sev_pred < 0).sum())
+        if clipped:
+            warnings.warn(
+                f"FrequencySeverityModel clipped {clipped} negative component "
+                "prediction(s) to zero; use positive-support components "
+                "(Poisson frequency, Gamma severity)",
+                UserWarning,
+                stacklevel=2,
+            )
+        return np.maximum(freq_pred, 0.0) * np.maximum(sev_pred, 0.0)
 
     def score(self, X, y, sample_weight=None):
         """D^2 (Tweedie, p=1.5) on pure-premium rates, weighted by exposure.
