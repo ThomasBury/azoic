@@ -160,6 +160,8 @@ class AutoBinner(TransformerMixin, BaseEstimator):
         return tags
 
     def fit(self, X, y=None):
+        if self.strategy not in ("quantile", "tree"):
+            raise ValueError(f"strategy must be 'quantile' or 'tree'; got {self.strategy!r}")
         validate_data(self, X, y=y, dtype=None, ensure_all_finite=False)
         X_df, _ = _to_frame(X)
         cols = self._select_cols(X_df)
@@ -184,7 +186,10 @@ class AutoBinner(TransformerMixin, BaseEstimator):
             invalid = sorted(set(self.cols) & specials)
             if invalid:
                 raise ValueError(f"cols contains special columns: {invalid}")
-            return [c for c in self.cols if c in X.columns]
+            missing = sorted(set(self.cols) - set(X.columns))
+            if missing:
+                raise ValueError(f"cols not found in X: {missing}")
+            return list(self.cols)
         return [c for c in X.columns if c not in specials and pd.api.types.is_numeric_dtype(X[c])]
 
     def _edges(self, values, target, exp, cc):
@@ -373,6 +378,8 @@ class AutoGrouper(TransformerMixin, BaseEstimator):
         return tags
 
     def fit(self, X, y=None):
+        if self.strategy not in ("rare", "similarity"):
+            raise ValueError(f"strategy must be 'rare' or 'similarity'; got {self.strategy!r}")
         validate_data(self, X, y=y, dtype=None, ensure_all_finite=False)
         X_df, _ = _to_frame(X)
         cols = self._select_cols(X_df)
@@ -385,6 +392,11 @@ class AutoGrouper(TransformerMixin, BaseEstimator):
             target = np.asarray(y, dtype=float)
             if exp is not None:
                 target = target * exp
+        if self.strategy == "similarity" and target is None:
+            raise ValueError(
+                "similarity grouping requires a target (target_col in X or y); "
+                "without one every level has risk zero and merges in incidental order"
+            )
         self.mapping_ = {}
         self.category_dtypes_ = {}
         for col in cols:
@@ -408,7 +420,10 @@ class AutoGrouper(TransformerMixin, BaseEstimator):
             invalid = sorted(set(self.cols) & specials)
             if invalid:
                 raise ValueError(f"cols contains special columns: {invalid}")
-            return [c for c in self.cols if c in X.columns]
+            missing = sorted(set(self.cols) - set(X.columns))
+            if missing:
+                raise ValueError(f"cols not found in X: {missing}")
+            return list(self.cols)
         return [
             c for c in X.columns if c not in specials and not pd.api.types.is_numeric_dtype(X[c])
         ]
@@ -495,8 +510,17 @@ class AutoGrouper(TransformerMixin, BaseEstimator):
             groups[index].extend(groups.pop(index + 1))
 
         mp = {}
+        taken = set(stats.index) | {self.other_label}
         for i, group in enumerate(groups):
-            label = group[0] if len(group) == 1 else f"group_{i}"
+            if len(group) == 1:
+                label = group[0]
+            else:
+                label = f"group_{i}"
+                suffix = 0
+                while label in taken:
+                    suffix += 1
+                    label = f"group_{i}_{suffix}"
+            taken.add(label)
             for level in group:
                 mp[level] = label
         return mp

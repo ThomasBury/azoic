@@ -51,6 +51,15 @@ class DatasetSpec(BaseModel):
             raise ValueError(f"protected_cols overlaps other special columns: {overlap}")
         return self
 
+    @model_validator(mode="after")
+    def _special_cols_are_distinct(self):
+        names = [self.target, self.exposure, self.claim_count, self.time_col]
+        present = [name for name in names if name is not None]
+        duplicates = sorted({name for name in present if present.count(name) > 1})
+        if duplicates:
+            raise ValueError(f"special column names must be distinct; duplicates: {duplicates}")
+        return self
+
     def required_columns(self) -> list[str]:
         cols = [self.target, self.exposure]
         for opt in (self.claim_count, self.time_col):

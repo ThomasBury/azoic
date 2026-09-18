@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -230,8 +231,8 @@ def test_tuning_rejects_empty_unknown_unsupported_and_frequency_severity_spaces(
 
     freq_sev = ModelSpec(
         kind="frequency_severity",
-        frequency=ModelSpec(kind="glm"),
-        severity=ModelSpec(kind="glm"),
+        frequency=ModelSpec(kind="glm", params={"family": "poisson"}),
+        severity=ModelSpec(kind="glm", params={"family": "gamma"}),
     )
     with pytest.raises(ValueError, match="frequency_severity"):
         ExperimentConfig(
@@ -1081,3 +1082,78 @@ def test_tutorial_freezes_all_training_factors_and_labels_holdout_metrics(monkey
     exec(final_code, namespace)
     assert namespace["workbook_factor"] == pytest.approx(workbook_factor)
     np.testing.assert_array_equal(namespace["workbook_rate"], apply_tariff(workbook_tariff, test))
+
+
+# ---------------------------------------------------------------------------
+# Component warnings, exposure contradiction, effective params (M32)
+# ---------------------------------------------------------------------------
+
+
+def test_modelspec_warns_on_ill_posed_freq_sev_components() -> None:
+    with pytest.warns(UserWarning, match="negative support"):
+        ModelSpec.model_validate(
+            {
+                "kind": "frequency_severity",
+                "frequency": {"kind": "glm", "params": {"family": "normal"}},
+                "severity": {"kind": "gbm", "params": {"objective": "regression_l1"}},
+            }
+        )
+
+
+def test_modelspec_accepts_poisson_gamma_freq_sev_without_warning() -> None:
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        ModelSpec.model_validate(
+            {
+                "kind": "frequency_severity",
+                "frequency": {"kind": "glm", "params": {"family": "poisson"}},
+                "severity": {"kind": "glm", "params": {"family": "gamma"}},
+            }
+        )
+
+
+def test_modelspec_build_rejects_contradictory_exposure_col() -> None:
+    from azoic.data import DatasetSpec
+
+    spec = DatasetSpec(target="claim_amount", exposure="exposure")
+    bad = ModelSpec(kind="glm", params={"family": "poisson", "exposure_col": "wrong"})
+    with pytest.raises(ValueError, match="contradicts"):
+        bad.build(spec)
+    good = ModelSpec(kind="glm", params={"family": "poisson", "exposure_col": "exposure"})
+    assert good.build(spec).exposure_col == "exposure"
+
+
+def test_run_records_effective_params(tmp_path: Path) -> None:
+    """Recorded params must reflect the fitted estimator: the spec-driven
+    exposure_col appears even when YAML omits it, and freq-sev records the
+    special columns it was built with."""
+    data = _write_portfolio(tmp_path)
+    yaml_path = _write_yaml(
+        tmp_path,
+        _basic_yaml(
+            str(data),
+            models="""\
+  glm-poisson:
+    kind: glm
+    params:
+      family: poisson
+  freq-sev:
+    kind: frequency_severity
+    frequency:
+      kind: glm
+      params:
+        family: poisson
+    severity:
+      kind: glm
+      params:
+        family: gamma
+""",
+        ),
+    )
+    run = run_experiment(ExperimentConfig.from_yaml(yaml_path))
+    assert run.models["glm-poisson"].params["exposure_col"] == "exposure"
+    freq_sev = run.models["freq-sev"].params
+    assert freq_sev["exposure_col"] == "exposure"
+    assert freq_sev["claim_count_col"] == "claim_count"
+    assert freq_sev["claim_amount_col"] == "claim_amount"
+    assert freq_sev["frequency"]["params"]["family"] == "poisson"

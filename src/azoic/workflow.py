@@ -16,6 +16,7 @@ column is popped inside ``RiskGLM`` / ``RiskGBM``); diagnostics use aggregate
 from __future__ import annotations
 
 import hashlib
+import warnings
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
@@ -149,6 +150,36 @@ class PreprocessingSpec(BaseModel):
         return steps
 
 
+def _negative_support_value(kind: str, params: dict[str, Any]) -> Any:
+    """Return the family/objective value with negative support, else None.
+
+    Negative-support losses can predict negative frequencies/severities, which
+    ``FrequencySeverityModel.predict`` clips to zero -- ill-posed but permitted.
+    """
+    if kind == "glm":
+        value = params.get("family", "normal")
+        bad = {"normal", "binomial"}
+    elif kind == "gbm":
+        value = params.get("objective", "tweedie")
+        bad = {
+            "regression",
+            "regression_l1",
+            "regression_l2",
+            "rmse",
+            "huber",
+            "fair",
+            "quantile",
+            "mape",
+            "l1",
+            "l2",
+            "mean_squared_error",
+            "mean_absolute_error",
+        }
+    else:
+        return None
+    return value if value in bad else None
+
+
 class ModelSpec(BaseModel):
     """One estimator spec inside an ExperimentConfig.
 
@@ -175,9 +206,48 @@ class ModelSpec(BaseModel):
                 or self.severity.kind == "frequency_severity"
             ):
                 raise ValueError("nested frequency_severity models are not supported")
+            for role, sub in (("frequency", self.frequency), ("severity", self.severity)):
+                value = _negative_support_value(sub.kind, sub.params)
+                if value is not None:
+                    warnings.warn(
+                        f"{role} component {sub.kind!r} family/objective {value!r} has "
+                        "negative support and can predict negative values (clipped to "
+                        "zero at predict time); the intended construction is Poisson "
+                        "frequency and Gamma severity",
+                        UserWarning,
+                        stacklevel=2,
+                    )
         elif nested:
             raise ValueError("frequency and severity specs require kind=frequency_severity")
         return self
+
+    def effective_params(self, dataset_spec: DatasetSpec | None = None) -> dict[str, Any]:
+        """Parameters exactly as applied to the constructed estimator.
+
+        Single source for ``build`` and ``ModelResult.params`` so the recorded
+        configuration cannot drift from the fitted estimator.
+        """
+        if self.kind == "frequency_severity":
+            if self.frequency is None or self.severity is None:
+                raise ValueError("frequency_severity requires frequency and severity specs")
+            params = dict(self.params)
+            params["frequency"] = self.frequency.model_dump(exclude_none=True)
+            params["severity"] = self.severity.model_dump(exclude_none=True)
+            if dataset_spec is not None:
+                params["exposure_col"] = dataset_spec.exposure
+                params["claim_count_col"] = dataset_spec.claim_count
+                params["claim_amount_col"] = dataset_spec.target
+            return params
+        params = dict(self.params)
+        if dataset_spec is not None:
+            configured = params.get("exposure_col")
+            if configured is not None and configured != dataset_spec.exposure:
+                raise ValueError(
+                    f"params['exposure_col'] {configured!r} contradicts "
+                    f"spec.exposure {dataset_spec.exposure!r}"
+                )
+            params["exposure_col"] = dataset_spec.exposure
+        return params
 
     def build(self, dataset_spec: DatasetSpec | None = None):
         """Construct the (unfitted) estimator from this spec."""
@@ -196,9 +266,7 @@ class ModelSpec(BaseModel):
                 claim_count_col=dataset_spec.claim_count,
                 claim_amount_col=dataset_spec.target,
             )
-        params = dict(self.params)
-        if dataset_spec is not None:
-            params["exposure_col"] = dataset_spec.exposure
+        params = self.effective_params(dataset_spec)
         if self.kind == "glm":
             return RiskGLM(**params)
         return RiskGBM(**params)
@@ -488,15 +556,9 @@ def _evaluate_split(
             )
             for column in config.spec.protected_cols
         }
-        params = dict(spec.params)
-        if spec.kind == "frequency_severity":
-            if spec.frequency is None or spec.severity is None:
-                raise ValueError("frequency_severity requires frequency and severity specs")
-            params["frequency"] = spec.frequency.model_dump(exclude_none=True)
-            params["severity"] = spec.severity.model_dump(exclude_none=True)
         results[name] = ModelResult(
             kind=spec.kind,
-            params=params,
+            params=spec.effective_params(config.spec),
             metrics=metrics,
             calibration_table=cal,
             protected_calibration=protected_calibration,

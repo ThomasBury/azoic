@@ -105,3 +105,28 @@ def test_load_data_without_spec(tmp_path) -> None:
     p = tmp_path / "plain.parquet"
     df.to_parquet(p)
     pd.testing.assert_frame_equal(load_data(p), df)
+
+
+# ---------------------------------------------------------------------------
+# Special-column distinctness (M32)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"target": "amount", "exposure": "amount"},
+        {"target": "amount", "exposure": "e", "claim_count": "amount"},
+        {"target": "t", "exposure": "e", "claim_count": "c", "time_col": "c"},
+        {"target": "t", "exposure": "e", "claim_count": "e", "time_col": "t"},
+    ],
+)
+def test_dataset_spec_rejects_aliased_special_columns(overrides) -> None:
+    """Aliased specials previously produced a constant response (amount/amount == 1)."""
+    with pytest.raises(pydantic.ValidationError, match="must be distinct"):
+        DatasetSpec(**overrides)
+
+
+def test_dataset_spec_accepts_distinct_optional_columns() -> None:
+    spec = DatasetSpec(target="t", exposure="e", claim_count="c", time_col="p")
+    assert spec.required_columns() == ["t", "e", "c", "p"]

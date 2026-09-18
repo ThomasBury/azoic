@@ -301,7 +301,9 @@ def test_autobinner_monotonic_invalid_value_raises_at_fit() -> None:
 
 def test_autogrouper_default_cols_are_non_numeric() -> None:
     df = _df()
-    grouper = AutoGrouper(exposure_col="exposure", min_exposure=200.0).fit(df)
+    grouper = AutoGrouper(
+        exposure_col="exposure", target_col="claim_amount", min_exposure=200.0
+    ).fit(df)
     assert set(grouper.group_cols_) == {"region", "vehicle_brand"}
 
 
@@ -423,7 +425,7 @@ def test_autogrouper_ordered_similarity_keeps_declared_nonmonotonic_order() -> N
 def test_autogrouper_set_mapping_roundtrip() -> None:
     df = _df()
     custom = {"region": {"urban": "urban", "suburban": "urban", "rural": "rural"}}
-    grouper = AutoGrouper(cols=["region"]).fit(df)
+    grouper = AutoGrouper(cols=["region"], target_col="claim_amount").fit(df)
     grouper.set_mapping(custom)
     out = grouper.transform(df)
     assert set(out["region"].unique()) == {"urban", "rural"}
@@ -506,7 +508,8 @@ def test_autogrouper_nominal_similarity_vocabulary_follows_risk() -> None:
 def test_autogrouper_set_mapping_rebuilds_ordered_vocabulary() -> None:
     dtype = pd.CategoricalDtype(["A", "B", "C"], ordered=True)
     grouper = AutoGrouper(cols=["segment"]).fit(
-        pd.DataFrame({"segment": pd.Series(["A", "B", "C"], dtype=dtype)})
+        pd.DataFrame({"segment": pd.Series(["A", "B", "C"], dtype=dtype)}),
+        [1.0, 2.0, 3.0],
     )
 
     grouper.set_mapping({"segment": {"B": "second", "A": "first", "C": "second"}})
@@ -536,7 +539,7 @@ def test_autogrouper_reserved_other_supports_glm_prediction() -> None:
 
 def test_autogrouper_preserves_other_columns() -> None:
     df = _df()
-    grouper = AutoGrouper(cols=["region"]).fit(df)
+    grouper = AutoGrouper(cols=["region"], target_col="claim_amount").fit(df)
     out = grouper.transform(df)
     pd.testing.assert_series_equal(out["vehicle_brand"], df["vehicle_brand"], check_names=True)
 
@@ -631,3 +634,67 @@ def test_autogrouper_merges_trailing_group_below_credibility_floor() -> None:
     ).fit(df)
     mapping = grouper.mapping_["segment"]
     assert mapping["B"] == mapping["C"]
+
+
+# ---------------------------------------------------------------------------
+# Fail-closed configuration (M32)
+# ---------------------------------------------------------------------------
+
+
+def test_autobinner_rejects_unknown_requested_columns() -> None:
+    df = _df()
+    with pytest.raises(ValueError, match=r"cols not found in X: \['driver_agee'\]"):
+        AutoBinner(cols=["driver_age", "driver_agee"]).fit(df)
+
+
+def test_autogrouper_rejects_unknown_requested_columns() -> None:
+    df = _df()
+    with pytest.raises(ValueError, match=r"cols not found in X: \['regionn'\]"):
+        AutoGrouper(cols=["region", "regionn"]).fit(df)
+
+
+@pytest.mark.parametrize("strategy", ["quantilee", "trees", ""])
+def test_autobinner_rejects_unknown_strategy(strategy: str) -> None:
+    with pytest.raises(ValueError, match="strategy must be 'quantile' or 'tree'"):
+        AutoBinner(strategy=strategy).fit(_df())
+
+
+@pytest.mark.parametrize("strategy", ["simmilarity", "raree", ""])
+def test_autogrouper_rejects_unknown_strategy(strategy: str) -> None:
+    with pytest.raises(ValueError, match="strategy must be 'rare' or 'similarity'"):
+        AutoGrouper(strategy=strategy).fit(_df())
+
+
+def test_autogrouper_similarity_requires_a_target() -> None:
+    """Without a target every level has risk zero and merges in incidental
+    order; that must raise, not silently group. rare is floor-based and
+    needs no target."""
+    df = _df()[["region"]]
+    with pytest.raises(ValueError, match="similarity grouping requires a target"):
+        AutoGrouper(cols=["region"], strategy="similarity").fit(df)
+    AutoGrouper(cols=["region"], strategy="rare", min_exposure=0.0).fit(df)
+
+
+def test_autogrouper_synthetic_labels_avoid_real_level_names() -> None:
+    """A real level named like the synthetic namespace (group_0) must keep its
+    own group; the synthetic label is renamed instead of colliding."""
+    rng = np.random.default_rng(1)
+    n = 300
+    df = pd.DataFrame(
+        {
+            "feat": rng.choice(["A", "B", "group_0"], size=n),
+            "exposure": np.ones(n),
+            "target": rng.poisson(100, n).astype(float),
+        }
+    )
+    grouper = AutoGrouper(
+        cols=["feat"], strategy="similarity", max_groups=2,
+        exposure_col="exposure", target_col="target",
+    ).fit(df)
+    mapping = grouper.mapping_["feat"]
+    assert mapping["group_0"] == "group_0"  # real level keeps its name
+    synthetic = {label for level, label in mapping.items() if level != "group_0"}
+    assert len(synthetic) == 1
+    assert next(iter(synthetic)) != "group_0"
+    out = grouper.transform(df)
+    assert out["feat"].nunique() == 2  # requested two groups stay two groups
