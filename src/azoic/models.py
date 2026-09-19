@@ -50,13 +50,16 @@ def _pop_weight(X, exposure_col, sample_weight, *, require_exposure=False):
     Drops ``exposure_col`` from a DataFrame ``X`` when it would otherwise leak
     as a feature. The popped column becomes the weight unless the caller
     passed an explicit ``sample_weight`` (used by FrequencySeverityModel to
-    route ``claim_count`` as the severity weight). Raises when every weight is
-    zero -- a weighted fit cannot move.
+    route ``claim_count`` as the severity weight); an explicit weight is a
+    first-class override and works without the column in X. Resolved weights
+    must be finite, non-negative, and not all zero -- LightGBM accepts
+    negative/NaN weights without a word, so the check lives here.
 
     ``require_exposure=True`` (fit/score) raises when a configured
-    ``exposure_col`` is absent: silently falling back to an unweighted fit
-    would break the exposure-weight pure-premium convention (rule 1).
-    ``predict`` passes False -- new data need not carry the exposure column.
+    ``exposure_col`` is absent and no explicit ``sample_weight`` was given:
+    silently falling back to an unweighted fit would break the
+    exposure-weight pure-premium convention (rule 1). ``predict`` passes
+    False -- new data need not carry the exposure column.
     """
     if isinstance(X, pd.DataFrame) and exposure_col and exposure_col in X.columns:
         features = X.drop(columns=[exposure_col])
@@ -65,14 +68,20 @@ def _pop_weight(X, exposure_col, sample_weight, *, require_exposure=False):
         else:
             w = np.asarray(sample_weight, dtype=float)
     else:
-        if require_exposure and exposure_col:
+        if require_exposure and exposure_col and sample_weight is None:
             raise ValueError(
                 f"exposure_col {exposure_col!r} not found in X; exposure weighting is "
                 "configured but the column is missing (fit/score would be unweighted)"
             )
         features, w = X, sample_weight
-    if w is not None and not np.asarray(w).any():
-        raise ValueError("All sample_weight entries are zero; cannot fit a weighted model.")
+    if w is not None:
+        w = np.asarray(w, dtype=float)
+        if not np.isfinite(w).all():
+            raise ValueError("sample_weight must contain only finite values")
+        if np.any(w < 0):
+            raise ValueError("sample_weight must contain only non-negative values")
+        if not w.any():
+            raise ValueError("All sample_weight entries are zero; cannot fit a weighted model.")
     return features, w
 
 

@@ -628,17 +628,79 @@ def test_exposure_col_with_ndarray_raises_at_fit() -> None:
         glm.fit(np.zeros((5, 2)), np.ones(5))
 
 
-def test_freq_sev_subestimator_with_exposure_col_raises() -> None:
-    """FrequencySeverityModel strips the special columns before component fits,
-    so a sub-estimator configured with exposure_col previously fit silently
-    unweighted; it now raises at the boundary."""
+def test_freq_sev_subestimator_with_exposure_col_uses_explicit_weights() -> None:
+    """FrequencySeverityModel strips the special columns and passes explicit
+    component weights, so a sub-estimator configured with exposure_col must
+    still fit weighted: its coefficients must equal a plain weighted fit."""
     df = _df()
+    X = _features(df).drop(columns=["exposure"])
+    exposure = df["exposure"].to_numpy()
+    cc = df["claim_count"].to_numpy()
     model = FrequencySeverityModel(
         freq=RiskGLM(family="poisson", exposure_col="exposure"),
-        sev=RiskGLM(family="gamma"),
+        sev=RiskGLM(family="gamma", exposure_col="exposure"),
+    ).fit(df)
+    freq_ref = RiskGLM(family="poisson").fit(X, cc / exposure, sample_weight=exposure)
+    pos = cc > 0
+    sev_ref = RiskGLM(family="gamma").fit(
+        X.loc[pos],
+        df["claim_amount"].to_numpy()[pos] / cc[pos],
+        sample_weight=cc[pos],
     )
-    with pytest.raises(ValueError, match="exposure_col 'exposure' not found in X"):
-        model.fit(df)
+    np.testing.assert_allclose(model.freq_.coef_, freq_ref.coef_)
+    np.testing.assert_allclose(model.sev_.coef_, sev_ref.coef_)
+
+
+@pytest.mark.parametrize(
+    "estimator",
+    [
+        RiskGLM(family="poisson", exposure_col="exposure"),
+        RiskGBM(objective="tweedie", exposure_col="exposure", n_estimators=10),
+    ],
+    ids=["glm", "gbm"],
+)
+def test_explicit_sample_weight_overrides_missing_exposure_col(estimator) -> None:
+    """An explicit sample_weight is a first-class override: a configured
+    exposure_col absent from X must not raise when weights are supplied, and
+    the result must equal an unconfigured estimator on the same weights."""
+    df = _df()
+    X = _features(df).drop(columns=["exposure"])
+    y = (df["claim_amount"] / df["exposure"]).to_numpy()
+    w = df["exposure"].to_numpy()
+    estimator.fit(X, y, sample_weight=w)
+    ref = estimator.__class__(**{**estimator.get_params(), "exposure_col": None}).fit(
+        X, y, sample_weight=w
+    )
+    np.testing.assert_allclose(estimator.predict(X), ref.predict(X))
+
+
+@pytest.mark.parametrize(
+    "estimator",
+    [
+        RiskGLM(family="tweedie", exposure_col="exposure"),
+        RiskGBM(objective="tweedie", exposure_col="exposure", n_estimators=10),
+    ],
+    ids=["glm", "gbm"],
+)
+@pytest.mark.parametrize("bad", [np.nan, np.inf, -np.inf, -1.0])
+def test_fit_score_reject_invalid_sample_weight(estimator, bad) -> None:
+    """LightGBM silently accepts negative/NaN weights; glum does not. Both
+    backends must fail closed through the shared weight pop (popped exposure
+    column or explicit sample_weight alike)."""
+    df = _df(n=2000)
+    X = _features(df)
+    X.loc[df.index[0], "exposure"] = bad
+    y = (df["claim_amount"] / df["exposure"]).to_numpy()
+    match = "finite" if not np.isfinite(bad) else "non-negative"
+    with pytest.raises(ValueError, match=match):
+        estimator.fit(X, y)
+    clean = RiskGLM(family="tweedie") if isinstance(estimator, RiskGLM) else RiskGBM(
+        objective="tweedie", n_estimators=10
+    )
+    w = df["exposure"].to_numpy()
+    w[0] = bad
+    with pytest.raises(ValueError, match=match):
+        clean.fit(_features(df).drop(columns=["exposure"]), y, sample_weight=w)
 
 
 # ---------------------------------------------------------------------------
