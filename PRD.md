@@ -408,8 +408,8 @@ behaviour change for valid inputs. Implement one green milestone per session:
   `calibration_table`'s `claim_count`), mirroring `stability_table`'s
   strictness while keeping `y_pred` sign-permissive (Poisson GBM zeros are
   legitimate); make `_pop_weight` raise in `fit`/`score` when a configured
-  `exposure_col` is absent from X (`predict` stays permissive — new data need
-  not carry exposure).
+  `exposure_col` is absent from X and no explicit `sample_weight` is given
+  (`predict` stays permissive — new data need not carry exposure).
 - **M32 — configuration, labels, scoring, and recorded params:**
   `DatasetSpec` special-column names must be distinct; `AutoBinner`/
   `AutoGrouper` raise on unknown requested columns and unknown strategies
@@ -427,6 +427,31 @@ behaviour change for valid inputs. Implement one green milestone per session:
 Acceptance per milestone: focused synthetic regressions for each fixed
 reproduction, `just check`, `git diff --check`. Checklists, decisions, and
 evidence live in [PROGRESS.md](PROGRESS.md#fail-closed-hardening-plan--2026-09-14).
+
+### M33 — post-hardening fixes (2026-09-19)
+
+Follow-up to the committed M31/M32 hardening; fixes verified with runnable
+probes in a fresh review:
+
+- **Models:** `_pop_weight` validates resolved weights (finite,
+  non-negative, not all-zero — LightGBM accepts negative/NaN weights
+  silently); the missing-`exposure_col` raise only fires without an explicit
+  `sample_weight` (explicit weights are a first-class override).
+- **One-day exposure floor:** `MIN_EXPOSURE = 1/366` (0.1% relative
+  tolerance for day-count representations) enforced at the portfolio
+  boundary, in `FrequencySeverityModel.fit`, on popped exposure columns, on
+  calibration/one-way segment sums, and in tariff recalibration;
+  `min_exposure` requires `>= MIN_EXPOSURE` and a real exposure column.
+  Ranking curves (gini/lorenz) keep zero-weight rows legal.
+- **Workflow:** `frequency_severity` specs forward `params` to the
+  constructor and raise on conflicts with the dataset special columns, so
+  recorded params can never drift from the fitted estimator.
+- **Edges:** `plot_lorenz` accepts non-string model keys; `AutoGrouper`
+  rejects `max_groups < 1`; `screen_features` survives an empty profile;
+  `DatasetSpec` rejects empty optional special names.
+
+Acceptance and evidence live in
+[PROGRESS.md](PROGRESS.md#m33--post-hardening-fixes--2026-09-19).
 
 ## 7. Later iterations (optional, none blocking)
 

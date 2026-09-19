@@ -9,15 +9,14 @@ Legend: ☐ pending · ◐ in progress · ☑ done
 
 ## Current focus
 
-- **Goal:** close the eight fail-open paths found by the 2026-09-14 hardening
-  review: invalid inputs or configuration silently producing valid-looking but
-  wrong numbers. Library-only changes; the tutorial book is untouched.
-- **Active milestone:** none; M31 ☑ and M32 ☑ completed 2026-09-14. **Next:
-  the separate M15 release review in a new session.**
-- **State:** M25 completed 2026-09-13; M26–M30 completed 2026-09-14 (all six
-  tutorial milestones green). The hardening review then reproduced all eight
-  findings against that baseline; the review's own `just check` passed
-  Ruff/Ty and **690 tests, 4 upstream skips** with a clean worktree.
+- **Goal:** none active.
+- **Active milestone:** none; M33 ☑ completed 2026-09-19. **Next: the
+  separate M15 release review in a new session** (its backlog now includes
+  the deferred M33 observations listed in the M33 section).
+- **State:** M31 ☑ / M32 ☑ committed and pushed 2026-09-19
+  (`2fafc78..3c18296`); M33 ☑ fixes pushed the same day. The follow-up
+  review verified eight residual findings with runnable probes; user
+  decisions recorded in the M33 section.
 - **Scope for M31 (P1):** input validation in `metrics._as_arrays` (plus
   `double_lift_table` `pred_b` and `calibration_table` `claim_count`);
   `_pop_weight` raises in `fit`/`score` when a configured `exposure_col` is
@@ -161,6 +160,125 @@ one-way rows).
 Remaining: none. M15 release review is next in a new session.
 Blockers: none.
 Next action: M15 release review (see its historical handoff below).
+
+## M33 — post-hardening fixes — 2026-09-19
+
+### Scope and completion rules
+
+Follow-up to the committed M31/M32 hardening. A fresh review (plus one
+self-review pass) verified residual fail-open paths with runnable probes;
+user locked the decisions below. Library-only unless the tutorial exposure
+check fails. TDD per chunk: regression fails first, then fix, then focused
+pytest; `just check` + `git diff --check` before finishing.
+
+Decisions (2026-09-19):
+- `MIN_EXPOSURE = 1.0 / 366.0` (one day in year fractions) with a 0.1%
+  relative tolerance for day-count representations: freMTPL2 stores its
+  1-day policies a few ulps below `1/366` (min cached exposure
+  0.0027322404371584 vs 0.00273224043715847).
+- Floor applies to popped exposure columns and portfolio/FSM/table
+  validations only; explicit `sample_weight` stays floored-free (severity
+  weights are claim counts; sklearn checks feed `arange`-style weights).
+- `_pop_weight` raises for a missing configured `exposure_col` only when no
+  explicit `sample_weight` is given (M31 over-reach correction).
+- `min_exposure` must be `>= MIN_EXPOSURE` and requires a real exposure
+  column (raises, mirroring `min_claims`).
+- Calibration/one-way tables raise when a segment's summed exposure is below
+  the floor; zero weights stay legal for ranking curves (gini/lorenz).
+- Deferred to M15 backlog: `set_mapping` unknown-column no-op, distill
+  identity-only frame guard, `apply_tariff` overflow, constant-prediction
+  qcut NaN group.
+
+| Status | Chunk | Findings addressed |
+|---|---|---|
+| ☑ | M33-a models weight validation | explicit-weight false positive (F3); GBM negative/NaN weights (F8) |
+| ☑ | M33-b one-day exposure floor | min_exposure count fallback (F4); zero-exposure segments (F6); NaN/inf/short-y tariff base (F2) |
+| ☑ | M33-c frequency_severity params | params silently ignored + phantom records (F1) |
+| ☑ | M33-d small edges | lorenz non-str keys (F5); max_groups; empty profile; empty spec names; metrics labels shrink |
+
+Checkpoint: 2026-09-19 — in progress
+Changed: opened M33; verified the tutorial cleaned cache min exposure is a
+leap-year 1-day fraction (0.0027322404371584, ~163 ulp below computed
+1/366), so the floor uses a 0.1% relative tolerance and keeps all 1,016
+1-day rows (none carry claims).
+Verified: read-only cache probe; conftest exposure Uniform(0.5, 1.0) is far
+above the floor; tutorial YAML floors (1000/2000) are far above it.
+Remaining: chunks a–d, checks, docs, push.
+Blockers: none.
+Next action: chunk M33-a regressions in tests/test_models.py.
+
+Checkpoint: 2026-09-19 — M33-a complete
+Changed: `src/azoic/models.py` (`_pop_weight`: finite/non-negative/not-all-zero
+weight validation in the shared pop; missing-`exposure_col` raise only when
+`sample_weight is None`); `tests/test_models.py` (inverted
+`test_freq_sev_subestimator_with_exposure_col_raises` into a coefficient-
+equality weighted regression; explicit-override and 4×2 invalid-weight
+regressions, all failed before the fix). Commit `db74423`.
+Verified: focused `tests/test_models.py` 245 passed incl.
+`parametrize_with_checks` with the new weight guards; `tests/test_workflow.py
++ test_tariff.py + test_tune.py` 121 passed.
+Remaining: chunks b–d.
+Blockers: none.
+Next action: chunk M33-b regressions (exposure floor) in test_workflow /
+test_metrics / test_preprocessing / test_tariff.
+
+Checkpoint: 2026-09-19 — M33-b complete
+Changed: `src/azoic/data.py` (MIN_EXPOSURE/EXPOSURE_FLOOR constants);
+`src/azoic/models.py` (popped-column floor, FSM.fit floor);
+`src/azoic/workflow.py` (portfolio floor); `src/azoic/metrics.py`
+(stability row floor; calibration/one-way segment-sum floors);
+`src/azoic/preprocessing.py` (`_check_min_exposure` shared by both classes;
+dead ones-fallback removed from `_edges`; docstrings synced);
+`src/azoic/tariff.py` (finite totals, y-length, exposure floor in
+export/recalibrate). 15 regressions failed before, pass after; 4
+`min_exposure=0.0`-without-column tests retargeted to `None`. Commit
+`7abab91`. Two test-authoring corrections during the chunk: weighted strata
+absorb zero-weight rows (decile scenario replaced by an all-zero portfolio),
+and the grouper no-floor sanity fit needs `strategy="rare"` (default
+similarity raises target-less per M32).
+Verified: focused five-file run 645 passed; cli/tune/data/mlops/plots 116
+passed.
+Remaining: chunks c–d.
+Blockers: none.
+Next action: chunk M33-c regressions in tests/test_workflow.py (FSM params).
+
+Checkpoint: 2026-09-19 — M33-c complete
+Changed: `src/azoic/workflow.py` (`ModelSpec.build` forwards `params` into
+`FrequencySeverityModel`, reserved freq/sev keys raise, special-column
+conflicts raise in `effective_params` shared by build and recording);
+`tests/test_workflow.py` (5 regressions, all failed before the fix).
+Commit `f4bddd3`.
+Verified: `tests/test_workflow.py` 72 passed.
+Remaining: chunk d.
+Blockers: none.
+Next action: chunk M33-d regressions (plots/profile/preprocessing/data edges).
+
+Checkpoint: 2026-09-19 — M33-d complete
+Changed: `src/azoic/plots.py` (palette lookups stringify like
+`model_colors`); `src/azoic/preprocessing.py` (`max_groups >= 1` raise,
+dead truthiness guard removed); `src/azoic/profile.py` (empty-profile early
+return); `src/azoic/data.py` (`_non_empty` extended to optional specials);
+`src/azoic/metrics.py` (level labels via one `np.where`). 6 regressions
+failed before, pass after. Commit `bba29ac`.
+Verified: plots/preprocessing/profile/data/metrics 366 passed.
+Remaining: full `just check`, diff check, final checkpoint, push.
+Blockers: none.
+Next action: `just check`.
+
+Checkpoint: 2026-09-19 — complete
+Changed: `AGENTS.md` (new actuarial rule 12 for the one-day exposure floor);
+PRD.md §6 (M33 entry; M31 `_pop_weight` wording corrected to "no explicit
+sample_weight"); this milestone's table and checkpoints.
+Verified: `uv run ruff check .` green; `uv run ty check` green; full suite
+**839 passed, 4 upstream array-api skips** (baseline 792 at the M31/M32 push);
+`git diff --check 3f60b0e..HEAD` clean; `ruff format` applied to the four
+touched test files (`a5fed20`). Tutorial not re-rendered: the floor is
+library-only and the cleaned cache's minimum exposure (one leap-year day,
+verified) passes the tolerance; no tutorial YAML floor is below it
+(1000/2000).
+Remaining: push.
+Blockers: none.
+Next action: push main.
 
 ## Tutorial improvement plan — 2026-09-13
 

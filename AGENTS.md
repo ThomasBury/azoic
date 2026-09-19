@@ -130,6 +130,11 @@ examples/_quarto.yml  # main path and optional recipes; only sources committed, 
 9. Temporal splits reject missing times and keep equal timestamps on one side.
 10. Tune on an inner split of outer training data; evaluate outer test once.
 11. Tariff application rejects unseen categories and non-finite numerics.
+12. Exposure is at least one day (`MIN_EXPOSURE = 1/366`, `EXPOSURE_FLOOR`
+    with 0.1% tolerance): enforced at the portfolio boundary, FSM fit, popped
+    exposure columns, calibration/one-way segment sums, and tariff
+    recalibration. Explicit `sample_weight` is exempt (severity routes claim
+    counts). Zero-weight rows stay legal for ranking curves only.
 
 ## Testing
 
