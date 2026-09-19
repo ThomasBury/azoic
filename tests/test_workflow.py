@@ -10,7 +10,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from azoic.data import DatasetSpec
 from azoic.metrics import calibration_table, gini, mean_tweedie_deviance, op_ratio, stability_table
+from azoic.models import RiskGLM
 from azoic.workflow import (
     CategoricalDistribution,
     ExperimentConfig,
@@ -1171,3 +1173,50 @@ def test_run_records_effective_params(tmp_path: Path) -> None:
     assert freq_sev["claim_count_col"] == "claim_count"
     assert freq_sev["claim_amount_col"] == "claim_amount"
     assert freq_sev["frequency"]["params"]["family"] == "poisson"
+
+
+# ---------------------------------------------------------------------------
+# frequency_severity params are forwarded, not silently dropped (M33)
+# ---------------------------------------------------------------------------
+
+
+def _fsm_spec(**params):
+    return ModelSpec(
+        kind="frequency_severity",
+        params=params,
+        frequency={"kind": "glm", "params": {"family": "poisson"}},
+        severity={"kind": "glm", "params": {"family": "gamma"}},
+    )
+
+
+def test_modelspec_freq_sev_forwards_matching_params() -> None:
+    """A matching special-column param is applied to the constructor and
+    recorded identically -- recorded params can never name a phantom key."""
+    spec = DatasetSpec(target="claim_amount", exposure="exposure", claim_count="claim_count")
+    ms = _fsm_spec(exposure_col="exposure")
+    est = ms.build(spec)
+    assert est.exposure_col == "exposure"
+    assert ms.effective_params(spec)["exposure_col"] == "exposure"
+
+
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [("exposure_col", "wrong"), ("claim_count_col", "wrong"), ("claim_amount_col", "wrong")],
+)
+def test_modelspec_freq_sev_rejects_contradictory_special_columns(key, value) -> None:
+    spec = DatasetSpec(target="claim_amount", exposure="exposure", claim_count="claim_count")
+    with pytest.raises(ValueError, match="contradicts"):
+        _fsm_spec(**{key: value}).build(spec)
+
+
+def test_modelspec_freq_sev_unknown_param_fails_loudly() -> None:
+    """Unknown params previously vanished silently while being recorded."""
+    spec = DatasetSpec(target="claim_amount", exposure="exposure", claim_count="claim_count")
+    with pytest.raises(TypeError, match="bogus_param"):
+        _fsm_spec(bogus_param=1).build(spec)
+
+
+def test_modelspec_freq_sev_rejects_reserved_component_keys() -> None:
+    spec = DatasetSpec(target="claim_amount", exposure="exposure", claim_count="claim_count")
+    with pytest.raises(ValueError, match="reserved"):
+        _fsm_spec(freq=RiskGLM()).build(spec)

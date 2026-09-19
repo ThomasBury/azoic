@@ -234,9 +234,19 @@ class ModelSpec(BaseModel):
             params["frequency"] = self.frequency.model_dump(exclude_none=True)
             params["severity"] = self.severity.model_dump(exclude_none=True)
             if dataset_spec is not None:
-                params["exposure_col"] = dataset_spec.exposure
-                params["claim_count_col"] = dataset_spec.claim_count
-                params["claim_amount_col"] = dataset_spec.target
+                derived = {
+                    "exposure_col": dataset_spec.exposure,
+                    "claim_count_col": dataset_spec.claim_count,
+                    "claim_amount_col": dataset_spec.target,
+                }
+                for key, value in derived.items():
+                    configured = self.params.get(key)
+                    if configured is not None and configured != value:
+                        raise ValueError(
+                            f"params[{key!r}] {configured!r} contradicts "
+                            f"the dataset spec value {value!r}"
+                        )
+                    params[key] = value
             return params
         params = dict(self.params)
         if dataset_spec is not None:
@@ -259,12 +269,22 @@ class ModelSpec(BaseModel):
                 or self.severity is None
             ):
                 raise ValueError("frequency_severity requires spec.claim_count")
+            self.effective_params(dataset_spec)  # special-column conflict checks
+            reserved = sorted({"freq", "sev"} & set(self.params))
+            if reserved:
+                raise ValueError(
+                    f"params contains reserved frequency_severity keys {reserved}; "
+                    "use the `frequency:` / `severity:` spec fields"
+                )
             return FrequencySeverityModel(
-                freq=self.frequency.build(),
-                sev=self.severity.build(),
-                exposure_col=dataset_spec.exposure,
-                claim_count_col=dataset_spec.claim_count,
-                claim_amount_col=dataset_spec.target,
+                **{
+                    **self.params,
+                    "freq": self.frequency.build(),
+                    "sev": self.severity.build(),
+                    "exposure_col": dataset_spec.exposure,
+                    "claim_count_col": dataset_spec.claim_count,
+                    "claim_amount_col": dataset_spec.target,
+                }
             )
         params = self.effective_params(dataset_spec)
         if self.kind == "glm":
