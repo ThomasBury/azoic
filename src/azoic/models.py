@@ -27,6 +27,8 @@ from sklearn.base import BaseEstimator, RegressorMixin, clone
 from sklearn.metrics import d2_tweedie_score
 from sklearn.utils.validation import check_is_fitted, validate_data
 
+from azoic.data import EXPOSURE_FLOOR
+
 __all__ = ["RiskGLM", "RiskGBM", "FrequencySeverityModel"]
 
 
@@ -61,10 +63,12 @@ def _pop_weight(X, exposure_col, sample_weight, *, require_exposure=False):
     exposure-weight pure-premium convention (rule 1). ``predict`` passes
     False -- new data need not carry the exposure column.
     """
+    from_column = False
     if isinstance(X, pd.DataFrame) and exposure_col and exposure_col in X.columns:
         features = X.drop(columns=[exposure_col])
         if sample_weight is None:
             w = X[exposure_col].to_numpy(dtype=float)
+            from_column = True
         else:
             w = np.asarray(sample_weight, dtype=float)
     else:
@@ -82,6 +86,12 @@ def _pop_weight(X, exposure_col, sample_weight, *, require_exposure=False):
             raise ValueError("sample_weight must contain only non-negative values")
         if not w.any():
             raise ValueError("All sample_weight entries are zero; cannot fit a weighted model.")
+        if require_exposure and from_column and np.any(w < EXPOSURE_FLOOR):
+            raise ValueError(
+                f"exposure_col {exposure_col!r} must be at least 1/366 (one day of "
+                "exposure); sub-day exposures inflate claim_amount/exposure rates "
+                "and destabilize GLM fits"
+            )
     return features, w
 
 
@@ -545,6 +555,8 @@ class FrequencySeverityModel(RegressorMixin, BaseEstimator):
         ca = X[self.claim_amount_col].to_numpy(dtype=float)
         if not np.isfinite(exposure).all() or np.any(exposure <= 0):
             raise ValueError("exposure must contain only positive finite values")
+        if np.any(exposure < EXPOSURE_FLOOR):
+            raise ValueError("exposure must be at least 1/366 (one day of exposure)")
         if not np.isfinite(cc).all() or np.any(cc < 0):
             raise ValueError("claim_count must contain only non-negative finite values")
         if not np.isfinite(ca).all() or np.any(ca < 0):

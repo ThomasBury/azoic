@@ -22,9 +22,22 @@ from sklearn.isotonic import isotonic_regression
 from sklearn.tree import DecisionTreeRegressor
 from sklearn.utils.validation import validate_data
 
+from azoic.data import MIN_EXPOSURE
 from azoic.validation import _weighted_quantile_edges
 
 __all__ = ["AutoBinner", "AutoGrouper"]
+
+
+def _check_min_exposure(min_exposure, exp) -> None:
+    """``min_exposure`` is an exposure-unit floor: below one day (1/366) is
+    meaningless, and without a real exposure column it silently becomes a
+    row-count floor."""
+    if min_exposure is None:
+        return
+    if min_exposure < MIN_EXPOSURE:
+        raise ValueError(f"min_exposure must be at least 1/366 (one day); got {min_exposure}")
+    if exp is None:
+        raise ValueError("min_exposure requires exposure_col in X")
 
 
 def _to_frame(X):
@@ -102,7 +115,8 @@ class AutoBinner(TransformerMixin, BaseEstimator):
         Maximum number of bins per column (>=2).
     min_exposure : float | None
         Minimum total exposure per bin; smaller bins merged into neighbours.
-        Requires ``exposure_col``; ignored if absent.
+        Requires a real ``exposure_col`` column and must be >= 1/366 (one
+        day); raises otherwise (a count-unit fallback would change units).
     min_claims : float | None
         Minimum aggregate claim count per bin; smaller bins merge into neighbours.
     exposure_col, claim_count_col, target_col : str | None
@@ -167,6 +181,7 @@ class AutoBinner(TransformerMixin, BaseEstimator):
         cols = self._select_cols(X_df)
         exp = _column_array(X_df, self.exposure_col)
         cc = _column_array(X_df, self.claim_count_col)
+        _check_min_exposure(self.min_exposure, exp)
         if self.min_claims is not None and cc is None:
             raise ValueError("min_claims requires claim_count_col in X")
         target = _resolve_target(X_df, y, self.target_col, self.exposure_col)
@@ -210,10 +225,8 @@ class AutoBinner(TransformerMixin, BaseEstimator):
         if target is not None and self._mono_direction() is not None:
             t = target[mask]
             edges = self._enforce_monotonic(edges, v, w, t)
-        weights = w if w is not None else np.ones_like(v)
-        edges = _merge_small_bins(v, weights, edges, self.min_exposure)
-        claim_counts = cc[mask] if cc is not None else np.ones_like(v)
-        return _merge_small_bins(v, claim_counts, edges, self.min_claims)
+        edges = _merge_small_bins(v, w, edges, self.min_exposure)
+        return _merge_small_bins(v, cc[mask] if cc is not None else None, edges, self.min_claims)
 
     def _mono_direction(self):
         """True=increasing, False=decreasing, None=off; raise on garbage."""
@@ -335,6 +348,8 @@ class AutoGrouper(TransformerMixin, BaseEstimator):
     Strategies
     ----------
     "rare"        Levels below ``min_exposure`` / ``min_claims`` -> ``other_label``.
+                  ``min_exposure`` requires a real ``exposure_col`` column and
+                  must be >= 1/366 (one day).
     "similarity"  Nominal levels are stably risk-sorted; ordered categoricals
                   retain their declared order. Under-credible groups merge
                   with their nearest-risk neighbour, then the closest adjacent
@@ -385,6 +400,7 @@ class AutoGrouper(TransformerMixin, BaseEstimator):
         cols = self._select_cols(X_df)
         exp = _column_array(X_df, self.exposure_col)
         cc = _column_array(X_df, self.claim_count_col)
+        _check_min_exposure(self.min_exposure, exp)
         if self.min_claims is not None and cc is None:
             raise ValueError("min_claims requires claim_count_col in X")
         target = _column_array(X_df, self.target_col)

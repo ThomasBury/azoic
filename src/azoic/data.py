@@ -12,6 +12,16 @@ from typing import Any
 import pandas as pd
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+MIN_EXPOSURE = 1.0 / 366.0
+"""Minimum per-row exposure: one day in year fractions (leap-year denominator).
+
+Sub-day rows are data errors for pure-premium modelling: a tiny exposure
+inflates ``claim_amount / exposure`` rates and destabilizes GLM fits.
+"""
+EXPOSURE_FLOOR = MIN_EXPOSURE * (1.0 - 1e-3)
+"""Validation threshold: one day minus a 0.1% relative tolerance for day-count
+representations (freMTPL2 stores one-day policies ~163 ulps below 1/366)."""
+
 
 class DatasetSpec(BaseModel):
     """Names of the special (non-feature) columns in a pricing dataset.

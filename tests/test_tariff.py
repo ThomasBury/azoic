@@ -342,6 +342,54 @@ def test_recalibrate_for_total_negative_observed_raises() -> None:
         recalibrate_for_total(t, predicted_total=100.0, observed_total=-1.0)
 
 
+@pytest.mark.parametrize(
+    ("pred", "obs"), [(np.nan, 100.0), (np.inf, 100.0), (100.0, np.nan), (100.0, np.inf)]
+)
+def test_recalibrate_for_total_nonfinite_totals_raise(pred, obs) -> None:
+    """NaN/inf slip past the <= 0 / < 0 comparisons and silently wrote a NaN
+    (or zero, for inf exposure) base rate into the workbook (M33 F2)."""
+    glm, _ = _fit_glm()
+    t = extract_tariff(glm)
+    with pytest.raises(ValueError, match="finite"):
+        recalibrate_for_total(t, predicted_total=pred, observed_total=obs)
+
+
+@pytest.mark.parametrize("bad", [np.nan, np.inf, -1.0, 0.001])
+def test_export_tariff_recalibration_rejects_invalid_exposure(tmp_path, bad) -> None:
+    glm, df = _fit_glm()
+    feats = ["driver_age", "vehicle_age", "region", "vehicle_brand", "exposure"]
+    X = df[feats].copy()
+    X.loc[df.index[0], "exposure"] = bad
+    match = "1/366" if bad == 0.001 else "finite|non-negative"
+    with pytest.raises(ValueError, match=match):
+        export_tariff(glm, tmp_path / "t.xlsx", X=X, y=df["claim_amount"], exposure_col="exposure")
+
+
+@pytest.mark.parametrize("bad", [np.nan, np.inf, -1.0])
+def test_export_tariff_recalibration_rejects_invalid_y(tmp_path, bad) -> None:
+    glm, df = _fit_glm()
+    feats = ["driver_age", "vehicle_age", "region", "vehicle_brand", "exposure"]
+    y = df["claim_amount"].astype(float).copy()
+    y.iloc[0] = bad
+    with pytest.raises(ValueError, match="finite|non-negative"):
+        export_tariff(
+            glm, tmp_path / "t.xlsx", X=df[feats], y=y, exposure_col="exposure"
+        )
+
+
+def test_export_tariff_recalibration_rejects_mismatched_y_length(tmp_path) -> None:
+    glm, df = _fit_glm()
+    feats = ["driver_age", "vehicle_age", "region", "vehicle_brand", "exposure"]
+    with pytest.raises(ValueError, match="same length"):
+        export_tariff(
+            glm,
+            tmp_path / "t.xlsx",
+            X=df[feats],
+            y=df["claim_amount"].iloc[:10],
+            exposure_col="exposure",
+        )
+
+
 # ---------------------------------------------------------------------------
 # export_tariff (xlsx IO)
 # ---------------------------------------------------------------------------

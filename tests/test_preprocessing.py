@@ -434,7 +434,7 @@ def test_autogrouper_set_mapping_roundtrip() -> None:
 
 def test_autogrouper_unknown_level_to_other() -> None:
     df = _df()
-    grouper = AutoGrouper(cols=["region"], strategy="rare", min_exposure=0.0).fit(df)
+    grouper = AutoGrouper(cols=["region"], strategy="rare", min_exposure=None).fit(df)
     cols = list(df.columns)
     unseen = pd.concat([df.iloc[:2].copy(), pd.DataFrame({"region": ["mars"]}, index=[2])])
     unseen = unseen[cols].iloc[[2]]  # same columns as fit, only the unseen row
@@ -446,7 +446,7 @@ def test_autogrouper_unknown_level_to_other() -> None:
 
 def test_autogrouper_aggregates_unseen_warnings_and_silently_groups_missing() -> None:
     train = pd.DataFrame({"first": ["A", "B"], "second": ["X", "Y"]})
-    grouper = AutoGrouper(cols=["first", "second"], strategy="rare", min_exposure=0.0).fit(train)
+    grouper = AutoGrouper(cols=["first", "second"], strategy="rare", min_exposure=None).fit(train)
 
     with pytest.warns(UserWarning) as caught:
         out = grouper.transform(pd.DataFrame({"first": ["new-a", None], "second": ["new-b", None]}))
@@ -525,7 +525,7 @@ def test_autogrouper_reserved_other_supports_glm_prediction() -> None:
         [
             (
                 "grouper",
-                AutoGrouper(cols=["segment"], strategy="rare", min_exposure=0.0),
+                AutoGrouper(cols=["segment"], strategy="rare", min_exposure=None),
             ),
             ("model", RiskGLM()),
         ]
@@ -672,7 +672,7 @@ def test_autogrouper_similarity_requires_a_target() -> None:
     df = _df()[["region"]]
     with pytest.raises(ValueError, match="similarity grouping requires a target"):
         AutoGrouper(cols=["region"], strategy="similarity").fit(df)
-    AutoGrouper(cols=["region"], strategy="rare", min_exposure=0.0).fit(df)
+    AutoGrouper(cols=["region"], strategy="rare", min_exposure=None).fit(df)
 
 
 def test_autogrouper_synthetic_labels_avoid_real_level_names() -> None:
@@ -698,3 +698,29 @@ def test_autogrouper_synthetic_labels_avoid_real_level_names() -> None:
     assert next(iter(synthetic)) != "group_0"
     out = grouper.transform(df)
     assert out["feat"].nunique() == 2  # requested two groups stay two groups
+
+
+# ---------------------------------------------------------------------------
+# One-day exposure floor for min_exposure (M33)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("cls", [AutoBinner, AutoGrouper])
+def test_min_exposure_below_one_day_raises(cls) -> None:
+    with pytest.raises(ValueError, match="1/366"):
+        cls(min_exposure=1e-9, exposure_col="exposure").fit(_df())
+
+
+@pytest.mark.parametrize(
+    ("cls", "kwargs"),
+    [(AutoBinner, {}), (AutoGrouper, {"strategy": "rare"})],
+    ids=["binner", "grouper"],
+)
+def test_min_exposure_requires_a_real_exposure_column(cls, kwargs) -> None:
+    """A floor without an exposure column previously fell back to row counts,
+    silently changing units. min_exposure=None keeps the unfloored behaviour."""
+    with pytest.raises(ValueError, match="min_exposure requires exposure_col"):
+        cls(min_exposure=10.0, **kwargs).fit(_df())
+    with pytest.raises(ValueError, match="min_exposure requires exposure_col"):
+        cls(min_exposure=10.0, exposure_col="nope", **kwargs).fit(_df())
+    cls(min_exposure=None, **kwargs).fit(_df())

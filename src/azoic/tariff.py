@@ -35,6 +35,7 @@ import numpy as np
 import pandas as pd
 from sklearn.pipeline import Pipeline
 
+from azoic.data import EXPOSURE_FLOOR
 from azoic.metrics import mean_tweedie_deviance
 from azoic.models import RiskGBM, RiskGLM
 from azoic.preprocessing import AutoBinner, AutoGrouper
@@ -364,10 +365,10 @@ def recalibrate_for_total(
     exposure; ``observed_total`` is the sum of observed aggregate claim amount.
     Returns the new base rate.
     """
-    if predicted_total <= 0:
-        raise ValueError("recalibrate: model predicted total must be positive")
-    if observed_total < 0:
-        raise ValueError("recalibrate: observed total must be non-negative")
+    if not np.isfinite(predicted_total) or predicted_total <= 0:
+        raise ValueError("recalibrate: model predicted total must be positive and finite")
+    if not np.isfinite(observed_total) or observed_total < 0:
+        raise ValueError("recalibrate: observed total must be non-negative and finite")
     return float(tariff["base_rate"] * (observed_total / predicted_total))
 
 
@@ -451,6 +452,17 @@ def export_tariff(
     if recalibrate and X is not None and y is not None and exposure_col is not None:
         exposure = np.asarray(X[exposure_col].to_numpy(), dtype=float)
         y_arr = np.asarray(y, dtype=float)
+        if len(y_arr) != len(X):
+            raise ValueError(
+                f"recalibrate: y has {len(y_arr)} rows but X has {len(X)}; "
+                "they must have the same length"
+            )
+        if not np.isfinite(exposure).all() or np.any(exposure <= 0):
+            raise ValueError("recalibrate: exposure must contain only positive finite values")
+        if np.any(exposure < EXPOSURE_FLOOR):
+            raise ValueError("recalibrate: exposure must be at least 1/366 (one day)")
+        if not np.isfinite(y_arr).all() or np.any(y_arr < 0):
+            raise ValueError("recalibrate: y must contain only non-negative finite values")
         pred_total = float((np.asarray(glm.predict(transformed_X), dtype=float) * exposure).sum())
         obs_total = float(y_arr.sum())
         tariff["base_rate"] = recalibrate_for_total(

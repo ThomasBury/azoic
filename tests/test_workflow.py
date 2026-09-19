@@ -827,6 +827,20 @@ def test_run_experiment_rejects_invalid_portfolio_values(
         run_experiment(config)
 
 
+def test_run_experiment_rejects_sub_day_exposure(tmp_path: Path) -> None:
+    """Tiny exposures blow up claim_amount/exposure rates and destabilize
+    GLMs; the portfolio boundary rejects anything below one day (1/366)."""
+    df = make_synthetic_portfolio(n=100, seed=42)
+    df.loc[df.index[0], "exposure"] = 0.001
+    df.loc[df.index[0], "claim_amount"] = 0.0
+    df.loc[df.index[0], "claim_count"] = 0.0
+    data = tmp_path / "subday.parquet"
+    df.to_parquet(data)
+    config = ExperimentConfig.from_yaml(_write_yaml(tmp_path, _basic_yaml(str(data))))
+    with pytest.raises(ValueError, match="1/366"):
+        run_experiment(config)
+
+
 def test_run_experiment_rejects_inconsistent_claim_rows(tmp_path: Path) -> None:
     df = make_synthetic_portfolio(n=100, seed=42)
     df.loc[df.index[0], ["claim_count", "claim_amount"]] = [0, 1.0]

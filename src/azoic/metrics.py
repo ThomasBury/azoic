@@ -29,6 +29,7 @@ from sklearn.metrics import (
     mean_tweedie_deviance,
 )
 
+from azoic.data import EXPOSURE_FLOOR
 from azoic.validation import make_strata
 
 __all__ = [
@@ -192,6 +193,8 @@ def stability_table(y_true, y_pred, sample_weight, *, periods) -> pd.DataFrame:
         raise ValueError("y_pred must contain only positive finite predictions")
     if not np.isfinite(sample_weight).all() or np.any(sample_weight <= 0):
         raise ValueError("sample_weight must contain only positive finite exposures")
+    if np.any(sample_weight < EXPOSURE_FLOOR):
+        raise ValueError("sample_weight must be at least 1/366 (one day of exposure)")
 
     frame = pd.DataFrame(
         {
@@ -304,6 +307,12 @@ def calibration_table(
             raise ValueError("claim_count must contain only non-negative finite values")
         df["claim_count"] = claim_count
         out["claim_count"] = grouped["claim_count"].sum()
+    if (out["exposure"] < EXPOSURE_FLOOR).any():
+        bad = out.index[out["exposure"] < EXPOSURE_FLOOR].tolist()
+        raise ValueError(
+            "calibration_table: segment exposure must sum to at least 1/366 "
+            f"(one day); degenerate segments: {bad}"
+        )
     out["observed_pure_premium"] = out["claim_amount"] / out["exposure"]
     out["predicted_pure_premium"] = out["predicted_claim_amount"] / out["exposure"]
     out["o_p_ratio"] = out["observed_pure_premium"] / out["predicted_pure_premium"]
@@ -403,6 +412,12 @@ def one_way_table(
         claim_amount=("y_true", "sum"),
         predicted_claim_amount=("predicted_claim_amount", "sum"),
     )
+    if (out["exposure"] < EXPOSURE_FLOOR).any():
+        bad = out.index[out["exposure"] < EXPOSURE_FLOOR].tolist()
+        raise ValueError(
+            "one_way_table: level exposure must sum to at least 1/366 "
+            f"(one day); degenerate levels: {bad}"
+        )
     out["observed_pure_premium"] = out["claim_amount"] / out["exposure"]
     out["predicted_pure_premium"] = out["predicted_claim_amount"] / out["exposure"]
     out["o_p_ratio"] = out["observed_pure_premium"] / out["predicted_pure_premium"]

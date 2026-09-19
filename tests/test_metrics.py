@@ -254,6 +254,34 @@ def test_stability_table_rejects_invalid_inputs(
         stability_table(y_true, y_pred, sample_weight, periods=periods)
 
 
+def test_stability_table_rejects_sub_day_exposure() -> None:
+    with pytest.raises(ValueError, match="1/366"):
+        stability_table(
+            [1.0, 2.0], [1.0, 2.0], [0.001, 1.0], periods=["a", "a"]
+        )
+
+
+def test_calibration_table_rejects_zero_exposure_segments() -> None:
+    """A segment summing below one day of exposure produced inf/NaN silently
+    (M33 F6); ranking curves keep zero weights legal, tables raise."""
+    y_true = np.array([10.0, 20.0, 5.0, 7.0])
+    y_pred = np.array([1.0, 2.0, 0.5, 0.7])
+    w = np.array([1.0, 1.0, 0.0, 0.0])
+    with pytest.raises(ValueError, match="1/366"):
+        calibration_table(y_true, y_pred, w, groups=np.array(["a", "a", "b", "b"]))
+    # exposure-weighted strata always absorb zero-weight rows into weighted
+    # neighbours; only an all-zero portfolio produces a degenerate decile
+    with pytest.raises(ValueError, match="1/366"):
+        calibration_table(np.arange(10.0), np.arange(10.0), np.zeros(10), n_bins=10)
+
+
+def test_one_way_table_rejects_zero_exposure_levels() -> None:
+    X = pd.DataFrame({"f": ["a", "a", "b", "b"]})
+    w = np.array([1.0, 1.0, 0.0, 0.0])
+    with pytest.raises(ValueError, match="1/366"):
+        one_way_table(X, "f", np.array([1.0, 2, 0, 0]), np.array([1.0, 2, 0.5, 0.7]), w)
+
+
 def test_stability_table_zero_null_deviance_has_nan_d2() -> None:
     exposure = np.array([1.0, 2.0, 3.0])
     predictions = np.array([1.5, 2.0, 2.5])

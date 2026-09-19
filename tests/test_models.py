@@ -704,6 +704,47 @@ def test_fit_score_reject_invalid_sample_weight(estimator, bad) -> None:
 
 
 # ---------------------------------------------------------------------------
+# One-day exposure floor (M33)
+# ---------------------------------------------------------------------------
+
+
+def test_popped_exposure_below_one_day_raises() -> None:
+    """The exposure floor lives on the popped column path (fit/score); the
+    tolerance keeps freMTPL2's ulp-low one-day fractions legal."""
+    df = _df(n=2000)
+    X = _features(df)
+    y = (df["claim_amount"] / df["exposure"]).to_numpy()
+    X.loc[df.index[0], "exposure"] = 0.0027322404371584  # freMTPL2 one-day row
+    RiskGBM(objective="tweedie", exposure_col="exposure", n_estimators=10).fit(X, y)
+    X.loc[df.index[0], "exposure"] = 0.001  # ~2.9 hours: sub-day data
+    with pytest.raises(ValueError, match="1/366"):
+        RiskGBM(objective="tweedie", exposure_col="exposure", n_estimators=10).fit(X, y)
+    with pytest.raises(ValueError, match="1/366"):
+        RiskGLM(family="tweedie", exposure_col="exposure").fit(X, y)
+
+
+def test_explicit_sample_weight_is_not_floored() -> None:
+    """Explicit weights are not exposure (severity routes claim counts, sklearn
+    checks feed arange-style weights): no one-day floor on this path."""
+    df = _df(n=2000)
+    X = _features(df).drop(columns=["exposure"])
+    y = (df["claim_amount"] / df["exposure"]).to_numpy()
+    w = df["exposure"].to_numpy()
+    w[0] = 1e-6
+    RiskGBM(objective="tweedie", n_estimators=10).fit(X, y, sample_weight=w)
+
+
+def test_freq_severity_rejects_sub_day_exposure() -> None:
+    df = _df(n=2000)
+    df.loc[df.index[0], "exposure"] = 0.001
+    df.loc[df.index[0], "claim_amount"] = 0.0
+    df.loc[df.index[0], "claim_count"] = 0.0
+    model = FrequencySeverityModel(freq=RiskGLM(family="poisson"), sev=RiskGLM(family="gamma"))
+    with pytest.raises(ValueError, match="1/366"):
+        model.fit(df)
+
+
+# ---------------------------------------------------------------------------
 # Score objective mapping + clipping warning (M32)
 # ---------------------------------------------------------------------------
 

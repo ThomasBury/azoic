@@ -27,7 +27,7 @@ from pydantic import BaseModel, ConfigDict, Field, FiniteFloat, model_validator
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import FunctionTransformer
 
-from azoic.data import DatasetSpec, load_data
+from azoic.data import EXPOSURE_FLOOR, DatasetSpec, load_data
 from azoic.metrics import (
     calibration_table,
     gini,
@@ -451,6 +451,8 @@ def _validate_portfolio(config: ExperimentConfig, df: pd.DataFrame) -> None:
     target = df[config.spec.target].to_numpy(dtype=float)
     if not np.isfinite(exposure).all() or np.any(exposure <= 0):
         raise ValueError("exposure must contain only positive finite values")
+    if np.any(exposure < EXPOSURE_FLOOR):
+        raise ValueError("exposure must be at least 1/366 (one day of exposure)")
     if not np.isfinite(target).all() or np.any(target < 0):
         raise ValueError("target must contain only non-negative finite values")
     if config.spec.claim_count is None:
