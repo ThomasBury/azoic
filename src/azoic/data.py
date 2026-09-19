@@ -36,10 +36,10 @@ class DatasetSpec(BaseModel):
     time_col: str | None = None
     protected_cols: list[str] = Field(default_factory=list)
 
-    @field_validator("target", "exposure")
+    @field_validator("target", "exposure", "claim_count", "time_col")
     @classmethod
-    def _non_empty(cls, v: str) -> str:
-        if not v or not v.strip():
+    def _non_empty(cls, v: str | None) -> str | None:
+        if v is not None and not v.strip():
             raise ValueError("column name must be non-empty")
         return v
 

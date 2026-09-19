@@ -130,3 +130,13 @@ def test_dataset_spec_rejects_aliased_special_columns(overrides) -> None:
 def test_dataset_spec_accepts_distinct_optional_columns() -> None:
     spec = DatasetSpec(target="t", exposure="e", claim_count="c", time_col="p")
     assert spec.required_columns() == ["t", "e", "c", "p"]
+
+
+@pytest.mark.parametrize("field", ["target", "exposure", "claim_count", "time_col"])
+def test_dataset_spec_rejects_empty_special_names(field) -> None:
+    """Empty optional names previously passed validation and failed later
+    with a bare KeyError."""
+    base = {"target": "t", "exposure": "e"}
+    base[field] = ""
+    with pytest.raises(pydantic.ValidationError, match="non-empty"):
+        DatasetSpec(**base)

@@ -200,7 +200,7 @@ def plot_lorenz(
         curves = dict(y_pred) if isinstance(y_pred, Mapping) else {label: y_pred}
         palette = model_colors(curves)
         if color is not None and len(curves) == 1:
-            palette[next(iter(curves))] = color
+            palette[str(next(iter(curves)))] = color
         ax.plot(
             [0, 1],
             [0, 1],
@@ -229,14 +229,14 @@ def plot_lorenz(
                     res.exposure_pct,
                     res.claims_pct,
                     res.exposure_pct,
-                    color=palette[name],
+                    color=palette[str(name)],
                     alpha=0.18,
                     label="_nolegend_",
                 )
             ax.plot(
                 res.exposure_pct,
                 res.claims_pct,
-                color=palette[name],
+                color=palette[str(name)],
                 linewidth=2.2,
                 label=f"{name} (Gini {res.gini:.3f})",
             )

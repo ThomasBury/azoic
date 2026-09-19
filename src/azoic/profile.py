@@ -70,6 +70,9 @@ def screen_features(
     else                         -> keep
     """
 
+    if profile.empty:
+        return pd.DataFrame(columns=pd.Index(["column", "action", "reason"]))
+
     def act(row):
         if row["zero_variance"]:
             return ("drop", "zero variance")

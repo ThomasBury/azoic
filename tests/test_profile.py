@@ -34,6 +34,13 @@ def test_profile_numeric_columns_get_numerics() -> None:
     assert pd.notna(prof.loc["driver_age", "mean"])
 
 
+def test_screen_features_empty_profile() -> None:
+    """A zero-column profile used to crash with a length-mismatch error."""
+    screened = screen_features(profile_features(pd.DataFrame()))
+    assert list(screened.columns) == ["column", "action", "reason"]
+    assert len(screened) == 0
+
+
 def test_profile_detects_zero_variance_and_missingness() -> None:
     df = pd.DataFrame(
         {

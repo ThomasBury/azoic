@@ -395,6 +395,8 @@ class AutoGrouper(TransformerMixin, BaseEstimator):
     def fit(self, X, y=None):
         if self.strategy not in ("rare", "similarity"):
             raise ValueError(f"strategy must be 'rare' or 'similarity'; got {self.strategy!r}")
+        if self.max_groups is None or self.max_groups < 1:
+            raise ValueError(f"max_groups must be at least 1; got {self.max_groups!r}")
         validate_data(self, X, y=y, dtype=None, ensure_all_finite=False)
         X_df, _ = _to_frame(X)
         cols = self._select_cols(X_df)
@@ -518,7 +520,7 @@ class AutoGrouper(TransformerMixin, BaseEstimator):
             else:
                 groups[index].extend(groups.pop(index + 1))
 
-        while self.max_groups and len(groups) > self.max_groups:
+        while len(groups) > self.max_groups:
             differences = [
                 abs(risk(groups[i]) - risk(groups[i + 1])) for i in range(len(groups) - 1)
             ]

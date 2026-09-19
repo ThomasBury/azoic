@@ -724,3 +724,13 @@ def test_min_exposure_requires_a_real_exposure_column(cls, kwargs) -> None:
     with pytest.raises(ValueError, match="min_exposure requires exposure_col"):
         cls(min_exposure=10.0, exposure_col="nope", **kwargs).fit(_df())
     cls(min_exposure=None, **kwargs).fit(_df())
+
+
+@pytest.mark.parametrize("max_groups", [0, -1])
+def test_autogrouper_rejects_max_groups_below_one(max_groups) -> None:
+    """0 used to mean 'no limit' by truthiness and -1 crashed in the merge
+    loop with `min() iterable argument is empty`; both must fail closed."""
+    with pytest.raises(ValueError, match="max_groups must be at least 1"):
+        AutoGrouper(
+            max_groups=max_groups, exposure_col="exposure", target_col="claim_amount"
+        ).fit(_df())

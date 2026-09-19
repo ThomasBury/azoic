@@ -116,6 +116,17 @@ def test_plot_lorenz_multi_model_single_diagonal_and_oracle() -> None:
     assert any("gbm" in label and "Gini" in label for label in labels)
 
 
+def test_plot_lorenz_accepts_non_string_model_keys() -> None:
+    """model_colors stringifies palette keys; lookups must stringify too --
+    integer model ids previously raised KeyError."""
+    y_true, y_pred, w = _portfolio_and_predictions()
+    rng = np.random.default_rng(11)
+    ax = plot_lorenz(y_true, {0: y_pred, 1: y_pred * rng.uniform(0.8, 1.2, len(y_pred))}, w)
+    assert len(ax.get_lines()) == 3  # diagonal + two models
+    ax2 = plot_lorenz(y_true, y_pred, w, label=0, color="#D55E00")
+    assert len(ax2.get_lines()) == 2
+
+
 def test_plot_lorenz_single_model_shade() -> None:
     y_true, y_pred, w = _portfolio_and_predictions()
     ax = plot_lorenz(y_true, y_pred, w, show_shade=True, color="#D55E00")

@@ -381,15 +381,8 @@ def one_way_table(
         centers = raw
     else:
         raw = values.astype(object).to_numpy()
-        missing = pd.isna(raw)
         levels = raw
-        labels = np.array(
-            [
-                "nan" if is_missing else str(value)
-                for value, is_missing in zip(raw, missing, strict=True)
-            ],
-            dtype=object,
-        )
+        labels = np.where(pd.isna(raw), "nan", raw.astype(str))
         centers = np.full(len(raw), np.nan, dtype=float)
     df = pd.DataFrame(
         {
