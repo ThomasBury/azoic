@@ -372,9 +372,7 @@ def test_export_tariff_recalibration_rejects_invalid_y(tmp_path, bad) -> None:
     y = df["claim_amount"].astype(float).copy()
     y.iloc[0] = bad
     with pytest.raises(ValueError, match="finite|non-negative"):
-        export_tariff(
-            glm, tmp_path / "t.xlsx", X=df[feats], y=y, exposure_col="exposure"
-        )
+        export_tariff(glm, tmp_path / "t.xlsx", X=df[feats], y=y, exposure_col="exposure")
 
 
 def test_export_tariff_recalibration_rejects_mismatched_y_length(tmp_path) -> None:

@@ -688,8 +688,11 @@ def test_autogrouper_synthetic_labels_avoid_real_level_names() -> None:
         }
     )
     grouper = AutoGrouper(
-        cols=["feat"], strategy="similarity", max_groups=2,
-        exposure_col="exposure", target_col="target",
+        cols=["feat"],
+        strategy="similarity",
+        max_groups=2,
+        exposure_col="exposure",
+        target_col="target",
     ).fit(df)
     mapping = grouper.mapping_["feat"]
     assert mapping["group_0"] == "group_0"  # real level keeps its name
@@ -731,6 +734,6 @@ def test_autogrouper_rejects_max_groups_below_one(max_groups) -> None:
     """0 used to mean 'no limit' by truthiness and -1 crashed in the merge
     loop with `min() iterable argument is empty`; both must fail closed."""
     with pytest.raises(ValueError, match="max_groups must be at least 1"):
-        AutoGrouper(
-            max_groups=max_groups, exposure_col="exposure", target_col="claim_amount"
-        ).fit(_df())
+        AutoGrouper(max_groups=max_groups, exposure_col="exposure", target_col="claim_amount").fit(
+            _df()
+        )

@@ -256,9 +256,7 @@ def test_stability_table_rejects_invalid_inputs(
 
 def test_stability_table_rejects_sub_day_exposure() -> None:
     with pytest.raises(ValueError, match="1/366"):
-        stability_table(
-            [1.0, 2.0], [1.0, 2.0], [0.001, 1.0], periods=["a", "a"]
-        )
+        stability_table([1.0, 2.0], [1.0, 2.0], [0.001, 1.0], periods=["a", "a"])
 
 
 def test_calibration_table_rejects_zero_exposure_segments() -> None:

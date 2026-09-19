@@ -694,8 +694,10 @@ def test_fit_score_reject_invalid_sample_weight(estimator, bad) -> None:
     match = "finite" if not np.isfinite(bad) else "non-negative"
     with pytest.raises(ValueError, match=match):
         estimator.fit(X, y)
-    clean = RiskGLM(family="tweedie") if isinstance(estimator, RiskGLM) else RiskGBM(
-        objective="tweedie", n_estimators=10
+    clean = (
+        RiskGLM(family="tweedie")
+        if isinstance(estimator, RiskGLM)
+        else RiskGBM(objective="tweedie", n_estimators=10)
     )
     w = df["exposure"].to_numpy()
     w[0] = bad
@@ -786,9 +788,9 @@ def test_freq_sev_predict_warns_when_clipping_negative_components() -> None:
             return np.full(len(X), self.value)
 
     df = _df()
-    model = FrequencySeverityModel(
-        freq=_ConstantRegressor(-1.0), sev=_ConstantRegressor(2.0)
-    ).fit(df)
+    model = FrequencySeverityModel(freq=_ConstantRegressor(-1.0), sev=_ConstantRegressor(2.0)).fit(
+        df
+    )
     with pytest.warns(UserWarning, match="clipped .* negative component"):
         pred = model.predict(df)
     assert (pred == 0.0).all()  # -1 clipped to 0, x 2
