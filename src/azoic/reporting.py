@@ -9,6 +9,7 @@ ponytail: deliberately tiny -- md only.
 
 from __future__ import annotations
 
+import warnings
 from typing import Any
 
 import pandas as pd
@@ -110,6 +111,35 @@ def model_card(run: Run) -> str:
 
 
 def comparison_table(runs) -> pd.DataFrame:
+    """Return all model metrics, warning once for mixed evaluation contexts.
+
+    Dataset fingerprints, target/exposure columns, and holdout membership must
+    match for direct comparisons. Holdout order does not matter. Mixed contexts
+    remain available for descriptive comparison; the warning names affected runs.
+    """
+    runs = list(runs)
+    contexts = [
+        (
+            run.data_fingerprint,
+            run.config.spec.target,
+            run.config.spec.exposure,
+            frozenset(run.test_indices),
+        )
+        for run in runs
+    ]
+    mismatched = [
+        runs[i].config.name
+        for i, context in enumerate(contexts[1:], start=1)
+        if context != contexts[0]
+    ]
+    if mismatched:
+        warnings.warn(
+            f"Runs {[runs[0].config.name, *mismatched]!r} have different evaluation contexts "
+            "(dataset fingerprints, target/exposure definitions, or holdout membership); "
+            "metrics are descriptive and cannot be compared directly.",
+            UserWarning,
+            stacklevel=2,
+        )
     rows = [
         {"config": run.config.name, "model": name, "kind": result.kind, **result.metrics}
         for run in runs
@@ -129,6 +159,7 @@ def comparison_table(runs) -> pd.DataFrame:
 
 
 def comparison_dashboard(runs) -> str:
+    """Return standalone Plotly HTML with the same context warning as the table."""
     try:
         import plotly.graph_objects as go
         from plotly.subplots import make_subplots

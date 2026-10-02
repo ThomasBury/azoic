@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import warnings
+from copy import deepcopy
 from pathlib import Path
 
 import numpy as np
@@ -449,6 +450,62 @@ def test_data_fingerprint_covers_values_columns_dtypes_and_index() -> None:
     assert _data_fingerprint(df.rename(columns={"x": "y"})) != fingerprint
     assert _data_fingerprint(df.astype({"x": "float64"})) != fingerprint
     assert _data_fingerprint(df.set_axis([11, 20])) != fingerprint
+
+
+@pytest.mark.parametrize(
+    ("categories", "ordered"),
+    [
+        (pd.Index([2, 1, 3], dtype="int64"), False),
+        (pd.Index([1, 2, 4], dtype="int64"), False),
+        (pd.Index([1, 2, 3, 4], dtype="int64"), False),
+        (pd.Index([1, 2], dtype="int64"), False),
+        (pd.Index([1, 2, 3], dtype="int32"), False),
+        (pd.Index([1, 2, 3], dtype="int64"), True),
+    ],
+    ids=["order", "unused-level", "added-level", "removed-level", "dtype", "ordered"],
+)
+def test_data_fingerprint_covers_categorical_metadata(categories, ordered) -> None:
+    df = pd.DataFrame(
+        {"group": pd.Categorical([1, 2, 1, None], categories=pd.Index([1, 2, 3], dtype="int64"))}
+    )
+    changed = df.assign(group=df["group"].cat.set_categories(categories, ordered=ordered))
+    pd.testing.assert_series_equal(df["group"].astype(object), changed["group"].astype(object))
+    fingerprint = _data_fingerprint(df)
+    assert _data_fingerprint(df.copy(deep=True)) == fingerprint
+    assert _data_fingerprint(changed) != fingerprint
+
+
+@pytest.mark.parametrize("constraints", [{"driver_age": 1}, [1, 0]], ids=["dict", "list"])
+@pytest.mark.parametrize("snapshot", ["config", "params"])
+def test_run_snapshots_caller_configuration_and_nested_params(
+    tmp_path, constraints, snapshot
+) -> None:
+    config = ExperimentConfig(
+        data_path=str(_write_portfolio(tmp_path, n=1000)),
+        spec={"target": "claim_amount", "exposure": "exposure"},
+        features=["driver_age", "vehicle_age"],
+        models={
+            "gbm": ModelSpec(
+                kind="gbm",
+                params={"n_estimators": 5, "monotone_constraints": deepcopy(constraints)},
+            )
+        },
+    )
+    run = run_experiment(config)
+    recorded_config = deepcopy(run.config.model_dump())
+    recorded_params = deepcopy(run.models["gbm"].params)
+
+    config.name = "changed"
+    config.spec.target = "other_claims"
+    config.features.append("other_feature")
+    config.models["gbm"].params["objective"] = "poisson"
+    nested = config.models["gbm"].params["monotone_constraints"]
+    nested["driver_age" if isinstance(nested, dict) else 0] = -1
+
+    if snapshot == "config":
+        assert run.config.model_dump() == recorded_config
+    else:
+        assert run.models["gbm"].params == recorded_params
 
 
 def test_run_experiment_returns_estimators_when_requested(tmp_path: Path) -> None:

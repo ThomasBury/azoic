@@ -16,7 +16,7 @@ import pytest
 
 mlflow = pytest.importorskip("mlflow")  # skip the whole module if mlops extra absent
 
-from azoic.mlops import log_run  # noqa: E402
+from azoic.mlops import _flatten_params, log_run  # noqa: E402
 from azoic.workflow import ExperimentConfig, ModelSpec, run_experiment  # noqa: E402
 from tests.conftest import make_synthetic_portfolio  # noqa: E402
 
@@ -197,15 +197,38 @@ def test_log_run_skips_nonfinite_metrics(tmp_path: Path) -> None:
     cfg, run = _run(tmp_path)
     # Inject a NaN metric on one model.
     res = run.models["glm-tweedie"]
-    bad = res.model_copy(update={"metrics": {"foo_nan": float("nan"), **res.metrics}})
+    bad = res.model_copy(
+        update={
+            "metrics": {
+                "foo_nan": float("nan"),
+                "foo_inf": float("inf"),
+                "foo_neginf": float("-inf"),
+                "zero": 0.0,
+                "negative": -1.0,
+                **res.metrics,
+            }
+        }
+    )
     run = run.model_copy(update={"models": {**run.models, "glm-tweedie": bad}})
 
     uri = _tracking_uri(tmp_path)
     run_id = log_run(run, tracking_uri=uri, experiment_name="azoic-tests")
     data = _data(run_id)
     assert "glm-tweedie.foo_nan" not in data.metrics
+    assert "glm-tweedie.foo_inf" not in data.metrics
+    assert "glm-tweedie.foo_neginf" not in data.metrics
+    assert data.metrics["glm-tweedie.zero"] == 0.0
+    assert data.metrics["glm-tweedie.negative"] == -1.0
     # the finite metrics still went through.
     assert "glm-tweedie.gini_test" in data.metrics
+
+
+def test_flatten_params_preserves_none_and_container_strings() -> None:
+    assert _flatten_params("model.params", {"none": None, "zero": 0, "nested": {"a": [1]}}) == {
+        "model.params.none": "",
+        "model.params.zero": "0",
+        "model.params.nested": "{'a': [1]}",
+    }
 
 
 # ---------------------------------------------------------------------------

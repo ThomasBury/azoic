@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -161,6 +162,64 @@ def test_comparison_table_includes_all_models_and_metrics(tmp_path: Path) -> Non
     for metric in ("gini_train", "gini_test", "op_ratio_test", "deviance_test", "d2_test"):
         assert metric in table.columns
     assert np.isfinite(table.loc[0, "d2_test"])
+
+
+@pytest.mark.parametrize("difference", ["fingerprint", "target", "exposure", "holdout", "all"])
+def test_comparison_warns_once_for_mixed_evaluation_contexts(tmp_path, difference) -> None:
+    baseline = _run(tmp_path)
+    matched = baseline.model_copy(
+        update={"config": baseline.config.model_copy(update={"name": "matched"})}
+    )
+    config = baseline.config.model_copy(deep=True, update={"name": "affected"})
+    updates = {"config": config}
+    if difference in {"fingerprint", "all"}:
+        updates["data_fingerprint"] = "different-data"
+    if difference in {"target", "all"}:
+        config.spec.target = "other_claims"
+    if difference in {"exposure", "all"}:
+        config.spec.exposure = "other_exposure"
+    if difference in {"holdout", "all"}:
+        updates["test_indices"] = (baseline.train_indices[0], *baseline.test_indices[1:])
+    affected = baseline.model_copy(update=updates)
+    with pytest.warns(UserWarning, match="evaluation context") as caught:
+        table = comparison_table(iter([baseline, matched, affected]))
+    assert len(caught) == 1
+    message = str(caught[0].message)
+    assert "smoke" in message and "affected" in message
+    assert "matched" not in message
+    assert table["config"].tolist() == ["smoke", "matched", "affected"]
+    expected = comparison_table([baseline])
+    assert list(table.columns) == list(expected.columns)
+    for row in range(3):
+        assert table.iloc[row].drop("config").equals(expected.iloc[0].drop("config"))
+
+
+def test_comparison_accepts_same_holdout_membership_in_any_order(tmp_path) -> None:
+    baseline = _run(tmp_path)
+    config = baseline.config.model_copy(deep=True, update={"name": "candidate", "random_state": 7})
+    candidate = baseline.model_copy(
+        update={"config": config, "test_indices": tuple(reversed(baseline.test_indices))}
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        assert comparison_table([]).empty
+        assert len(comparison_table(iter([baseline, candidate]))) == 2
+
+
+def test_comparison_dashboard_preserves_mixed_context_rows_and_warns_once(tmp_path) -> None:
+    pytest.importorskip("plotly")
+    baseline = _run(tmp_path)
+    candidate = baseline.model_copy(
+        update={
+            "config": baseline.config.model_copy(update={"name": "candidate"}),
+            "data_fingerprint": "different-data",
+            "test_indices": (baseline.train_indices[0], *baseline.test_indices[1:]),
+        }
+    )
+    with pytest.warns(UserWarning, match="evaluation context") as caught:
+        html = comparison_dashboard(iter([baseline, candidate]))
+    assert len(caught) == 1
+    assert "smoke" in html and "candidate" in html
 
 
 @pytest.mark.parametrize("test_rate", [0.0, 4.0])

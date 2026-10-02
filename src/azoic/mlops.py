@@ -14,6 +14,7 @@ as artifacts before calling ``log_run``).
 from __future__ import annotations
 
 from collections.abc import Iterable
+from math import isfinite
 from pathlib import Path
 
 from azoic.workflow import Run
@@ -25,13 +26,7 @@ def _flatten_params(prefix: str, params: dict) -> dict:
     """mlflow flattens Frozenset keys internally but rejects None values and
     truncates long values (max 6000 chars). Cast to str, keep None as the
     empty string so the param still records the key."""
-    out: dict = {}
-    for k, v in params.items():
-        if v is None:
-            out[f"{prefix}.{k}"] = ""
-        else:
-            out[f"{prefix}.{k}"] = str(v)
-    return out
+    return {f"{prefix}.{k}": "" if v is None else str(v) for k, v in params.items()}
 
 
 def log_run(
@@ -93,7 +88,7 @@ def log_run(
             metrics_out: dict = {}
             for k, v in res.metrics.items():
                 fv = float(v)
-                if fv == fv and fv not in (float("inf"), float("-inf")):
+                if isfinite(fv):
                     metrics_out[f"{name}.{k}"] = fv
             if metrics_out:
                 mlflow.log_metrics(metrics_out)

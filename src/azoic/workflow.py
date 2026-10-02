@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import hashlib
 import warnings
+from copy import deepcopy
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
@@ -390,8 +391,9 @@ class ExperimentConfig(BaseModel):
 class ModelResult(BaseModel):
     """Diagnostics for one fitted model inside a Run.
 
-    Frozen + slots for cheap, hashable values; the fitted estimator stays on
-    the parent ``Run`` (sklearn estimators are mutable, not pydantic-friendly).
+    Workflow evaluation snapshots parameter containers. Attributes cannot be
+    reassigned, but public dictionaries and DataFrames remain mutable. Fitted
+    estimators are returned separately when requested.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid", arbitrary_types_allowed=True)
@@ -410,6 +412,9 @@ class Run(BaseModel):
     tuples in fit/evaluation order, relative to the fingerprinted input frame.
     Preserve that frame's row order and use ``df.iloc[list(run.test_indices)]``
     to recover the holdout. Tuned runs record the final outer partition.
+
+    Workflow evaluation deep-copies configuration and recorded parameters;
+    later caller mutations cannot change them. Public containers remain mutable.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid", arbitrary_types_allowed=True)
@@ -445,6 +450,13 @@ def _data_fingerprint(df: pd.DataFrame) -> str:
     digest.update(str(df.shape).encode())
     digest.update(pd.util.hash_pandas_object(df.columns, index=False).to_numpy().tobytes())
     digest.update("\0".join(map(str, df.dtypes)).encode())
+    for position, dtype in enumerate(df.dtypes):
+        if isinstance(dtype, pd.CategoricalDtype):
+            categories = dtype.categories
+            digest.update(
+                repr((position, categories.dtype, dtype.ordered, len(categories))).encode()
+            )
+            digest.update(pd.util.hash_pandas_object(categories, index=False).to_numpy().tobytes())
     digest.update(pd.util.hash_pandas_object(df, index=True).to_numpy().tobytes())
     return digest.hexdigest()
 
@@ -580,7 +592,7 @@ def _evaluate_split(
         }
         results[name] = ModelResult(
             kind=spec.kind,
-            params=spec.effective_params(config.spec),
+            params=deepcopy(spec.effective_params(config.spec)),
             metrics=metrics,
             calibration_table=cal,
             protected_calibration=protected_calibration,
@@ -588,7 +600,7 @@ def _evaluate_split(
         estimators[name] = estimator
 
     run = Run(
-        config=config,
+        config=config.model_copy(deep=True),
         data_fingerprint=_data_fingerprint(df),
         n_rows=int(len(df)),
         n_train=int(len(train_df)),
