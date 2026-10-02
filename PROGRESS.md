@@ -9,22 +9,282 @@ Legend: ☐ pending · ◐ in progress · ☑ done
 
 ## Current focus
 
-- **Goal:** complete prerelease fixes before the separate M15 release review.
-- **Active milestone:** none. M42 ☑ completed 2026-10-02; M15 is next.
-- **State:** M40–M42 prerelease fixes are locally green. PR/main CI validates
-  Python 3.12 with read-only permissions, locked all-extras/groups sync, source
-  checks, strict docs, distributions, and installed artifact smokes. Pages uses
-  locked sync and cancels superseded runs in the fixed `pages` group. Final
-  `just check`: Ruff/Ty green, **1051 passed, 4 upstream skips, 2 expected
-  strict-target failures**. Prior work is preserved. Remote PR execution and
-  Pages cancellation remain unverified until a separately authorized push.
-- **Delivery order:** M40 → M41 → M42 → M15, one green milestone per session.
-- **Resume here:** in a new session read M42's completion checkpoint and the
-  current working tree, then perform only the separate M15 release review.
-  Private settings, push, tagging, and publication remain separately authorized.
+- **Goal:** focused documentation revision complete; separate M15 release review pending.
+- **Active milestone:** none. M44 ☑ completed 2026-10-02.
+- **State:** M43–M44 are green. M44: Ruff/Ty, 1055 tests passed (4 skipped,
+  2 expected failures), strict docs, fresh 11-chapter book, four fresh isolated
+  renders, and authored local links. Runtime/API/dependencies/theme unchanged.
+- **Delivery order:** M43 → M44 → M15.
+- **Resume here:** in a new session, read M44's completion checkpoint and the
+  current working tree, then address the separate M15 release review.
+  Do not start M15 in this session. Private settings, push, tagging, and
+  publication remain separately authorized.
 
 This section and the delivery order below supersede historical statements that
 M15 is next. Completed milestones and their evidence remain historical records.
+
+## Focused documentation revision — 2026-10-02
+
+| Status | Milestone | Scope |
+|---|---|---|
+| ☑ | M43 — documentation correctness and onboarding | Continuous checkout/uv path, exact scoring inputs with metadata alongside, positional temporal selection, one-day exposure and D² contracts |
+| ☑ | M44 — tutorial progression and presentation | GLM/raw GBM main path, structured teacher introduced at distillation/tuning, representative preprocessing, folded verification, scale labels, honest first-model interpretation, visible CLI commands |
+
+### M43 — documentation correctness and onboarding
+
+- [x] Correct installation, environment verification, first-model command, and extras.
+- [x] Select scoring predictors from `run.feature_names` plus configured exposure;
+  retain identifiers alongside predictions and verify with/without preprocessing.
+- [x] Use positional indexing in the temporal recipe and test a policy-ID index.
+- [x] Document the one-day exposure floor/tolerance and `d2_test` definition/undefined cases.
+- [x] Execute corrected snippets and existing tutorial checks; pass `just check`,
+  `just docs-build`, and `git diff --check`.
+- [x] Fresh full-book render and isolated scoring, reporting, tuning, temporal renders.
+
+Checkpoint — kickoff 2026-10-02: read Current focus, M42 completion, affected
+source contracts, tutorial checks, and the accepted plan. Working tree clean.
+M43 supersedes the earlier next-action release handoff. No implementation yet.
+Next: correct only M43 docs/examples and add checks for metadata and non-default
+indices. M44 remains pending; no runtime/API/dependency/theme changes planned.
+
+Checkpoint — corrections verified 2026-10-02: checkout instructions now use
+`uv run` for import/CLI/first model and `uv sync --extra` for integrations;
+contributor checks are separate. Scoring selects fitted predictors/exposure and
+keeps IDs with output. Temporal positions use `.iloc`. Input/reference prose
+states the exposure floor and D² null/undefined cases. AGENTS/PRD reflect scope.
+
+Validation so far: locked all-extras/groups sync passed; exact first-model
+Python block ran in the project environment (Gini 0.127, O/P 1.242, chart
+written), import/version and CLI help passed. `tests/test_tutorial.py`: **11
+passed in 68.69 s**, including metadata scoring with/without preprocessing and
+non-default temporal index. Strict docs passed. Initial Ruff found one long test
+line; Ruff format fixed it. Full book render is running. Next: full quality
+gate, isolated chapters after the book completes, rendered-link/diff review.
+M43 remains ◐ until acceptance completes; M44 remains untouched.
+
+Checkpoint — quality gates passed 2026-10-02: `just check` exited **0** with
+Ruff/Ty green and **1054 passed, 4 skipped, 2 expected strict-target failures**
+in **263.51 s** (`/tmp/azoic-m43-check.log`). Final strict docs build passed
+(`/tmp/azoic-m43-docs.log`); corrected rendered commands/contracts and test
+formatting passed. Expanded the existing Quarto support-file ignore from the
+old single filename to `examples/*_files/` after rendering exposed numbered
+chapter support files. No generated files are tracked. The first link check
+preceded tutorial assembly, so its tutorial target is checked again after the
+book is copied into `site/tutorial/` as in Pages. The generated 404 skip-anchor
+issue is pre-existing. Next: finish book and isolated chapter renders, assemble
+local site, recheck links/diff, then complete M43. No M44 implementation.
+
+Checkpoint — full book passed 2026-10-02: `just demo` exited **0**, freshly
+executing all 11 chapters (`/tmp/azoic-m43-book.log`). Isolated scoring also
+exited **0**, with only the joined-data/audit cache pair in a fresh temporary
+checkout. Reporting, tuning, and temporal isolation remain running/pending.
+After Pages-style assembly, **2702 local targets across 28 HTML pages** have
+only the pre-existing generated `404.html` → `#__skip` missing anchor. Rendered
+temporal code uses `.iloc` and reports train periods 0–16, test 17–23. A manual
+HTML check initially assumed an exact split fraction; corrected it to verify
+the documented equal-period chronological boundary instead. No source change
+was needed. Next: finish isolated renders and record final handoff.
+
+### M43 completion checkpoint — 2026-10-02
+
+Changed: continuous checkout installation/verification/first-model commands;
+checkout extras and separate contributor checks; scoring inputs selected from
+fitted feature names plus configured exposure with IDs beside output; `.iloc`
+for temporal run positions; one-day exposure/tolerance and D² reference
+contracts. Added three executed regression cases to the existing tutorial tests
+(metadata scoring with/without preprocessing and policy-ID temporal indexing).
+Broadened the existing Quarto support-file ignore to cover numbered chapters.
+AGENTS/PRD/Current focus record M43/M44 scope and delivery order.
+
+Acceptance:
+
+- Locked all-extras/groups sync passed. Exact first-model Python block executed
+  successfully: Gini **0.127**, O/P **1.242**, calibration PNG written. Import
+  reports **0.4.1** and CLI help exits **0**.
+- Existing tutorial tests plus new cases: **11 passed** in **68.69 s**
+  (`/tmp/azoic-m43-tutorial-tests.log`).
+- `just check`: exit **0**, Ruff/Ty green, **1054 passed, 4 upstream skips,
+  2 expected strict-target failures**, **263.51 s** (`/tmp/azoic-m43-check.log`).
+- `just docs-build`: exit **0**, no strict-build issues
+  (`/tmp/azoic-m43-docs.log`). Corrected rendered commands/contracts inspected.
+- `just demo`: exit **0**, all **11 chapters** freshly rendered
+  (`/tmp/azoic-m43-book.log`).
+- Separate scoring, reporting, tuning, and temporal chapter renders each exit
+  **0**. Each used its own temporary checkout under
+  `/tmp/azoic-m43-isolated-jog_jxlb`, seeded only with the existing joined
+  portfolio/audit cache pair; no prior reports, workbooks, or MLflow state.
+  Logs: `/tmp/azoic-m43-04-scoring-tariff.log`,
+  `/tmp/azoic-m43-05-reporting-mlops.log`, `/tmp/azoic-m43-07-tuning.log`,
+  `/tmp/azoic-m43-08-temporal-stability.log`.
+- Pages-style local assembly checked **2702 local targets across 28 pages**.
+  Only the pre-existing generated `404.html` skip anchor is missing; authored
+  links pass (`/tmp/azoic-m43-links.log`). Test formatting and diff checks pass.
+
+Remaining: M44 only, then the separate M15 release review. M43 blockers: none.
+No runtime/API/dependency/theme changes, commit, push, or publication. Generated
+artifacts stay ignored. The existing 404 skip anchor is outside authored docs.
+
+Exact next action: in a new session, read this checkpoint/current working tree,
+mark **M44 only** ◐, and change the shared tutorial configuration to GLM plus
+raw-feature GBM, explicitly constructing the structured teacher in distillation
+and tuning. Follow the M44 presentation scope and repeat its acceptance checks.
+Do not start M44 in this session.
+
+### M44 — tutorial progression and presentation
+
+- [x] Use GLM/raw GBM on the main path; construct the structured teacher in
+  optional distillation and tuning, retaining its existing settings.
+- [x] Show representative numeric/categorical preprocessing before optional
+  full inspection; fold verification while retaining assertions.
+- [x] Label prediction scales, interpret the actual first-model result, and
+  show CLI commands with subprocess plumbing hidden.
+- [x] Update comparisons, reporting, descriptions, and existing tutorial checks.
+- [x] Execute snippets and tutorial checks; pass `just check`, strict
+  `just docs-build`, and `git diff --check`.
+- [x] Fresh full-book and isolated scoring, reporting, tuning, temporal renders;
+  inspect rendered presentation and local links.
+
+Checkpoint — kickoff 2026-10-02: read Current focus, M43 completion, PRD scope,
+shared configurations and their callers. Existing uncommitted M43 changes are
+preserved. M44 is the only active milestone. Next: simplify shared configs and
+main-path lessons; build the optional teacher explicitly where needed. Preserve
+all chapters, mathematical explanations, frequency–severity, protected-group
+reporting, manual tariff revision, reconciliation and workbook assertions.
+
+Checkpoint — source changes 2026-10-02: shared/main-path configurations now fit
+only the direct GLM and raw-feature GBM. Optional distillation, tuning, and CLI
+export explicitly copy the existing GBM settings into the GLM preprocessing
+configuration. Main comparisons/reports use two models; optional workbook
+comparison retains four. Representative age-bin/region-group tables precede
+collapsed full inspection. Verification remains executable but folded; scale
+labels and visible shell commands replace repeated explanations and subprocess
+source. First-model prose states the measured Gini/O/P and age-model limitation.
+Existing synthetic chapter checks now enforce the two-model boundary and explicit
+teacher settings; diagnostics was added to the same fresh-process smoke test.
+
+Checks so far: locked all-extras/groups sync, tutorial-test Ruff and diff checks
+passed. Tutorial checks are running. Next: resolve any failures, execute the
+first-model snippet, run full quality gates and full/fresh isolated renders,
+then inspect rendered presentation/links. M44 remains ◐; M15 stays pending.
+
+Checkpoint — targeted acceptance 2026-10-02: all **12 tutorial checks passed**
+in **70.60 s** (`/tmp/azoic-m44-tutorial-tests.log`), including diagnostics,
+scoring without outcomes, exposure scaling, teacher configuration/partition,
+workbook reconciliation, tuning leakage, metadata scoring, and temporal indices.
+The exact first-model Python block executed: Gini **0.127**, O/P **1.242**, chart
+written. Strict `just docs-build` exited **0** (`/tmp/azoic-m44-docs.log`);
+Ruff formatting and diff checks passed. Full `just check` and the fresh
+11-chapter render are running. Next: finish those gates, render four chapters
+in separate fresh temporary checkouts, inspect HTML/figures/links, then hand off.
+
+Checkpoint — full-gate regression repair 2026-10-02: the initial `just check`
+run reached **1054 passed** but failed one existing workflow test because it
+selected tutorial cells with `startswith`, before the new Quarto folding
+options. Updated that test to select cell contents, use two main models, and
+exercise the separately constructed teacher's training-only factor. Its new
+outcome perturbation creates an array rather than mutating pandas' read-only
+view. The targeted regression now passes (**1 passed, 4.21 s**); the complete
+gate is rerunning (`/tmp/azoic-m44-check-final.log`). No runtime change.
+Isolated scoring and reporting both exited **0** with fresh artifacts. Full
+book and remaining tuning/temporal isolated renders continue. Browser DOM
+contains the corrected first-model text; Firefox works for screenshots after
+Chrome returned blank captures. Next: finish gates and rendered review.
+
+Checkpoint — interrupted validation retry 2026-10-02: the execution environment
+terminated the first full-book render, first full-suite rerun, and isolated-render
+controller with **signal 15**. These are not counted as completed acceptance.
+Scoring/reporting isolation had already returned exit **0**. Tuning produced
+HTML, but its controller did not record an exit; tuning and temporal isolation
+will be repeated. Retrying the full book (`/tmp/azoic-m44-book-final.log`) and
+suite (`/tmp/azoic-m44-check-retry.log`) with fewer concurrent processes.
+Authored local file references: **78 passed**. Visually inspected the generated
+two-model lift/calibration grid and Lorenz overlay: readable labels and explicit
+training-adjusted scale. Next: collect complete exit statuses, finish isolation,
+then inspect final assembled HTML and links. M44 remains ◐.
+
+Checkpoint — quality gates green 2026-10-02: `just check` exited **0** with
+Ruff/Ty green and **1055 passed, 4 skipped, 2 expected strict-target failures**
+in **279.33 s** (`/tmp/azoic-m44-check-retry.log`). Final strict docs exited **0**
+(`/tmp/azoic-m44-docs-final.log`). All **7 displayed CLI commands** match the
+actual executed argument lists (6 reporting, 1 tuning). No source execution
+changes since these checks. Full book retry and fresh remaining tuning/temporal
+renders are running. Next: collect render exits, inspect final HTML/collapsed
+sections/figure labels, assemble local site and check links, then complete M44.
+
+Checkpoint — isolated acceptance complete 2026-10-02: all four isolated
+chapters exited **0**. Scoring/reporting used separate fresh checkouts under
+`/tmp/azoic-m44-isolated-n3xzov88`; tuning/temporal used separate fresh checkouts
+under `/tmp/azoic-m44-remaining-isolated-ufbrfyfu`. Each was seeded only with the
+joined portfolio and cleaning-audit cache pair. Logs:
+`/tmp/azoic-m44-04-scoring-tariff.log`,
+`/tmp/azoic-m44-05-reporting-mlops.log`,
+`/tmp/azoic-m44-remaining-07-tuning.log`,
+`/tmp/azoic-m44-remaining-08-temporal-stability.log`.
+Full sequential book retry is still running. Next: finish that render, inspect
+assembled HTML/presentation and local links, then complete M44 with a handoff.
+
+### M44 completion checkpoint — 2026-10-02
+
+Changed: the main path now fits only the direct Tweedie GLM and raw-feature GBM.
+Optional distillation, tuning, and CLI export explicitly construct a structured
+teacher with the existing tree and preprocessing settings. Main comparisons,
+figures, and reports use two models; optional workbook evaluation retains four.
+The experiment lesson explains one age bin and region group before collapsed
+full inspection. Verification code is folded, with reconciliation/workbook
+assertions retained. Prediction scales are explained together and labelled on
+outputs. First-model prose interprets its actual Gini/O/P and age-model limit.
+CLI commands are visible and subprocess plumbing is hidden. Chapters, mathematical
+explanations, frequency–severity, protected-group review, and manual tariff
+revision remain. Existing tutorial/workflow checks enforce the new progression.
+AGENTS/PRD and Current focus match the completed milestone.
+
+Acceptance:
+
+- Locked all-extras/groups sync passed. Exact first-model Python block executed:
+  Gini **0.127**, O/P **1.242**, calibration chart written (moved to `/tmp/`).
+- Tutorial checks: **12 passed in 70.60 s**
+  (`/tmp/azoic-m44-tutorial-tests.log`). The workflow calibration regression was
+  updated for folded cells and an independent teacher; its targeted check passed.
+- Final `just check`: exit **0**, Ruff/Ty green; **1055 passed, 4 upstream skips,
+  2 expected strict-target failures**, **279.33 s**
+  (`/tmp/azoic-m44-check-retry.log`). Test formatting and `git diff --check` pass.
+- Final strict `just docs-build`: exit **0**, no issues
+  (`/tmp/azoic-m44-docs-final.log`).
+- Fresh `just demo`: exit **0**, all **11 chapters** executed
+  (`/tmp/azoic-m44-book-final.log`). Interrupted attempts remain documented above.
+- Fresh isolated scoring, reporting, tuning, and temporal renders: each exit
+  **0**, with only the joined portfolio/audit cache pair as initial artifacts.
+  Workspace and log paths are recorded in the preceding checkpoint.
+- Rendered HTML verifies the two-model main path, collapsed nine-feature
+  inspection, folded checks, scale labels, visible CLI and hidden subprocess
+  source, first-model interpretation, and alternative text on all **11 figures**
+  in diagnostics/scoring (`/tmp/azoic-m44-render-check.log`). Generated two-model
+  lift/calibration and Lorenz figures were visually inspected. All **7 visible
+  CLI commands** match their executed arguments.
+- **78 authored local file references** pass. Pages-style local assembly checks
+  **2650 local targets across 28 HTML pages**, with no authored-link failures
+  (`/tmp/azoic-m44-links.log`). The only missing anchor is the pre-existing
+  generated `404.html` → `#__skip`, outside this source revision.
+
+Remaining: separate M15 release review only. M44 blockers: none. Existing
+uncommitted M43 changes are preserved. No runtime/API/dependency/theme changes,
+commit, push, or publication. Generated artifacts remain ignored or in `/tmp/`.
+
+Exact next action: in a new session, read this checkpoint and Current focus,
+inspect the working tree, and review M15 release prerequisites. Do not begin
+that milestone in this session; private settings, tagging, push, and publication
+still need their separate authorization.
+
+
+Checkpoint — commit delivery 2026-10-02: user authorized staging, logical
+Conventional Commits, and push. Grouped onboarding/scoring corrections with
+metadata/index regressions, then tutorial progression with its existing checks;
+project scope and completion records form the final commit. Fresh `just check`
+passed Ruff/Ty and **1055 tests, 4 skips, 2 expected failures** in **225.99 s**
+(`/tmp/azoic-commit-check.log`). Strict `just docs-build` and staged diff checks
+passed. Fetched `origin/main`; no divergence before committing. Next: push these
+three commits to `origin/main` and verify a clean, synchronized working tree.
+M15 remains pending; tagging and release publication are outside this delivery.
 
 ## Prerelease fixes — 2026-10-02
 

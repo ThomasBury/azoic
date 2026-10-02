@@ -21,11 +21,11 @@ policy admin, Guidewire integration.
 On a new session or after context compaction, read `PROGRESS.md`'s **Current
 focus**, the active milestone, and its latest checkpoint before editing. Resume
 an in-progress milestone first; otherwise use the explicit delivery order, not
-the lowest milestone number or an older handoff. The prerelease fixes
-plan is M40–M42, follows completed M34–M39, and supersedes earlier M15 release
-handoffs; Current focus is the authority for its active/next milestone. Its
-scope, and the completed M25–M30 tutorial plan, are mirrored in `PRD.md` section 6. CI/CD and
-documentation/tutorial review are separate.
+the lowest milestone number or an older handoff. The focused documentation
+revision M43–M44 is complete, following M40–M42. The separate M15 release review
+is next; Current focus is the authority for the active/next milestone.
+Its scope, the prerelease fixes, and the completed M25–M30 tutorial plan are
+mirrored in `PRD.md` section 6.
 
 Update the milestone checklist and checkpoint after each meaningful chunk and
 before handing off: changes, checks actually run and their results, remaining
@@ -34,6 +34,10 @@ work, blockers, and the exact next action. Leave interrupted or unverified work
 defines scope. A planning session records pending work without starting it.
 
 ## Setup commands
+
+Checkout onboarding uses `uv sync` and `uv run` from the repository root;
+install optional integrations with `uv sync --extra NAME`. Contributor checks
+are separate from the first-model path.
 
 - Install runtime only: `uv sync --no-dev`
 - Install default development environment: `uv sync`
@@ -163,8 +167,12 @@ examples/_quarto.yml  # main path and optional recipes; only sources committed, 
   `cleaning_audit_v1.csv`; rebuild both from cached raw inputs if either is
   missing. Delete both after changing the claim cap or cleaning rules.
 - Tutorial chapters create their own artifacts; shared setup uses `include: false`.
-  Keep essential diagnostics/scoring on the main path, mark deeper sections and
-  later recipes optional, and supply figure alternative text. The synthetic
+  Keep the direct GLM and raw-feature GBM on the main path; construct the
+  structured teacher explicitly in optional distillation/tuning. Show one
+  numeric bin and categorical group before optional full inspection. Fold
+  verification code, retain assertions, label prediction scales, and show CLI
+  commands with subprocess plumbing hidden. Mark deeper sections and later
+  recipes optional, and supply figure alternative text. The synthetic
   reporting assembly smoke test covers setup through MLflow; full sequential
   rendering and isolated chapter rendering are separate manual checks.
 - Run `just check` (or `uv run ruff check . && uv run ty check && uv run pytest`) before

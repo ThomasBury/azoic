@@ -556,6 +556,36 @@ Every unit passes `just check` and `git diff --check`; documentation also passes
 private settings, tagging, and publication are separately authorized. Execution
 checklists and checkpoints live in [PROGRESS.md](PROGRESS.md#prerelease-fixes--2026-10-02).
 
+### M43–M44 — focused documentation revision (2026-10-02)
+
+The accepted review calls for focused corrections, then tutorial progression;
+no wholesale rewrite, API change, dependency, theme, deployment feature, or
+standalone Excel scoring engine. Deliver M43 → M44 → M15, one milestone per
+session. This order supersedes the older release handoffs above.
+
+- **M43 (completed 2026-10-02):** make checkout installation, verification, first-model execution, and
+  extras consistently use `uv`; separate contributor checks. Select scoring
+  inputs from `run.feature_names` plus configured exposure, with identifiers
+  alongside output. Use `.iloc` for temporal positions. State the one-day
+  exposure minimum (1/366 with 0.1% tolerance) and complete the workflow metric
+  inventory with `d2_test`, its observed-mean null, and undefined cases.
+- **M44 (completed 2026-10-02):** teach portfolio → GLM/raw-feature GBM → diagnostics → scoring → direct
+  GLM workbook. Introduce the structured teacher at optional distillation and
+  explicitly construct it for tuning using current settings/preprocessing.
+  Explain one numeric bin and categorical grouping before the optional full
+  nine-feature inspection; fold implementation checks while retaining assertions.
+  Explain raw/adjusted prediction uses once and label outputs. Interpret the
+  first model's actual Gini/O/P honestly. Show CLI commands and hide subprocess
+  plumbing. Keep existing chapters, mathematical explanations, and optional
+  frequency–severity, tuning, temporal, protected-group, and manual revision lessons.
+
+Acceptance: execute corrected snippets; regress extra metadata at scoring and
+non-default indices at temporal selection; run existing tutorial checks,
+`just check`, strict `just docs-build`, and diff checks. Tutorial execution
+changes require a fresh full-book render and isolated scoring, reporting,
+tuning, and temporal chapters. Sources only; generated artifacts stay ignored.
+Execution record: [PROGRESS.md](PROGRESS.md#focused-documentation-revision--2026-10-02).
+
 ## 7. Later iterations (optional, none blocking)
 
 - **v0.2** — optuna objective (`deviance + calibration penalty`) **(M7 -- done)**,
