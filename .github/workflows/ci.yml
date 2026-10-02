@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      - name: Sync locked dependencies
+        run: uv sync --locked --all-extras --all-groups
+      - name: Lint
+        run: uv run ruff check .
+      - name: Type-check
+        run: uv run ty check
+      - name: Test
+        run: uv run pytest
+      - name: Build documentation
+        run: uv run zensical build --strict
+      - name: Build distributions
+        run: uv build
+      - name: Smoke-test wheel
+        run: |
+          wheel=("$GITHUB_WORKSPACE"/dist/*.whl)
+          cp tests/smoke_distribution.py "$RUNNER_TEMP/smoke_distribution.py"
+          cd "$RUNNER_TEMP"
+          uv run --isolated --no-project --with "${wheel[0]}" python smoke_distribution.py
+          uv run --isolated --no-project --with "${wheel[0]}" azoic --help
+      - name: Smoke-test source distribution
+        run: |
+          sdist=("$GITHUB_WORKSPACE"/dist/*.tar.gz)
+          cd "$RUNNER_TEMP"
+          uv run --isolated --no-project --with "${sdist[0]}" python smoke_distribution.py
+          uv run --isolated --no-project --with "${sdist[0]}" azoic --help

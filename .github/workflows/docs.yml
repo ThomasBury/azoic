@@ -4,6 +4,10 @@ on:
   push:
     branches: [main]
 
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
 permissions:
   contents: read
   pages: write
@@ -15,13 +19,13 @@ jobs:
       name: github-pages
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: "3.12"
-      - uses: astral-sh/setup-uv@v7
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
       - uses: quarto-dev/quarto-actions/setup@v2
-      - run: uv sync --all-extras --all-groups
+      - run: uv sync --locked --all-extras --all-groups
       - run: uv run quarto render examples/
       - run: uv run zensical build --strict
       - run: mkdir -p site/tutorial && cp -r examples/_book/. site/tutorial/
