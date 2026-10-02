@@ -23,6 +23,26 @@ Legend: ☐ pending · ◐ in progress · ☑ done
 This section and the delivery order below supersede historical statements that
 M15 is next. Completed milestones and their evidence remain historical records.
 
+## Requested local artifact cleanup — 2026-10-02
+
+Checkpoint — cleanup applied: removed the ignored obsolete single-page tutorial
+HTML, 20 intermediate Quarto notebooks, Quarto cache, and four old RiskForge/
+Azoic 0.4.0 distributions: **129 files, 26.80 MiB**. Removed the duplicate
+notebook ignore pattern from `examples/.gitignore`. Verified deletion targets
+were ignored and untracked; MLflow history, OpenML/cleaned-data caches, current
+0.4.1 distributions, and all three workflow files remain. No milestone started.
+
+Checks: targeted artifact/preservation assertions passed. Full `just check` and
+final diff/ignore checks remain pending. Next: complete those checks and record
+the result. M15 remains the separate pending release review.
+
+Checkpoint — validation complete: `just check` exited **0**; Ruff/Ty passed
+and **1055 tests passed, 4 skipped, 2 expected failures** in **238.57 s**
+(`/tmp/azoic-cleanup-check.log`). All four generated-file ignore checks passed;
+final deletion/preservation assertions and `git diff --check` passed. Strict
+`just docs-build` also passed before Git delivery. Remaining cleanup work: none.
+M15 remains pending; no workflow or runtime code changed.
+
 ## Focused documentation revision — 2026-10-02
 
 | Status | Milestone | Scope |
