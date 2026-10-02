@@ -20,12 +20,16 @@ import warnings
 
 import numpy as np
 import pandas as pd
-from glum import GeneralizedLinearRegressor
-from glum._distribution import TweedieDistribution
+from glum import GeneralizedLinearRegressor, TweedieDistribution
 from lightgbm import LGBMRegressor
 from sklearn.base import BaseEstimator, RegressorMixin, clone
 from sklearn.metrics import d2_tweedie_score
-from sklearn.utils.validation import check_is_fitted, validate_data
+from sklearn.utils.validation import (
+    check_array,
+    check_consistent_length,
+    check_is_fitted,
+    validate_data,
+)
 
 from azoic.data import EXPOSURE_FLOOR
 
@@ -79,7 +83,10 @@ def _pop_weight(X, exposure_col, sample_weight, *, require_exposure=False):
             )
         features, w = X, sample_weight
     if w is not None:
-        w = np.asarray(w, dtype=float)
+        w = check_array(w, dtype=float, ensure_2d=False, ensure_all_finite=False)
+        if w.ndim != 1:
+            raise ValueError("sample_weight must be one-dimensional")
+        check_consistent_length(X, w)
         if not np.isfinite(w).all():
             raise ValueError("sample_weight must contain only finite values")
         if np.any(w < 0):
@@ -96,18 +103,45 @@ def _pop_weight(X, exposure_col, sample_weight, *, require_exposure=False):
 
 
 def _store_fit_meta(estimator, X):
-    """Set ``feature_names_in_`` and ``n_features_in_`` on the public estimator.
+    """Record the full input schema while preserving native categoricals."""
+    validate_data(
+        estimator,
+        X,
+        skip_check_array=isinstance(X, pd.DataFrame),
+        ensure_all_finite=not estimator.__sklearn_tags__().input_tags.allow_nan,
+    )
 
-    DataFrame inputs are trusted as-is (glum/LightGBM accept categorical columns
-    natively). ndarray inputs go through ``validate_data`` so sparse/complex
-    payloads raise the message wording sklearn's estimator checks expect.
-    """
-    if isinstance(X, pd.DataFrame):
-        estimator.feature_names_in_ = list(X.columns)
-        estimator.n_features_in_ = X.shape[1]
+
+def _check_model_features(estimator, X_features, specials=()):
+    """Check predictor order even when optional special columns are omitted."""
+    names = getattr(estimator, "feature_names_in_", ())
+    expected = [name for name in names if name not in specials]
+    if len(expected) == len(names):
+        validate_data(
+            estimator,
+            X_features,
+            reset=False,
+            skip_check_array=isinstance(X_features, pd.DataFrame),
+            ensure_all_finite=not estimator.__sklearn_tags__().input_tags.allow_nan,
+        )
     else:
-        allow_nan = bool(estimator.__sklearn_tags__().input_tags.allow_nan)
-        validate_data(estimator, X=X, ensure_all_finite=not allow_nan)
+        # Public fit metadata includes specials; the backend schema excludes them.
+        if isinstance(X_features, pd.DataFrame) and list(X_features.columns) != expected:
+            raise ValueError(f"Model predictors must match fit names and order: {expected}")
+        if not isinstance(X_features, pd.DataFrame):
+            X_features = check_array(X_features, dtype=None, ensure_all_finite=False)
+        if X_features.shape[1] != len(expected):
+            raise ValueError(f"X has {X_features.shape[1]} features; expected {len(expected)}")
+
+
+def _validate_target(X, y):
+    if y is None:
+        raise ValueError("This estimator requires y to be passed, but the target y is None")
+    y = check_array(y, dtype=float, ensure_2d=False, input_name="y")
+    if y.ndim != 1:
+        raise ValueError("y must be one-dimensional")
+    check_consistent_length(X, y)
+    return y
 
 
 def _categorize_strings(X):
@@ -132,8 +166,10 @@ class RiskGLM(RegressorMixin, BaseEstimator):
     """Generalized linear model on top of ``glum.GeneralizedLinearRegressor``.
 
     ``fit`` and ``score`` take per-exposure rate targets; ``predict`` returns
-    rates. When ``exposure_col`` is set, exposure supplies the default sample
-    weight and is excluded from the backend features.
+    rates. Targets must be finite one-dimensional vectors with one value per
+    row. Prediction and scoring require the fitted predictor names and order.
+    When ``exposure_col`` is set, exposure supplies the default sample weight
+    and is excluded from the backend features; prediction may omit it.
 
     Parameters
     ----------
@@ -218,8 +254,9 @@ class RiskGLM(RegressorMixin, BaseEstimator):
     def fit(self, X, y, sample_weight=None):
         _store_fit_meta(self, X)
         X_features, w = _pop_weight(X, self.exposure_col, sample_weight, require_exposure=True)
+        y = _validate_target(X_features, y)
         backend = self._make_backend()
-        backend.fit(_categorize_strings(X_features), np.asarray(y, dtype=float), sample_weight=w)
+        backend.fit(_categorize_strings(X_features), y, sample_weight=w)
         self.backend_ = backend
         self.coef_ = backend.coef_
         self.intercept_ = backend.intercept_
@@ -229,22 +266,25 @@ class RiskGLM(RegressorMixin, BaseEstimator):
     def predict(self, X):
         check_is_fitted(self, "backend_")
         X_features, _ = _pop_weight(X, self.exposure_col, None)
+        _check_model_features(self, X_features, (self.exposure_col,))
         return self.backend_.predict(_categorize_strings(X_features))
 
     def score(self, X, y, sample_weight=None):
         check_is_fitted(self, "backend_")
         X_features, w = _pop_weight(X, self.exposure_col, sample_weight, require_exposure=True)
-        return self.backend_.score(
-            _categorize_strings(X_features), np.asarray(y, dtype=float), sample_weight=w
-        )
+        _check_model_features(self, X_features, (self.exposure_col,))
+        y = _validate_target(X_features, y)
+        return self.backend_.score(_categorize_strings(X_features), y, sample_weight=w)
 
 
 class RiskGBM(RegressorMixin, BaseEstimator):
     """Gradient boosted tree model on top of ``lightgbm.LGBMRegressor``.
 
     ``fit`` and ``score`` take per-exposure rate targets; ``predict`` returns
-    rates. When ``exposure_col`` is set, exposure supplies the default sample
-    weight and is excluded from the backend features.
+    rates. Targets must be finite one-dimensional vectors with one value per
+    row. Prediction and scoring require the fitted predictor names and order.
+    When ``exposure_col`` is set, exposure supplies the default sample weight
+    and is excluded from the backend features; prediction may omit it.
 
     Parameters
     ----------
@@ -413,6 +453,7 @@ class RiskGBM(RegressorMixin, BaseEstimator):
     def fit(self, X, y, sample_weight=None):
         _store_fit_meta(self, X)
         X_features, w = _pop_weight(X, self.exposure_col, sample_weight, require_exposure=True)
+        y = _validate_target(X_features, y)
         X_backend = _categorize_strings(X_features)
         feature_names = list(X_backend.columns) if isinstance(X_backend, pd.DataFrame) else None
         categorical_names = (
@@ -431,13 +472,14 @@ class RiskGBM(RegressorMixin, BaseEstimator):
                 len(feature_names) if feature_names is not None else np.asarray(X_backend).shape[1]
             ),
         )
-        backend.fit(X_backend, np.asarray(y, dtype=float), sample_weight=w)
+        backend.fit(X_backend, y, sample_weight=w)
         self.backend_ = backend
         return self
 
     def predict(self, X):
         check_is_fitted(self, "backend_")
         X_features, _ = _pop_weight(X, self.exposure_col, None)
+        _check_model_features(self, X_features, (self.exposure_col,))
         return self.backend_.predict(_categorize_strings(X_features))
 
     def _objective_power(self):
@@ -460,7 +502,8 @@ class RiskGBM(RegressorMixin, BaseEstimator):
         """
         check_is_fitted(self, "backend_")
         X_features, w = _pop_weight(X, self.exposure_col, sample_weight, require_exposure=True)
-        y = np.asarray(y, dtype=float)
+        _check_model_features(self, X_features, (self.exposure_col,))
+        y = _validate_target(X_features, y)
         y_pred = self.backend_.predict(_categorize_strings(X_features))
         return d2_tweedie_score(y, y_pred, power=self._objective_power(), sample_weight=w)
 
@@ -576,7 +619,7 @@ class FrequencySeverityModel(RegressorMixin, BaseEstimator):
                 raise ValueError("y must equal claim_amount / exposure (pure-premium rate)")
 
         _store_fit_meta(self, X)
-        X_features = _categorize_strings(self._strip_specials(X))
+        X_features = self._strip_specials(X) if isinstance(X, pd.DataFrame) else X
 
         y_freq = cc / exposure
 
@@ -619,6 +662,9 @@ class FrequencySeverityModel(RegressorMixin, BaseEstimator):
     def predict(self, X):
         check_is_fitted(self, "freq_")
         X_features = self._strip_specials(X) if isinstance(X, pd.DataFrame) else X
+        _check_model_features(
+            self, X_features, (self.exposure_col, self.claim_count_col, self.claim_amount_col)
+        )
         freq_pred = np.asarray(self.freq_.predict(X_features), dtype=float)
         sev_pred = np.asarray(self.sev_.predict(X_features), dtype=float)
         clipped = int((freq_pred < 0).sum() + (sev_pred < 0).sum())
@@ -636,18 +682,20 @@ class FrequencySeverityModel(RegressorMixin, BaseEstimator):
         """D^2 (Tweedie, p=1.5) on pure-premium rates, weighted by exposure.
 
         ``y`` is the pure-premium rate target. Exposure from ``X`` is the
-        default weight; an explicit ``sample_weight`` overrides it.
+        default weight; an explicit ``sample_weight`` overrides it and works
+        without an exposure column. Weights must be finite, non-negative,
+        one-dimensional, and not all zero; popped exposure must be at least
+        one day. Prediction may omit all special columns, but predictors must
+        retain their fitted names and order.
         """
         check_is_fitted(self, "freq_")
         if not isinstance(X, pd.DataFrame):
             raise TypeError("FrequencySeverityModel.score requires a pandas DataFrame X.")
-        exposure = X[self.exposure_col].to_numpy(dtype=float)
-        y = np.asarray(y, dtype=float)
-        if sample_weight is None:
-            sample_weight = exposure
+        _, w = _pop_weight(X, self.exposure_col, sample_weight, require_exposure=True)
+        y = _validate_target(X, y)
         return d2_tweedie_score(
             y,
             self.predict(X),
             power=1.5,
-            sample_weight=sample_weight,
+            sample_weight=w,
         )

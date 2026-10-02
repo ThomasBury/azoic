@@ -10,7 +10,7 @@ urls = { Repository = "https://github.com/ThomasBury/azoic", Issues = "https://g
 dependencies = [
     "numpy>=2.0",
     "pandas>=2.2",
-    "scikit-learn>=1.5",
+    "scikit-learn>=1.6",
     "glum>=3.0",
     "lightgbm>=4.3",
     "pyarrow>=15.0",

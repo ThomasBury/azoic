@@ -6,6 +6,14 @@ The estimators share the scikit-learn protocol and keep special columns inside
 [diagnostics and visualization guide](../guide/diagnostics-visualization.md)
 for complete table and chart recipes.
 
+Targets and explicit weights must be finite one-dimensional vectors with one
+value per row. Model predictors must keep their fitted names and order;
+`predict` and `score` reject renamed, reordered, missing, or extra predictors.
+Prediction can omit exposure and frequency–severity outcome columns. Scoring
+uses exposure by default; explicit `sample_weight` also works without exposure.
+Weights must be non-negative with a positive total, and default exposure weights
+must meet the one-day floor.
+
 | Module | Public API | Purpose |
 |---|---|---|
 | `azoic.models` | `RiskGLM`, `RiskGBM`, `FrequencySeverityModel` | scikit-learn-compatible pure-premium estimators with specials inside `X` |

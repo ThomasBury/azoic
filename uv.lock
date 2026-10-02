@@ -364,7 +364,7 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.7" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "s3fs", marker = "extra == 'aws'", specifier = ">=2024.6" },
-    { name = "scikit-learn", specifier = ">=1.5" },
+    { name = "scikit-learn", specifier = ">=1.6" },
     { name = "typer", specifier = ">=0.12" },
 ]
 provides-extras = ["aws", "mlops", "tune", "plot"]

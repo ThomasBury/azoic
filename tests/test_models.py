@@ -19,7 +19,12 @@ from azoic.models import FrequencySeverityModel, RiskGBM, RiskGLM
 from tests.conftest import make_synthetic_portfolio
 
 
-@parametrize_with_checks([RiskGLM(), RiskGBM()])
+@parametrize_with_checks(
+    [RiskGLM(), RiskGBM()],
+    expected_failed_checks=lambda estimator: {
+        "check_supervised_y_2d": "Azoic requires strict 1D targets; column vectors are rejected"
+    },
+)
 def test_sklearn_compatible(estimator, check):
     check(estimator)
 
@@ -794,3 +799,131 @@ def test_freq_sev_predict_warns_when_clipping_negative_components() -> None:
     with pytest.warns(UserWarning, match="clipped .* negative component"):
         pred = model.predict(df)
     assert (pred == 0.0).all()  # -1 clipped to 0, x 2
+
+
+@pytest.mark.parametrize("kind", ["glm", "gbm", "frequency-severity", "frequency-severity-gbm"])
+@pytest.mark.parametrize("pipeline", [False, True])
+@pytest.mark.parametrize("configured_exposure", [False, True])
+def test_m34_model_predictor_schema(kind, pipeline, configured_exposure):
+    from sklearn.pipeline import Pipeline
+
+    df = _df(n=500)
+    df["region"] = df["region"].astype("category")
+    y = (df["claim_amount"] / df["exposure"]).to_numpy()
+    exposure_col = "exposure" if configured_exposure else None
+    if kind == "glm":
+        model = RiskGLM(family="tweedie", exposure_col=exposure_col)
+    elif kind == "gbm":
+        model = RiskGBM(exposure_col=exposure_col, n_estimators=10, n_jobs=1)
+    elif kind == "frequency-severity":
+        model = FrequencySeverityModel(freq=RiskGLM(family="poisson"), sev=RiskGLM(family="gamma"))
+    else:
+        model = FrequencySeverityModel(
+            freq=RiskGBM(objective="poisson", n_estimators=10, n_jobs=1),
+            sev=RiskGBM(objective="gamma", n_estimators=10, n_jobs=1),
+        )
+    X = df if kind.startswith("frequency-severity") else _features(df)
+    if not kind.startswith("frequency-severity") and not configured_exposure:
+        X = X.drop(columns="exposure")
+    estimator = Pipeline([("model", model)]) if pipeline else model
+    estimator.fit(X, y)
+    assert list(estimator.feature_names_in_) == list(X.columns)
+    assert estimator.n_features_in_ == X.shape[1]
+    specials = [c for c in ("exposure", "claim_count", "claim_amount") if c in X]
+    features = X.drop(columns=specials)
+    np.testing.assert_allclose(estimator.predict(features), estimator.predict(X))
+    weights = df["exposure"].to_numpy()
+    assert np.isfinite(estimator.score(features, y, sample_weight=weights))
+    for frame in (X, features, X.drop(columns="exposure", errors="ignore")):
+        mutations = [
+            frame[[c for c in frame if c != "driver_age"] + ["driver_age"]],
+            frame.rename(columns={"driver_age": "renamed"}),
+            frame.drop(columns="driver_age"),
+            frame.assign(extra=1.0),
+        ]
+        for invalid in mutations:
+            with pytest.raises(ValueError, match="feature|predictor"):
+                estimator.predict(invalid)
+            with pytest.raises(ValueError, match="feature|predictor"):
+                estimator.score(invalid, y, sample_weight=weights)
+
+
+@pytest.mark.parametrize("kind", ["glm", "gbm"])
+@pytest.mark.parametrize("dataframe", [False, True])
+@pytest.mark.parametrize("bad", ["nan", "inf", "column", "short"])
+def test_m34_invalid_targets_rejected_before_backend(monkeypatch, kind, dataframe, bad):
+    X = np.arange(40.0).reshape(20, 2)
+    if dataframe:
+        X = pd.DataFrame(X, columns=["a", "b"])
+    y = np.arange(20.0) + 1
+    if bad == "nan":
+        y[0] = np.nan
+    elif bad == "inf":
+        y[0] = np.inf
+    elif bad == "column":
+        y = y[:, None]
+    else:
+        y = y[:-1]
+    model = RiskGLM() if kind == "glm" else RiskGBM(n_estimators=5)
+
+    def backend_must_not_run(*args, **kwargs):
+        pytest.fail("invalid targets reached the backend")
+
+    monkeypatch.setattr(model, "_make_backend", backend_must_not_run)
+    with pytest.raises(ValueError):
+        model.fit(X, y)
+
+
+@pytest.mark.parametrize("kind", ["glm", "gbm", "frequency-severity", "frequency-severity-gbm"])
+def test_m34_scoring_weight_contract(kind):
+    df = _df(n=500)
+    y = (df["claim_amount"] / df["exposure"]).to_numpy()
+    if kind == "glm":
+        model = RiskGLM(family="tweedie", exposure_col="exposure")
+    elif kind == "gbm":
+        model = RiskGBM(exposure_col="exposure", n_estimators=10, n_jobs=1)
+    elif kind == "frequency-severity":
+        model = FrequencySeverityModel(freq=RiskGLM(family="poisson"), sev=RiskGLM(family="gamma"))
+    else:
+        model = FrequencySeverityModel(
+            freq=RiskGBM(objective="poisson", n_estimators=10, n_jobs=1),
+            sev=RiskGBM(objective="gamma", n_estimators=10, n_jobs=1),
+        )
+    X = df if kind.startswith("frequency-severity") else _features(df)
+    model.fit(X, y)
+    for bad in (-1.0, 0.0, np.nan, np.inf, 0.001):
+        invalid = X.assign(exposure=bad)
+        with pytest.raises(ValueError):
+            model.score(invalid, y)
+    for weights in (
+        np.zeros(len(X)),
+        -np.ones(len(X)),
+        np.ones((len(X), 1)),
+        np.ones(len(X) - 1),
+        np.full(len(X), np.nan),
+        np.full(len(X), np.inf),
+    ):
+        with pytest.raises(ValueError):
+            model.score(X, y, sample_weight=weights)
+        if not kind.startswith("frequency-severity"):
+            with pytest.raises(ValueError):
+                model.__class__(**model.get_params()).fit(X, y, sample_weight=weights)
+    features = X.drop(columns=[c for c in ("exposure", "claim_count", "claim_amount") if c in X])
+    weights = np.linspace(1e-6, 2, len(X))
+    expected = model.score(X, y, sample_weight=weights)
+    assert model.score(features, y, sample_weight=weights) == pytest.approx(expected)
+    assert model.score(X.assign(exposure=-1.0), y, sample_weight=weights) == pytest.approx(expected)
+    with pytest.raises(ValueError, match="exposure.*not found"):
+        model.score(features, y)
+    for invalid_y in (y[:, None], y[:-1], np.full(len(y), np.nan), np.full(len(y), np.inf)):
+        with pytest.raises(ValueError):
+            model.score(X, invalid_y)
+
+
+def test_m34_gbm_keeps_native_missing_features():
+    df = _df(n=500)
+    X = _features(df).astype({"region": "category", "vehicle_brand": "category"})
+    X.loc[0, "vehicle_age"] = np.nan
+    y = (df["claim_amount"] / df["exposure"]).to_numpy()
+    model = RiskGBM(exposure_col="exposure", n_estimators=10, n_jobs=1).fit(X, y)
+    assert np.isfinite(model.predict(X)).all()
