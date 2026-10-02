@@ -13,6 +13,7 @@ import pytest
 from sklearn.pipeline import Pipeline
 from sklearn.utils.estimator_checks import parametrize_with_checks
 
+from azoic.data import MIN_EXPOSURE
 from azoic.models import RiskGLM
 from azoic.preprocessing import AutoBinner, AutoGrouper, _merge_small_bins
 from tests.conftest import make_synthetic_portfolio
@@ -21,6 +22,107 @@ from tests.conftest import make_synthetic_portfolio
 @parametrize_with_checks([AutoBinner(), AutoGrouper()])
 def test_sklearn_compatible(estimator, check):
     check(estimator)
+
+
+@pytest.mark.parametrize("cls", [AutoBinner, AutoGrouper])
+@pytest.mark.parametrize("column", ["exposure", "claim_count"])
+@pytest.mark.parametrize("value", [None, -1.0, np.nan, np.inf, "bad"])
+def test_preprocessing_rejects_invalid_configured_weights(cls, column, value) -> None:
+    df = pd.DataFrame({"x": [0.0, 1.0, 2.0], "exposure": [1.0] * 3, "claim_count": [1.0] * 3})
+    if value is None:
+        df = df.drop(columns=column)
+    else:
+        df[column] = [value, 1.0, 1.0]
+    transformer = cls(cols=["x"], exposure_col="exposure", claim_count_col="claim_count")
+    with pytest.raises(ValueError):
+        transformer.fit(df, [0.0, 1.0, 2.0])
+
+
+@pytest.mark.parametrize("cls", [AutoBinner, AutoGrouper])
+@pytest.mark.parametrize("exposure", [0.0, MIN_EXPOSURE / 2])
+def test_preprocessing_rejects_subday_exposure(cls, exposure) -> None:
+    df = pd.DataFrame({"x": [0.0, 1.0], "exposure": [exposure, 1.0]})
+    with pytest.raises(ValueError, match="1/366"):
+        cls(cols=["x"], exposure_col="exposure").fit(df, [1.0, 2.0])
+
+
+@pytest.mark.parametrize("strategy", ["quantile", "tree"])
+@pytest.mark.parametrize("max_bins", [0, 1, -1, 2.5, 2.0, True, None])
+def test_autobinner_rejects_invalid_bin_counts(strategy, max_bins) -> None:
+    with pytest.raises(ValueError, match="max_bins"):
+        AutoBinner(strategy=strategy, max_bins=max_bins).fit(
+            pd.DataFrame({"x": [0.0, 1.0, 2.0]}), [1.0, 2.0, 3.0]
+        )
+
+
+@pytest.mark.parametrize("edges", [[2, 1], [1, 1], [np.nan], [np.inf], [[1, 2]]])
+def test_autobinner_invalid_mapping_preserves_state(edges) -> None:
+    df = pd.DataFrame({"x": [0.0, 1.0, 2.0], "z": [1.0, 2.0, 3.0]})
+    binner = AutoBinner(cols=["x", "z"]).fit(df)
+    before = binner.transform(df)
+    mapping, dtypes, columns = binner.mapping_, binner.category_dtypes_, binner.bin_cols_
+    with pytest.raises(ValueError):
+        binner.set_mapping({"x": [0.5], "z": edges})
+    assert binner.mapping_ is mapping
+    assert binner.category_dtypes_ is dtypes
+    assert binner.bin_cols_ is columns
+    pd.testing.assert_frame_equal(binner.transform(df), before)
+
+
+@pytest.mark.parametrize("cls", [AutoBinner, AutoGrouper])
+@pytest.mark.parametrize("column", ["unknown", "exposure", "unselected"])
+def test_preprocessing_mapping_rejects_unfitted_columns(cls, column) -> None:
+    df = pd.DataFrame({"x": [0, 1, 2], "unselected": [3, 4, 5], "exposure": [1.0] * 3})
+    transformer = cls(cols=["x"], exposure_col="exposure").fit(df, [1, 2, 3])
+    before = transformer.transform(df)
+    values = [1.0] if cls is AutoBinner else {0: "zero"}
+    with pytest.raises(ValueError, match=column):
+        transformer.set_mapping({column: values})
+    pd.testing.assert_frame_equal(transformer.transform(df), before)
+
+
+def test_autogrouper_invalid_vocabulary_preserves_state() -> None:
+    df = pd.DataFrame({"x": ["A", "B"], "z": ["C", "D"]})
+    grouper = AutoGrouper(strategy="rare").fit(df)
+    before = grouper.transform(df)
+    mapping, dtypes, columns = grouper.mapping_, grouper.category_dtypes_, grouper.group_cols_
+    with pytest.raises(ValueError):
+        grouper.set_mapping({"x": {"A": "new"}, "z": {"C": None}})
+    assert grouper.mapping_ is mapping
+    assert grouper.category_dtypes_ is dtypes
+    assert grouper.group_cols_ is columns
+    pd.testing.assert_frame_equal(grouper.transform(df), before)
+
+
+@pytest.mark.parametrize("cls", [AutoBinner, AutoGrouper])
+def test_preprocessing_mapping_replaces_selected_columns(cls) -> None:
+    df = pd.DataFrame({"x": [0, 1, 2], "z": [3, 4, 5]})
+    transformer = cls(cols=["x", "z"]).fit(df, [1, 2, 3])
+    values = [] if cls is AutoBinner else {0: 10, 1: 10, 2: 20}
+    transformer.set_mapping({"x": values})
+    out = transformer.transform(df)
+    assert list(transformer.mapping_) == ["x"]
+    pd.testing.assert_series_equal(out["z"], df["z"])
+    assert out["x"].cat.categories[-1] == ("Missing" if cls is AutoBinner else "Other")
+
+
+@pytest.mark.parametrize("cls", [AutoBinner, AutoGrouper])
+def test_preprocessing_preserves_target_fallback_and_exposure_units(cls) -> None:
+    df = pd.DataFrame(
+        {
+            "x": [0, 1, 2, 3],
+            "exposure": [MIN_EXPOSURE * (1 - 5e-4), 9.0, 1.0, 9.0],
+            "claim_count": [0.0, 1.0, 0.0, 2.0],
+        }
+    )
+    rates = np.array([1.0, 2.0, 10.0, 11.0])
+    df["amount"] = rates * df["exposure"]
+    kwargs = {"strategy": "tree", "max_bins": np.int64(2)} if cls is AutoBinner else {}
+    params = dict(cols=["x"], exposure_col="exposure", claim_count_col="claim_count", **kwargs)
+    aggregate = cls(target_col="amount", **params).fit(df)
+    fallback = cls(target_col="absent", **params).fit(df, rates)
+    pd.testing.assert_frame_equal(aggregate.transform(df), fallback.transform(df))
+    cls(cols=["x"], **kwargs).fit(df[["x"]], rates).transform(df[["x"]])
 
 
 def _df(seed: int = 0, n: int = 4000) -> pd.DataFrame:
@@ -724,7 +826,7 @@ def test_min_exposure_requires_a_real_exposure_column(cls, kwargs) -> None:
     silently changing units. min_exposure=None keeps the unfloored behaviour."""
     with pytest.raises(ValueError, match="min_exposure requires exposure_col"):
         cls(min_exposure=10.0, **kwargs).fit(_df())
-    with pytest.raises(ValueError, match="min_exposure requires exposure_col"):
+    with pytest.raises(ValueError, match="configured column 'nope' not found"):
         cls(min_exposure=10.0, exposure_col="nope", **kwargs).fit(_df())
     cls(min_exposure=None, **kwargs).fit(_df())
 

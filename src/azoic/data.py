@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 MIN_EXPOSURE = 1.0 / 366.0
 """Minimum per-row exposure: one day in year fractions (leap-year denominator).
@@ -27,8 +27,10 @@ class DatasetSpec(BaseModel):
     """Names of the special (non-feature) columns in a pricing dataset.
 
     Feature columns are everything else. `.target` and `.exposure` are required;
-    the rest are optional and used by downstream modules as they land.
+    the rest are optional. Unknown fields are rejected.
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     target: str
     exposure: str

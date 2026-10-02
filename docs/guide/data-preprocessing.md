@@ -27,6 +27,9 @@ The actions are `keep`, `bin`, `group`, and `drop`. Treat them as a review
 queue: business meaning, availability at quote time, and leakage risk still
 override a cardinality heuristic.
 
+Boolean and nullable-boolean columns are discrete features: their profiles
+include missingness and cardinality, without continuous numeric statistics.
+
 ## Learn transparent mappings
 
 `AutoBinner` handles numeric features. Quantile binning balances row count or
@@ -89,8 +92,19 @@ print(preprocessor.named_steps["binner"].mapping_)
 print(preprocessor.named_steps["grouper"].mapping_)
 ```
 
-Both transformers expose `mapping_` and accept `set_mapping(...)` when an
-approved mapping must replace the fitted one. Missing numeric values get a
+Configured exposure and claim-count columns must exist during fitting and
+contain finite numeric values. Each exposure must be at least one day (1/366,
+with a 0.1% day-count tolerance); claim counts must be non-negative. Omitting
+`exposure_col` explicitly selects unweighted binning or unit row weights for
+grouping. A missing `target_col` falls back to `y`: rates stay rates for tree
+binning and are multiplied by exposure before similarity grouping pools them.
+
+Both transformers expose `mapping_` and accept `set_mapping(...)` after fitting.
+An override replaces the entire mapping; omitted columns pass through unchanged.
+Keys must name currently binned or grouped columns. Bin edges must be finite,
+one-dimensional, and strictly increasing; an empty edge vector selects one bin.
+Invalid overrides leave mappings and category vocabularies unchanged.
+Missing numeric values get a
 stable `Missing` bin. Unknown categorical levels map to `other_label` during
 general preprocessing; tariff application is stricter and rejects them.
 

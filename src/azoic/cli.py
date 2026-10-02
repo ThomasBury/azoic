@@ -39,7 +39,7 @@ app = typer.Typer(
 
 @app.command()
 def profile(
-    data: Path = typer.Option(..., "--data", help="Parquet file (or s3:// path) to profile."),
+    data: str = typer.Option(..., "--data", help="Parquet file (or s3:// path) to profile."),
     target: str = typer.Option(..., "--target", help="Target column name (e.g. claim_amount)."),
     exposure: str = typer.Option(..., "--exposure", help="Exposure column name."),
     claim_count: str | None = typer.Option(None, "--claim-count", help="Claim-count column."),

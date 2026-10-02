@@ -14,15 +14,16 @@ Both follow the scikit-learn transformer API and survive
 from __future__ import annotations
 
 import warnings
+from numbers import Integral
 
 import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.isotonic import isotonic_regression
 from sklearn.tree import DecisionTreeRegressor
-from sklearn.utils.validation import validate_data
+from sklearn.utils.validation import check_array, check_is_fitted, validate_data
 
-from azoic.data import MIN_EXPOSURE
+from azoic.data import EXPOSURE_FLOOR, MIN_EXPOSURE
 from azoic.validation import _weighted_quantile_edges
 
 __all__ = ["AutoBinner", "AutoGrouper"]
@@ -52,18 +53,26 @@ def _to_frame(X):
     return pd.DataFrame(arr, columns=pd.Index([f"x{i}" for i in range(n)])), False
 
 
-def _column_array(X, name):
+def _column_array(X, name, *, required=False, minimum=0):
     if name and name in X.columns:
-        return X[name].to_numpy(dtype=float)
+        values = X[name].to_numpy(dtype=float)
+        if required:
+            values = check_array(values, dtype=float, ensure_2d=False, input_name=name)
+            if values.ndim != 1:
+                raise ValueError(f"column {name!r} must be one-dimensional")
+            if np.any(values < minimum):
+                bound = "at least 1/366 (one day)" if minimum == EXPOSURE_FLOOR else "non-negative"
+                raise ValueError(f"column {name!r} must contain only {bound} values")
+        return values
+    if name is not None and required:
+        raise ValueError(f"configured column {name!r} not found in X")
     return None
 
 
-def _resolve_target(X, y, target_col, exposure_col):
+def _resolve_target(X, y, target_col, exposure):
     target = _column_array(X, target_col)
-    exposure = _column_array(X, exposure_col)
     if target is not None and exposure is not None:
-        with np.errstate(divide="ignore", invalid="ignore"):
-            return np.where(exposure > 0, target / exposure, 0.0)
+        return target / exposure
     if target is not None:
         return target
     return None if y is None else np.asarray(y, dtype=float)
@@ -120,7 +129,10 @@ class AutoBinner(TransformerMixin, BaseEstimator):
     min_claims : float | None
         Minimum aggregate claim count per bin; smaller bins merge into neighbours.
     exposure_col, claim_count_col, target_col : str | None
-        Special columns inside X. For tree binning, the target is
+        Configured exposure and claim-count columns must exist at fit and
+        contain finite values; exposures must be at least one day (1/366,
+        with day-count tolerance), and claim counts must be non-negative.
+        Without ``exposure_col``, binning is unweighted. For tree binning, the target is
         ``target_col / exposure_col`` (pure premium) when both are set, else
         ``target_col``, else ``y``.
     monotonic : False | True | "increasing" | "decreasing"
@@ -176,15 +188,21 @@ class AutoBinner(TransformerMixin, BaseEstimator):
     def fit(self, X, y=None):
         if self.strategy not in ("quantile", "tree"):
             raise ValueError(f"strategy must be 'quantile' or 'tree'; got {self.strategy!r}")
+        if (
+            not isinstance(self.max_bins, Integral)
+            or isinstance(self.max_bins, bool)
+            or self.max_bins < 2
+        ):
+            raise ValueError(f"max_bins must be an integer at least 2; got {self.max_bins!r}")
         validate_data(self, X, y=y, dtype=None, ensure_all_finite=False)
         X_df, _ = _to_frame(X)
         cols = self._select_cols(X_df)
-        exp = _column_array(X_df, self.exposure_col)
-        cc = _column_array(X_df, self.claim_count_col)
+        exp = _column_array(X_df, self.exposure_col, required=True, minimum=EXPOSURE_FLOOR)
+        cc = _column_array(X_df, self.claim_count_col, required=True)
         _check_min_exposure(self.min_exposure, exp)
         if self.min_claims is not None and cc is None:
             raise ValueError("min_claims requires claim_count_col in X")
-        target = _resolve_target(X_df, y, self.target_col, self.exposure_col)
+        target = _resolve_target(X_df, y, self.target_col, exp)
         self.mapping_ = {}
         for col in cols:
             edges = self._edges(X_df[col].to_numpy(dtype=float), target, exp, cc)
@@ -334,11 +352,28 @@ class AutoBinner(TransformerMixin, BaseEstimator):
         return np.asarray([f"x{i}" for i in range(n_features)])
 
     def set_mapping(self, mapping):
-        """Override fitted bin edges: ``{col: array_of_edges}``."""
-        self.mapping_ = {c: np.asarray(e, dtype=float) for c, e in mapping.items()}
-        self.category_dtypes_ = {
-            col: self._category_dtype(edges) for col, edges in self.mapping_.items()
-        }
+        """Replace fitted bin mappings with finite, strictly increasing edge vectors.
+
+        Keys must name currently binned columns. Omitted columns pass through.
+        Invalid overrides leave the fitted mappings and vocabularies intact.
+        """
+        check_is_fitted(self, "mapping_")
+        unknown = set(mapping) - set(self.bin_cols_)
+        if unknown:
+            raise ValueError(f"mapping columns were not binned: {sorted(unknown)}")
+        replacement = {}
+        for col, edges in mapping.items():
+            edges = check_array(
+                edges, dtype=float, ensure_2d=False, ensure_min_samples=0, copy=True
+            )
+            if edges.ndim != 1 or np.any(np.diff(edges) <= 0):
+                raise ValueError(
+                    f"bin edges for {col!r} must be one-dimensional and strictly increasing"
+                )
+            replacement[col] = edges
+        dtypes = {col: self._category_dtype(edges) for col, edges in replacement.items()}
+        self.mapping_ = replacement
+        self.category_dtypes_ = dtypes
         self.bin_cols_ = list(mapping.keys())
 
 
@@ -358,6 +393,12 @@ class AutoGrouper(TransformerMixin, BaseEstimator):
 
     ``mapping_`` is ``{col: {original_level: group_label}}``. Unknown levels at
     transform time map to ``other_label``.
+
+    Configured exposure and claim-count columns must exist at fit and contain
+    finite values; exposures must be at least one day (1/366, with day-count
+    tolerance), and claim counts must be non-negative. Without ``exposure_col``,
+    grouping uses unit row weights. ``target_col`` contains aggregate claims;
+    when absent, ``y`` supplies rates, multiplied by exposure before pooling.
 
     Attributes
     ----------
@@ -400,8 +441,8 @@ class AutoGrouper(TransformerMixin, BaseEstimator):
         validate_data(self, X, y=y, dtype=None, ensure_all_finite=False)
         X_df, _ = _to_frame(X)
         cols = self._select_cols(X_df)
-        exp = _column_array(X_df, self.exposure_col)
-        cc = _column_array(X_df, self.claim_count_col)
+        exp = _column_array(X_df, self.exposure_col, required=True, minimum=EXPOSURE_FLOOR)
+        cc = _column_array(X_df, self.claim_count_col, required=True)
         _check_min_exposure(self.min_exposure, exp)
         if self.min_claims is not None and cc is None:
             raise ValueError("min_claims requires claim_count_col in X")
@@ -590,15 +631,20 @@ class AutoGrouper(TransformerMixin, BaseEstimator):
         return np.asarray([f"x{i}" for i in range(n_features)])
 
     def set_mapping(self, mapping):
-        """Override fitted level groups: ``{col: {level: group_label}}``."""
-        ordered = {
-            col: self.category_dtypes_[col].ordered
-            for col in mapping
-            if hasattr(self, "category_dtypes_") and col in self.category_dtypes_
+        """Replace fitted groups: ``{col: {level: group_label}}``.
+
+        Keys must name currently grouped columns. Omitted columns pass through.
+        Invalid overrides leave the fitted mappings and vocabularies intact.
+        """
+        check_is_fitted(self, "mapping_")
+        unknown = set(mapping) - set(self.group_cols_)
+        if unknown:
+            raise ValueError(f"mapping columns were not grouped: {sorted(unknown)}")
+        replacement = {c: dict(m) for c, m in mapping.items()}
+        dtypes = {
+            col: self._category_dtype(values, ordered=self.category_dtypes_[col].ordered)
+            for col, values in replacement.items()
         }
-        self.mapping_ = {c: dict(m) for c, m in mapping.items()}
-        self.category_dtypes_ = {
-            col: self._category_dtype(values, ordered=ordered.get(col, False))
-            for col, values in self.mapping_.items()
-        }
+        self.mapping_ = replacement
+        self.category_dtypes_ = dtypes
         self.group_cols_ = list(mapping.keys())

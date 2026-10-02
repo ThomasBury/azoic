@@ -141,6 +141,25 @@ def test_cli_profile_invalid_target_fails(tmp_path: Path) -> None:
     assert result.exit_code != 0
 
 
+@pytest.mark.parametrize(
+    "path", ["s3://bucket/prefix/portfolio.parquet", "./local/portfolio.parquet"]
+)
+def test_cli_profile_forwards_exact_path(monkeypatch, path) -> None:
+    received = []
+
+    def loader(data, spec):
+        received.append((data, spec))
+        return pd.DataFrame({"amount": [0.0, 1.0], "exposure": [1.0, 1.0]})
+
+    monkeypatch.setattr("azoic.cli.load_data", loader)
+    result = runner.invoke(
+        app, ["profile", "--data", path, "--target", "amount", "--exposure", "exposure"]
+    )
+    assert result.exit_code == 0, result.exception
+    assert received[0][0] == path
+    assert received[0][1].target == "amount"
+
+
 # ---------------------------------------------------------------------------
 # fit
 # ---------------------------------------------------------------------------

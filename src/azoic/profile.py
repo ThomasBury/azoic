@@ -26,7 +26,7 @@ def profile_features(df: pd.DataFrame) -> pd.DataFrame:
         s = df[col]
         n_missing = int(s.isna().sum())
         n_unique = int(s.nunique(dropna=True))
-        is_num = pd.api.types.is_numeric_dtype(s)
+        is_num = pd.api.types.is_numeric_dtype(s) and not pd.api.types.is_bool_dtype(s)
         row = {
             "column": col,
             "dtype": str(s.dtype),

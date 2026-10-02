@@ -33,6 +33,13 @@ def test_dataset_spec_optional_columns_filter() -> None:
     assert spec.required_columns() == ["claim_amount", "exposure"]
 
 
+def test_dataset_spec_rejects_misspelled_optional_column() -> None:
+    with pytest.raises(pydantic.ValidationError, match="claim_count_col"):
+        DatasetSpec.model_validate(
+            {"target": "claim_amount", "exposure": "exposure", "claim_count_col": "claim_count"}
+        )
+
+
 @pytest.mark.parametrize(
     ("protected_cols", "message"),
     [

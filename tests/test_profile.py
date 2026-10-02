@@ -34,6 +34,29 @@ def test_profile_numeric_columns_get_numerics() -> None:
     assert pd.notna(prof.loc["driver_age", "mean"])
 
 
+def test_profile_boolean_columns_are_discrete() -> None:
+    df = pd.DataFrame(
+        {
+            "bool": [True, False, True],
+            "nullable": pd.Series([True, False, None], dtype="boolean"),
+            "missing": pd.Series([None] * 3, dtype="boolean"),
+            "number": [1.0, 2.0, 3.0],
+        }
+    )
+    prof = profile_features(df).set_index("column")
+    assert not prof.loc[["bool", "nullable", "missing"], "numeric"].any()
+    assert prof.loc["nullable", "n_missing"] == 1
+    assert prof.loc["nullable", "n_unique"] == 2
+    assert prof.loc[["bool", "nullable", "missing"], "mean"].isna().all()
+    actions = screen_features(prof.reset_index()).set_index("column")["action"]
+    assert actions.to_dict() == {
+        "bool": "keep",
+        "nullable": "keep",
+        "missing": "drop",
+        "number": "keep",
+    }
+
+
 def test_screen_features_empty_profile() -> None:
     """A zero-column profile used to crash with a length-mismatch error."""
     screened = screen_features(profile_features(pd.DataFrame()))
