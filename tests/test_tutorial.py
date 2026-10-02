@@ -127,6 +127,7 @@ def test_portfolio_audit_reconciles_first_failures_and_cache_rebuilds(tmp_path):
     "chapter_name",
     [
         "02-experiments.qmd",
+        "03-diagnostics.qmd",
         "04-scoring-tariff.qmd",
         "05-reporting-mlops.qmd",
         "06-frequency-severity.qmd",
@@ -197,6 +198,7 @@ sklearn.datasets.fetch_openml = reject_download
 """
     checks = """
 assert len(mlflow_run_ids) == 2
+assert set(metrics["model"]) == {"direct-tweedie-glm", "tweedie-lightgbm"}
 assert {path.name for path in artifacts} == {
     "model_card_tariff_structured.md", "model_card_raw_feature.md", "comparison_dashboard.html"
 }
@@ -210,9 +212,17 @@ assert glm_run.test_indices == canonical_run.test_indices
 assert glm_config.name == "fremtpl2-tariff-structured"
 assert gbm_config.name == "fremtpl2-raw-feature"
 assert set(estimators) == {
-    "direct-tweedie-glm", "tweedie-lightgbm-tariff", "tweedie-lightgbm"
+    "direct-tweedie-glm", "tweedie-lightgbm"
 }
 assert (glm_config, gbm_config) == make_experiment_configs(str(PORTFOLIO_PATH))
+"""
+    if chapter_name == "03-diagnostics.qmd":
+        checks = """
+assert set(estimators) == {"direct-tweedie-glm", "tweedie-lightgbm"}
+assert len(holdout_metrics) == 4
+assert holdout_metrics.groupby("prediction_scale").size().eq(2).all()
+assert len(model_names) == 2
+assert len(axd) == 4
 """
     if chapter_name == "04-scoring-tariff.qmd":
         scoring_cells = [
@@ -222,6 +232,12 @@ assert (glm_config, gbm_config) == make_experiment_configs(str(PORTFOLIO_PATH))
         ]
         checks = (
             """
+assert set(estimators) == {"direct-tweedie-glm", "tweedie-lightgbm"}
+assert set(teacher_estimators) == {"tweedie-lightgbm-tariff"}
+assert teacher_config.preprocessing == glm_config.preprocessing
+assert teacher_config.models["tweedie-lightgbm-tariff"] == gbm_config.models["tweedie-lightgbm"]
+assert teacher_run.train_indices == glm_run.train_indices
+assert teacher_run.test_indices == glm_run.test_indices
 assert len(final_metrics) == 8
 assert direct_tariff_path.exists() and tariff_path.exists()
 assert worked_policy["policy_id"].iloc[0] == test_frame["policy_id"].min()
@@ -338,7 +354,12 @@ for index, predictions in enumerate(component_predictions.values()):
     if chapter_name == "07-tuning.qmd":
         checks = """
 assert baseline_config.tuning is None
-assert baseline_config.models == make_experiment_configs(str(subset_path))[0].models
+main_glm, main_gbm = make_experiment_configs(str(subset_path))
+assert set(main_glm.models) == {"direct-tweedie-glm"}
+assert set(baseline_config.models) == {"direct-tweedie-glm", "tweedie-lightgbm-tariff"}
+assert baseline_config.models["direct-tweedie-glm"] == main_glm.models["direct-tweedie-glm"]
+assert baseline_config.models["tweedie-lightgbm-tariff"] == main_gbm.models["tweedie-lightgbm"]
+assert baseline_config.preprocessing == main_glm.preprocessing
 for field in [
     "data_path", "spec", "features", "preprocessing", "split", "test_size", "random_state",
 ]:

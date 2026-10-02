@@ -1,9 +1,9 @@
 # Reporting, MLflow, and the CLI
 
-Each experiment gets a Markdown model card and a standalone HTML comparison
-dashboard; the cross-config comparison table collects the three main fitted models
-from both experiments. These reports and MLflow metrics use raw run predictions,
-before the training factors used in the adjusted comparisons and scoring example.
+Each experiment gets a Markdown model card. A shared standalone HTML comparison
+dashboard and cross-config comparison table collect the two main fitted models
+from both experiments. Reports and MLflow use **raw run predictions**, as in the
+[prediction-scale convention](03-diagnostics.qmd#prediction-scales-used-in-this-book).
 
 This optional operations recipe refits its own candidates. It creates every
 report it logs; no workbook or fitted model from another chapter is required.
@@ -12,8 +12,6 @@ For a brief handoff, generate the cards and comparison below and stop there.
 {{< include _shared.qmd >}}
 
 ```{python}
-import subprocess
-
 import yaml
 
 from azoic.mlops import log_run
@@ -34,11 +32,16 @@ dashboard_path = ARTIFACT_DIR / "comparison_dashboard.html"
 glm_card_path.write_text(model_card(glm_run), encoding="utf-8")
 gbm_card_path.write_text(model_card(gbm_run), encoding="utf-8")
 dashboard_path.write_text(comparison_dashboard(runs), encoding="utf-8")
+```
 
-assert metrics["model"].nunique() == 3
+```{python}
+#| code-fold: true
+#| code-summary: "Verify report artifacts and display raw metrics"
+assert metrics["model"].nunique() == 2
 assert glm_card_path.stat().st_size > 0
 assert gbm_card_path.stat().st_size > 0
 assert dashboard_path.stat().st_size > 0
+print("Held-out comparison — raw rates")
 display(metrics[["config", "model", "gini_test", "op_ratio_test", "deviance_test"]])
 ```
 
@@ -67,7 +70,11 @@ mlflow_run_ids = [
     )
     for run in runs
 ]
+```
 
+```{python}
+#| code-fold: true
+#| code-summary: "Verify logged metrics and artifacts"
 client = mlflow.MlflowClient(tracking_uri=tracking_uri)
 logged = [client.get_run(run_id) for run_id in mlflow_run_ids]
 
@@ -105,10 +112,9 @@ uv run mlflow ui \
 
 ## Drive the same workflow from the CLI
 
-The Python-only objects above have CLI equivalents. The cells below write the
-two experiment YAMLs, then invoke `azoic profile`, `azoic fit`, `azoic compare`,
-and `azoic export-tariff` as real subprocesses. Every command prints or writes
-into the tutorial artifacts directory.
+Save the two experiment configurations as YAML, then run these commands from
+the repository root. They write into the tutorial artifacts directory. The
+render executes each command; only its result is shown below the command.
 
 ```{python}
 glm_yaml = ARTIFACT_DIR / "glm_config.yaml"
@@ -120,10 +126,19 @@ gbm_yaml.write_text(
     yaml.safe_dump(gbm_config.model_dump(exclude_none=True)), encoding="utf-8"
 )
 assert glm_yaml.stat().st_size > 0 and gbm_yaml.stat().st_size > 0
-print(glm_yaml.read_text().splitlines()[:6])
+print("Wrote glm_config.yaml and gbm_config.yaml")
+```
+
+```bash
+uv run azoic profile --data examples/_artifacts/fremtpl2/portfolio_v3.parquet \
+  --target claim_amount --exposure exposure --claim-count claim_count \
+  --out examples/_artifacts/fremtpl2/cli_screening.csv
 ```
 
 ```{python}
+#| echo: false
+import subprocess
+
 screening_csv = ARTIFACT_DIR / "cli_screening.csv"
 subprocess.run(
     [
@@ -143,7 +158,13 @@ assert screening_csv.stat().st_size > 0
 print(pd.read_csv(screening_csv).to_string(index=False))
 ```
 
+```bash
+uv run azoic fit --config examples/_artifacts/fremtpl2/glm_config.yaml \
+  --out examples/_artifacts/fremtpl2/cli_model_card.md --quiet
+```
+
 ```{python}
+#| echo: false
 cli_card = ARTIFACT_DIR / "cli_model_card.md"
 subprocess.run(
     [
@@ -161,7 +182,14 @@ assert cli_card.stat().st_size > 0
 print(cli_card.read_text()[:600])
 ```
 
+```bash
+uv run azoic compare examples/_artifacts/fremtpl2/glm_config.yaml \
+  examples/_artifacts/fremtpl2/gbm_config.yaml \
+  --out examples/_artifacts/fremtpl2/cli_comparison.csv
+```
+
 ```{python}
+#| echo: false
 cli_comparison = ARTIFACT_DIR / "cli_comparison.csv"
 subprocess.run(
     [
@@ -178,19 +206,22 @@ assert cli_comparison.stat().st_size > 0
 print(pd.read_csv(cli_comparison).to_string(index=False))
 ```
 
-Export both workbooks with `--no-recalibrate` to preserve their raw prediction
-scale. The direct export uses the GLM; the second distils the structured GBM
-using the stored train/test partition. Neither export uses holdout claims to
-set its premium level. The training multipliers shown in the scoring chapter
-are separate from these raw workbooks.
+Export the direct GLM with `--no-recalibrate` to preserve its raw prediction
+scale. The training multiplier shown in scoring remains external to this workbook.
 
 Without this flag, CLI export recalibrates on the stored training rows only,
 keeping holdout claims out of the base. The earlier raw metrics still describe
 the unadjusted estimator; evaluate the adjusted workbook separately on the holdout.
 
+```bash
+uv run azoic export-tariff --config examples/_artifacts/fremtpl2/glm_config.yaml \
+  --model direct-tweedie-glm --no-recalibrate \
+  --out examples/_artifacts/fremtpl2/cli_glm_tariff.xlsx
+```
+
 ```{python}
+#| echo: false
 cli_glm_tariff = ARTIFACT_DIR / "cli_glm_tariff.xlsx"
-cli_distilled_tariff = ARTIFACT_DIR / "cli_distilled_tariff.xlsx"
 subprocess.run(
     [
         "uv", "run", "azoic", "export-tariff",
@@ -204,10 +235,43 @@ subprocess.run(
     capture_output=True,
     text=True,
 )
+assert cli_glm_tariff.stat().st_size > 0
+print("Direct GLM workbook — raw rates")
+display(pd.read_excel(cli_glm_tariff, sheet_name="base_rate"))
+```
+
+### Optional: export a distilled GBM
+
+As in [optional distillation](04-scoring-tariff.qmd#distil-the-gbm-into-an-executable-tariff),
+create a separate structured teacher by copying the raw GBM's settings into the
+GLM's preprocessing configuration. Save it before running the export command.
+The CLI fits this teacher and its student on training rows, reserving the test
+rows for fidelity evaluation.
+
+```{python}
+teacher_config = glm_config.model_copy(update={
+    "name": "fremtpl2-structured-teacher",
+    "models": {"tweedie-lightgbm-tariff": gbm_config.models["tweedie-lightgbm"].model_copy(deep=True)},
+})
+teacher_yaml = ARTIFACT_DIR / "teacher_config.yaml"
+teacher_yaml.write_text(
+    yaml.safe_dump(teacher_config.model_dump(exclude_none=True)), encoding="utf-8"
+)
+```
+
+```bash
+uv run azoic export-tariff --config examples/_artifacts/fremtpl2/teacher_config.yaml \
+  --model tweedie-lightgbm-tariff --distill --no-recalibrate \
+  --out examples/_artifacts/fremtpl2/cli_distilled_tariff.xlsx
+```
+
+```{python}
+#| echo: false
+cli_distilled_tariff = ARTIFACT_DIR / "cli_distilled_tariff.xlsx"
 subprocess.run(
     [
         "uv", "run", "azoic", "export-tariff",
-        "--config", str(glm_yaml),
+        "--config", str(teacher_yaml),
         "--model", "tweedie-lightgbm-tariff",
         "--distill",
         "--no-recalibrate",
@@ -218,15 +282,20 @@ subprocess.run(
     capture_output=True,
     text=True,
 )
-assert cli_glm_tariff.stat().st_size > 0
 assert cli_distilled_tariff.stat().st_size > 0
-display(pd.read_excel(cli_glm_tariff, sheet_name="base_rate"))
+print("Distilled workbook — raw student rates")
+display(pd.read_excel(cli_distilled_tariff, sheet_name="base_rate"))
 ```
 
 `azoic tune` is exercised end-to-end in the tuning chapter, using a bounded
 trial budget; its full search output is intentionally kept out of this page.
 
+```bash
+uv run azoic tune --help
+```
+
 ```{python}
+#| echo: false
 help_result = subprocess.run(
     ["uv", "run", "azoic", "tune", "--help"],
     cwd=ROOT,

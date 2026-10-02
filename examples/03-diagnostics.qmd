@@ -39,6 +39,19 @@ raw_predict_columns = [*FEATURES, "exposure"]
 A model family does not guarantee portfolio balance. Measure it for every
 candidate; the optional balance derivation below explains why.
 
+## Prediction scales used in this book
+
+| Output | Prediction scale | Purpose |
+|---|---|---|
+| `predict`, saved `Run` metrics, model cards, dashboards, MLflow | Raw fitted rates | Record what the fitted estimator predicts. |
+| Main comparison charts | Raw rates multiplied by each model's frozen training O/P | Compare models after balancing their training totals. |
+| GLM age and fitted-group views | Raw fitted rates | Inspect the direct tariff's structure and segment calibration. |
+| Scoring tables and optional workbook comparisons | Both scales, labelled separately | Show the level adjustment and its effect on expected costs. |
+| Workbooks exported with `recalibrate=False` | Raw GLM or student rates | Reproduce the exported model; any training multiplier remains external. |
+
+“Raw-feature GBM” describes its inputs. “Raw rates” means no level adjustment,
+regardless of whether the model uses raw features or fitted bins.
+
 ## Freeze a training burn-cost adjustment
 
 For this tutorial, explicitly multiply **every** GLM and GBM candidate's rates
@@ -54,9 +67,11 @@ The factor uses the stored training positions only and is frozen before we
 inspect holdout outcomes or metrics. It balances training totals; it need not
 improve test deviance, test O/P, or segment calibration. A positive factor
 preserves ranking while changing level diagnostics. The table shows training
-O/P for all three main candidates and checks their adjusted training totals.
+O/P for both main candidates and checks their adjusted training totals.
 
 ```{python}
+#| code-fold: true
+#| code-summary: "Calculate training factors and verify balance"
 recalibration_factors = {}
 training_rows = []
 for name, estimator in estimators.items():
@@ -77,13 +92,13 @@ display(pd.DataFrame(training_rows))
 
 ## Charts on the held-out test rows
 
-Re-predict every fitted model on the stored holdout using rating features and
-exposure only, as in outcome-free scoring. Check raw metrics against each run,
-then show raw and training-adjusted results on those same rows. The comparison
-charts use adjusted predictions; the GLM structure illustrations explicitly use
-raw rates. Model cards, comparison dashboards, and MLflow retain raw run metrics.
+Re-predict both models on the stored holdout using rating features and exposure
+only, as in outcome-free scoring. The check reconciles raw metrics with each
+run; the tables show both scales on those same rows.
 
 ```{python}
+#| code-fold: true
+#| code-summary: "Reconcile run metrics and compare prediction scales"
 raw_test_predictions: dict[str, np.ndarray] = {}
 test_predictions: dict[str, np.ndarray] = {}
 
@@ -120,7 +135,7 @@ CHART_SCALE = "training O/P adjusted"
 colors = model_colors(list(estimators))
 ```
 
-Lorenz curves for all three main models on one axes — the dotted diagonal (random
+Lorenz curves for both main models on one axes — the dotted diagonal (random
 ranking) and the grey dash-dot oracle (hindsight ranking by observed rate) are
 drawn once, one color per model, Gini in the legend. The oracle is unavailable
 at prediction time and need not have Gini one. Gini is twice the signed area
@@ -233,7 +248,7 @@ with azoic_style():
 
 With the default full portfolio, the raw GBM has lower deviance than the raw
 direct GLM (about 74.72 versus 75.34) and higher Gini (0.342 versus 0.310).
-After the training adjustments, all three O/P ratios are close to 1.024:
+After the training adjustments, both O/P ratios are close to 1.024:
 held-out claims still exceed predicted totals by about 2.4%. These figures
 change with the sample; they describe one split, not a final model choice.
 
@@ -439,7 +454,7 @@ print(f"Inequality: {inequality_gini:.6f}; forward: {example_curve.gini:.6f}; "
 
 Any strictly increasing transformation that preserves the prediction ties
 preserves concentration Gini. In particular, the frozen positive training
-factors leave ranking unchanged; the holdout table verifies this for all three main
+factors leave ranking unchanged; the holdout table verifies this for both main
 models while showing the change in level diagnostics.
 
 ## Optional: Why model families do not guarantee balance
@@ -615,6 +630,7 @@ grouped_residuals["mean_rate_residual"] = (
     grouped_residuals.observed_pure_premium - grouped_residuals.predicted_pure_premium
 )
 grouped_residuals["prediction_scale"] = CHART_SCALE
+print(CHART_SCALE)
 display(grouped_residuals[["group", "exposure", "claim_amount", "mean_rate_residual"]]
         .rename(columns={"claim_amount": "claims", "mean_rate_residual": "mean rate residual"}))
 ```

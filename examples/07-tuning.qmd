@@ -30,15 +30,20 @@ assert len(tuning_subset) == min(100_000, len(portfolio))
 
 ## Declare the comparison before fitting
 
-Keep the direct GLM and structured GBM from the main path as **untuned
-baselines**, now fitted on this subset. Both alternatives use the same rating
-features, preprocessing settings, seed, and outer train/test partition. We
-freeze the baseline and search before either evaluation:
+Use the direct GLM and explicitly add a **structured GBM** as untuned baselines
+on this subset. Copy the raw-feature GBM's tree settings into the GLM experiment
+so both models learn with its bins and groups, as in optional distillation.
+Both use the same rating features, preprocessing settings, seed, and outer
+train/test partition. Freeze the baseline and search before either evaluation:
 
 ```{python}
-baseline_config, _ = make_experiment_configs(str(subset_path))
-baseline_config = baseline_config.model_copy(update={
+glm_config, gbm_config = make_experiment_configs(str(subset_path))
+baseline_config = glm_config.model_copy(update={
     "name": "fremtpl2-tuning-baseline",
+    "models": {
+        **glm_config.models,
+        "tweedie-lightgbm-tariff": gbm_config.models["tweedie-lightgbm"].model_copy(deep=True),
+    },
     "tuning": None,
 })
 tuning_config = baseline_config.model_copy(update={
@@ -168,6 +173,7 @@ comparison = pd.concat({
     }).T
     for label, run in [("Untuned", baseline_run), ("Tuned", result.run)]
 }, axis=1)
+print("Outer holdout — raw rates")
 display(comparison.rename(index=model_labels))
 ```
 
@@ -253,14 +259,26 @@ It demonstrates the command, not an additional candidate in the comparison.
 [CLI precedence](https://thomasbury.github.io/azoic/reference/configuration-cli/#tuning-settings)
 for the explicit-argument, YAML, and default order.
 
-```{python}
-import subprocess
+Save the full configuration before running the command:
 
+```{python}
 tuning_yaml = ARTIFACT_DIR / "tuning_config.yaml"
 tuning_yaml.write_text(
     yaml.safe_dump(tuning_config.model_dump(exclude_none=True), sort_keys=False),
     encoding="utf-8",
 )
+```
+
+Run from the repository root:
+
+```bash
+uv run azoic tune --config examples/_artifacts/fremtpl2/tuning_config.yaml \
+  --trials 4 --out examples/_artifacts/fremtpl2/tuned_model_card.md --quiet
+```
+
+```{python}
+#| echo: false
+import subprocess
 tuned_card = ARTIFACT_DIR / "tuned_model_card.md"
 completed = subprocess.run(
     [

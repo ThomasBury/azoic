@@ -1000,7 +1000,6 @@ def test_tutorial_freezes_all_training_factors_and_labels_holdout_metrics(monkey
     portfolio.to_parquet(path)
     names = [
         "direct-tweedie-glm",
-        "tweedie-lightgbm-tariff",
         "tweedie-lightgbm",
     ]
     features = ["driver_age", "vehicle_age"]
@@ -1064,11 +1063,9 @@ def test_tutorial_freezes_all_training_factors_and_labels_holdout_metrics(monkey
         flags=re.DOTALL,
     )
     recalibration_code = next(
-        cell for cell in diagnostics_cells if cell.startswith("recalibration_factors =")
+        cell for cell in diagnostics_cells if "recalibration_factors =" in cell
     )
-    holdout_code = next(
-        cell for cell in diagnostics_cells if cell.startswith("raw_test_predictions: dict")
-    )
+    holdout_code = next(cell for cell in diagnostics_cells if "raw_test_predictions: dict" in cell)
     exec(recalibration_code, namespace)
     factors = namespace["recalibration_factors"].copy()
     assert set(factors) == set(names)
@@ -1102,6 +1099,13 @@ def test_tutorial_freezes_all_training_factors_and_labels_holdout_metrics(monkey
 
     from azoic.tariff import apply_tariff
 
+    teacher_config = config.model_copy(
+        update={
+            "models": {"tweedie-lightgbm-tariff": ModelSpec(params={"scale": 3})},
+        }
+    )
+    teacher_run, teacher_estimators = run_experiment(teacher_config, return_estimators=True)
+    teacher = teacher_estimators["tweedie-lightgbm-tariff"]
     workbook_tariff = {"base_rate": 125.0, "numeric": {"driver_age": 0.01}, "categorical": {}}
     namespace.update(
         {
@@ -1109,7 +1113,9 @@ def test_tutorial_freezes_all_training_factors_and_labels_holdout_metrics(monkey
             "workbook_tariff": workbook_tariff,
             "distilled_pipeline": Pipeline([("identity", FunctionTransformer()), ("model", None)]),
             "fit_X": train,
-            "teacher_rate": namespace["raw_test_predictions"][names[1]],
+            "teacher_run": teacher_run,
+            "teacher_pipeline": teacher,
+            "teacher_rate": teacher.predict(test),
             "workbook_rate": apply_tariff(workbook_tariff, test),
             "ARTIFACT_DIR": tmp_path,
         }
@@ -1119,13 +1125,21 @@ def test_tutorial_freezes_all_training_factors_and_labels_holdout_metrics(monkey
         (examples / "04-scoring-tariff.qmd").read_text(),
         flags=re.DOTALL,
     )
-    final_code = next(cell for cell in tariff_cells if cell.startswith("workbook_train_rate ="))
+    teacher_code = next(cell for cell in tariff_cells if "teacher_train_rate =" in cell)
+    exec(teacher_code, namespace)
+    teacher_factor = train.claim_amount.sum() / np.dot(train.exposure, teacher.predict(train))
+    assert namespace["teacher_factor"] == pytest.approx(teacher_factor)
+    namespace["y_test"] = namespace["y_test"] * 100
+    exec(teacher_code, namespace)
+    assert namespace["teacher_factor"] == pytest.approx(teacher_factor)
+    namespace["y_test"] = test["claim_amount"].to_numpy()
+    final_code = next(cell for cell in tariff_cells if "workbook_train_rate =" in cell)
     exec(final_code, namespace)
     workbook_factor = train.claim_amount.sum() / np.dot(
         train.exposure, apply_tariff(workbook_tariff, train)
     )
     assert namespace["workbook_factor"] == pytest.approx(workbook_factor)
-    assert not np.isclose(workbook_factor, factors[names[1]])
+    assert not np.isclose(workbook_factor, teacher_factor)
     final_table = namespace["final_metrics"].set_index(["model", "prediction_scale"])
     assert len(final_table) == 8
     null_deviance = mean_tweedie_deviance(

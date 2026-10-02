@@ -22,7 +22,9 @@ You should be comfortable with Python DataFrames and the idea of fitting a model
 on training data and evaluating it on separate data. Exposure, claim counts,
 claim costs, and pure-premium units are defined above; no MLflow or tuning
 experience is needed for the main path. The experiment chapter introduces GLMs,
-GBMs, and the log link before their settings. For a smaller first step, run the
+GBMs, and the log link before their settings. The main path fits only a direct
+GLM and a raw-feature GBM; the structured teacher enters at optional distillation
+and tuning. For a smaller first step, run the
 [network-free first-model guide](https://thomasbury.github.io/azoic/getting-started/first-model/)
 with synthetic data before this full real-data book.
 

@@ -4,9 +4,8 @@ The scoring interface remains `estimator.predict(raw_frame)`. No scoring
 service or persistence layer is required. The frame below contains only rating
 features and exposure. Keep the policy ID alongside the results so each price
 can be traced back to its inputs; it is not a predictor. We retain raw rates
-and rates multiplied by the frozen training O/P factor, matching the adjusted
-diagnostics in the previous chapter. Calling `estimator.predict` alone returns
-raw rates.
+and training O/P adjusted rates, following the
+[prediction-scale convention](03-diagnostics.qmd#prediction-scales-used-in-this-book).
 
 {{< include _shared.qmd >}}
 
@@ -29,6 +28,8 @@ special_predict_columns = [*FEATURES, "exposure", "claim_amount", "claim_count"]
 ```
 
 ```{python}
+#| code-fold: true
+#| code-summary: "Recreate the frozen training factors"
 recalibration_factors = {}
 for name, estimator in estimators.items():
     pred_train = np.asarray(estimator.predict(train_frame[raw_predict_columns]), dtype=float)
@@ -78,6 +79,7 @@ export_tariff(
 )
 direct_sheets = pd.read_excel(direct_tariff_path, sheet_name=None)
 assert not direct_sheets["base_rate"].iloc[0]["recalibrated"]
+print("Direct GLM workbook — raw rates (EUR per policy-year)")
 display(direct_sheets["base_rate"][["base_rate", "recalibrated"]].T)
 display(direct_sheets["factors"].head(10))
 ```
@@ -215,6 +217,32 @@ LightGBM (`tweedie-lightgbm-tariff`), before the chart adjustment: the student l
 in the same binned/grouped feature space. Fidelity measures agreement with this
 teacher; it does not establish performance against claims.
 
+Construct this extra candidate here: copy the raw GBM's fixed tree settings
+into a separate experiment with the GLM's preprocessing and split. This is a
+new fit, with the same training rows and learned rating structure as the GLM;
+it does not change either main-path model.
+
+```{python}
+teacher_config = glm_config.model_copy(update={
+    "name": "fremtpl2-structured-teacher",
+    "models": {"tweedie-lightgbm-tariff": gbm_config.models["tweedie-lightgbm"].model_copy(deep=True)},
+})
+teacher_run, teacher_estimators = run_experiment(teacher_config, return_estimators=True)
+teacher_pipeline = teacher_estimators["tweedie-lightgbm-tariff"]
+```
+
+```{python}
+#| code-fold: true
+#| code-summary: "Verify the teacher shares the main-path data and split"
+assert teacher_run.data_fingerprint == glm_run.data_fingerprint
+assert teacher_run.train_indices == glm_run.train_indices
+assert teacher_run.test_indices == glm_run.test_indices
+teacher_train_rate = teacher_pipeline.predict(train_frame[raw_predict_columns])
+teacher_factor = op_ratio(y_train, teacher_train_rate, w_train)
+assert np.isfinite(teacher_factor) and teacher_factor > 0
+np.testing.assert_allclose(op_ratio(y_train, teacher_factor * teacher_train_rate, w_train), 1)
+```
+
 The workbook contains the same `base_rate`, `factors`, and `mappings` sheets as
 a direct GLM export. Here `recalibrate=False` is deliberate: applying the
 workbook reproduces the student exactly. The student approximates the GBM
@@ -227,11 +255,8 @@ tariff_path = ARTIFACT_DIR / "distilled_tweedie_tariff.xlsx"
 tariff_X = portfolio[
     [*FEATURES, "exposure", "claim_amount", "claim_count"]
 ]
-teacher_pipeline = estimators["tweedie-lightgbm-tariff"]
 fit_X = train_frame[special_predict_columns]
 validation_X = test_frame[special_predict_columns]
-pd.testing.assert_frame_equal(fit_X, tariff_X.iloc[list(glm_run.train_indices)])
-pd.testing.assert_frame_equal(validation_X, tariff_X.iloc[list(glm_run.test_indices)])
 distilled_pipeline = distill_gbm(teacher_pipeline, fit_X, validation_X)
 
 export_tariff(
@@ -242,9 +267,17 @@ export_tariff(
 )
 
 sheets = pd.read_excel(tariff_path, sheet_name=None)
+```
+
+```{python}
+#| code-fold: true
+#| code-summary: "Verify workbook metadata and inspect its sheets"
+pd.testing.assert_frame_equal(fit_X, tariff_X.iloc[list(glm_run.train_indices)])
+pd.testing.assert_frame_equal(validation_X, tariff_X.iloc[list(glm_run.test_indices)])
 assert list(sheets) == ["base_rate", "factors", "mappings"]
 assert sheets["base_rate"].iloc[0]["distilled_from"] == "RiskGBM"
 assert not sheets["base_rate"].iloc[0]["recalibrated"]
+print("Distilled workbook — raw student rates (EUR per policy-year)")
 display(sheets["base_rate"].T)
 display(sheets["factors"].head(20))
 display(sheets["mappings"].head(20))
@@ -264,7 +297,7 @@ raw_test_predictions = {
     name: np.asarray(estimator.predict(test_frame[raw_predict_columns]), dtype=float)
     for name, estimator in estimators.items()
 }
-np.testing.assert_allclose(teacher_rate, raw_test_predictions["tweedie-lightgbm-tariff"])
+np.testing.assert_allclose(teacher_rate, teacher_pipeline.predict(test_frame[raw_predict_columns]))
 student_rate = np.asarray(distilled_pipeline.predict(validation_X), dtype=float)
 workbook_rate = apply_tariff(workbook_tariff, transformed_validation)
 
@@ -292,6 +325,8 @@ student/teacher predicted-total ratio is one for equal totals. Neither establish
 accuracy against losses or segment calibration.
 
 ```{python}
+#| code-fold: true
+#| code-summary: "Reconcile fidelity with student and workbook metadata"
 fidelity = {
     "teacher_student_deviance": mean_tweedie_deviance(
         teacher_rate, student_rate, sample_weight=w_test, power=1.5,
@@ -301,7 +336,7 @@ fidelity = {
 for key, value in fidelity.items():
     np.testing.assert_allclose(value, distilled_pipeline.distillation_metrics_[key])
     np.testing.assert_allclose(value, sheets["base_rate"].iloc[0][key])
-display(pd.DataFrame([fidelity]).assign(target="teacher rates", partition="test"))
+display(pd.DataFrame([fidelity]).assign(target="raw teacher rates", partition="test"))
 ```
 
 ## Four candidates against the same held-out claims
@@ -318,6 +353,8 @@ it is an **external multiplier**, not a change to the exported base or factors.
 It balances training totals and can improve or worsen held-out diagnostics.
 
 ```{python}
+#| code-fold: true
+#| code-summary: "Compare all four candidates and reconcile totals"
 workbook_train_rate = apply_tariff(workbook_tariff, distilled_pipeline[:-1].transform(fit_X))
 workbook_factor = op_ratio(y_train, workbook_train_rate, w_train)
 assert np.isfinite(workbook_factor) and workbook_factor > 0
@@ -325,7 +362,7 @@ np.testing.assert_allclose(op_ratio(y_train, workbook_factor * workbook_train_ra
 final_factors = {
     "Direct GLM": recalibration_factors["direct-tweedie-glm"],
     "Raw GBM": recalibration_factors["tweedie-lightgbm"],
-    "Structured teacher": recalibration_factors["tweedie-lightgbm-tariff"],
+    "Structured teacher": teacher_factor,
     "Applied workbook": workbook_factor,
 }
 final_raw_predictions = {
@@ -487,6 +524,8 @@ Gini differences mean improvement in that statistic. An O/P change must be read
 against one, not maximized. Predicted-total changes are monetary level changes.
 
 ```{python}
+#| code-fold: true
+#| code-summary: "Calculate workbook differences on each prediction scale"
 export_differences = []
 for scale in ["raw", "training O/P adjusted"]:
     table = final_metrics[final_metrics.prediction_scale == scale].set_index("model")

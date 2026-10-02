@@ -202,7 +202,7 @@ def load_portfolio():
 ```{python}
 #| include: false
 def make_experiment_configs(data_path, random_state=RANDOM_STATE):
-    """Base models: direct Tweedie GLM and raw/tariff GBMs on the same partition."""
+    """Main-path models: direct Tweedie GLM and raw GBM on the same partition."""
     glm_config = ExperimentConfig(
         name="fremtpl2-tariff-structured",
         data_path=str(data_path),
@@ -240,17 +240,6 @@ def make_experiment_configs(data_path, random_state=RANDOM_STATE):
                     "link": "log",
                     "tweedie_power": 1.5,
                     "alpha": 0.001,
-                },
-            ),
-            "tweedie-lightgbm-tariff": ModelSpec(
-                kind="gbm",
-                params={
-                    "objective": "tweedie",
-                    "tweedie_variance_power": 1.5,
-                    "n_estimators": 100,
-                    "num_leaves": 31,
-                    "learning_rate": 0.05,
-                    "random_state": random_state,
                 },
             ),
         },

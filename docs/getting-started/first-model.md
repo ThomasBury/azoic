@@ -116,12 +116,20 @@ print(f"wrote {chart_path.resolve()}")
 ## Read the result
 
 Gini answers whether the model ranks policies from lower to higher risk; it
-does not measure pricing level. A positive held-out Gini is useful ranking
-signal. The O/P ratio compares observed with predicted aggregate claim amount;
-1.0 is the portfolio-level target.
+does not measure pricing level. With the seed and settings above, Gini is about
+**0.127**: the model shows some ranking signal on this split, but that alone
+does not establish useful predictive performance. The observed/predicted (O/P)
+claim-total ratio is about **1.242**, so observed claims are **24.2% above
+predicted claims**. The portfolio total is
+underpredicted; this first fit is not a calibrated tariff.
 
-The calibration table and chart then reveal whether a satisfactory portfolio
-total hides over-pricing or under-pricing inside risk deciles. Point size
+The generator raises risk at both young and older driver ages, while this GLM
+uses a single linear age effect on the log scale. It cannot reproduce that age
+pattern exactly. This mismatch and the small sample are reasons to investigate,
+not a measured explanation of the entire calibration gap.
+
+The calibration table and chart reveal over-pricing or under-pricing inside
+risk deciles, even when portfolio O/P is close to its target of 1.0. Point size
 represents exposure, and distance from the diagonal represents segment-level
 miscalibration. Sparse segments deserve less confidence than exposure-heavy
 ones.

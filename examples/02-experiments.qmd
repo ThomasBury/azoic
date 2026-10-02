@@ -95,27 +95,12 @@ raw_gbm = ModelSpec(
 )
 ```
 
-::: {.callout-note collapse="true"}
-## Optional: the structured teacher
-
-The third candidate is a GBM with the same tree settings, fitted after the
-same kind of bins and groups as the GLM. Later, distillation fits a simple tariff
-to this teacher's predictions. This extra candidate prepares that optional
-lesson; understanding distillation is not required to fit the baseline.
-The cell still executes when this explanation is collapsed.
-
-```{python}
-structured_teacher = raw_gbm.model_copy(deep=True)
-```
-
-:::
-
 ## Assemble and run the experiments
 
 freMTPL2 has no suitable policy-time field. Both experiments therefore use the
-same random seed and 20% holdout on the same ordered data. One experiment shares
-preprocessing between its GLM and structured teacher; the other uses raw features.
-The names identify these two runs and their three candidates in later chapters.
+same random seed and 20% holdout on the same ordered data. The GLM experiment uses
+bins and groups; the GBM experiment uses raw features. The names identify these
+two runs and their two candidates in later chapters.
 
 ```{python}
 glm_config = ExperimentConfig(
@@ -124,7 +109,6 @@ glm_config = ExperimentConfig(
     split="random", test_size=0.2, random_state=42,
     models={
         "direct-tweedie-glm": direct_glm,
-        "tweedie-lightgbm-tariff": structured_teacher,
     },
 )
 gbm_config = ExperimentConfig(
@@ -139,6 +123,8 @@ Other chapters use `make_experiment_configs` from `_shared.qmd` as the canonical
 reusable configuration. This check prevents the visible version from drifting:
 
 ```{python}
+#| code-fold: true
+#| code-summary: "Verify the shared configuration matches"
 assert (glm_config, gbm_config) == make_experiment_configs(str(PORTFOLIO_PATH))
 ```
 
@@ -150,6 +136,13 @@ glm_run, glm_estimators = run_experiment(glm_config, return_estimators=True)
 gbm_run, gbm_estimators = run_experiment(gbm_config, return_estimators=True)
 runs = [glm_run, gbm_run]
 estimators = {**glm_estimators, **gbm_estimators}
+train_idx = np.asarray(glm_run.train_indices, dtype=int)
+test_idx = np.asarray(glm_run.test_indices, dtype=int)
+```
+
+```{python}
+#| code-fold: true
+#| code-summary: "Verify identical partitions and complete row coverage"
 assert set(glm_run.models) == set(glm_config.models)
 assert set(gbm_run.models) == set(gbm_config.models)
 assert glm_run.data_fingerprint == gbm_run.data_fingerprint
@@ -157,8 +150,6 @@ assert glm_run.train_indices == gbm_run.train_indices
 assert glm_run.test_indices == gbm_run.test_indices
 pd.testing.assert_frame_equal(portfolio, pd.read_parquet(PORTFOLIO_PATH))
 
-train_idx = np.asarray(glm_run.train_indices, dtype=int)
-test_idx = np.asarray(glm_run.test_indices, dtype=int)
 assert len(train_idx) == glm_run.n_train
 assert len(test_idx) == glm_run.n_test
 assert np.intersect1d(train_idx, test_idx).size == 0
@@ -187,6 +178,8 @@ samples. Similarity grouping uses loss rates before adjustment for other
 predictors, so membership is not an adjusted causal effect.
 
 ```{python}
+#| code-fold: true
+#| code-summary: "Summarize fitted groups and reconcile training totals"
 train_frame = portfolio.iloc[train_idx].copy()
 pd.testing.assert_index_equal(
     train_frame.index, portfolio.index.take(glm_run.train_indices)
@@ -206,6 +199,7 @@ group_snapshot = {name: mapping.copy() for name, mapping in fitted_grouper.mappi
 train_grouped = fitted_preprocessing.transform(train_frame[special_predict_columns])
 train_grouped[["claim_count", "claim_amount"]] = train_frame[["claim_count", "claim_amount"]]
 
+group_summaries = {}
 for feature in FEATURES:
     grouped = train_grouped.groupby(feature, observed=True, sort=True, dropna=False)
     summary = grouped.agg(
@@ -224,10 +218,44 @@ for feature in FEATURES:
         summary[["exposure", "claim_count", "claim_amount"]].sum(),
         train_frame[["exposure", "claim_count", "claim_amount"]].sum(),
     )
-    display(summary.drop(columns="claim_amount").reset_index().rename(columns={
+    group_summaries[feature] = summary.drop(columns="claim_amount").reset_index().rename(columns={
         "claim_count": "claims", "observed_pure_premium": "observed rate",
-    }))
+    })
 ```
+
+Start with one **driver-age bin**. Its label gives the age interval; policies
+inside that interval share one rating level. The observed rate is the bin's
+training claim amount divided by its exposure, before adjustment for other
+features. The totals show how much data supports this level.
+
+```{python}
+display(group_summaries["driver_age"].head(1))
+```
+
+Now inspect one **region group**. The `members` column lists the original region
+codes pooled into this level. Similarity grouping uses their training loss
+rates; the fitted GLM will estimate a factor for this pooled level alongside
+its other predictors. Neither table reports a final tariff factor.
+
+```{python}
+display(group_summaries["region"].head(1))
+```
+
+::: {.callout-note collapse="true"}
+## Optional: inspect all nine rating features
+
+Review every interval and group membership, with the same reconciled training
+totals. This inspection runs even when the callout is collapsed.
+
+```{python}
+#| code-fold: true
+#| code-summary: "Display every fitted rating level"
+for feature, summary in group_summaries.items():
+    print(feature)
+    display(summary)
+```
+
+:::
 
 Intervals are lower-inclusive and upper-exclusive at finite boundaries. Within
 each chapter, scoring and diagnostics reuse its training-fitted pipeline without
@@ -323,9 +351,11 @@ Driver age need not have one direction across the whole age range.
 `AutoBinner.monotonic` influences how training bins are merged; it does **not**
 constrain the premiums subsequently fitted by the GLM or GBM.
 
-## Check that stability has improved
+## Optional: check that stability has improved
 
-Compare the raw-feature GBM, the binned GBM, and the simpler tariff on the same
+If pooling is worth investigating, use the
+[optional structured teacher](04-scoring-tariff.qmd#distil-the-gbm-into-an-executable-tariff)
+to compare a binned GBM with the raw-feature GBM and direct GLM on the same
 validation rows. Review exposure-weighted Tweedie deviance, portfolio and
 segment O/P, and age profiles. Refit on repeated training samples to see whether
 tail premiums and learned boundaries move substantially. Relearn supervised bins

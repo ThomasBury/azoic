@@ -41,13 +41,13 @@ diagnostic derivations, and all subsequent chapters are optional recipes.
 2. **Portfolio ingestion and review** — pinned OpenML fetch, deterministic
    cleaning, portfolio summary, profiling, and screening.
 3. **Two reproducible experiments** — direct Tweedie GLM baseline, raw
-   LightGBM benchmark, tariff-structured teacher, and the fitted bins/groups
+   LightGBM benchmark, representative fitted bins/groups, and optional full
    inspection with exact partitions.
 4. **Held-out diagnostics** — frozen training recalibration, held-out
    Gini/Lorenz/lift/calibration and age one-ways, then evidence and open review
    questions. Derivations, grouped views, double-lift, and residuals are optional.
 5. **Scoring and tariff export** — outcome-free scoring and a direct GLM
-   workbook; optional GBM distillation, workbook application using the fitted
+   workbook; optional structured GBM teacher and distillation, application using the fitted
    preprocessing pipeline, fidelity, and four-candidate claims evaluation.
 6. **Reporting, MLflow, and the CLI** — model cards, comparison table and
    dashboard, local MLflow logging, and the `azoic` CLI walkthrough.
