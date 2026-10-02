@@ -37,7 +37,8 @@ integration engine.
 3. **Transparent** — every grouping/binning emits a `mapping_` you can inspect,
    override (`set_mapping`), and export; no silent collapse; actuary in the loop.
 4. **Reproducible** — config (YAML + pydantic), `uv.lock`, canonical-frame
-   fingerprint (shape, columns, dtypes, index, values), `log_run()` mlflow helper.
+   fingerprint (shape, columns, dtypes, categorical metadata, index, values),
+   configuration/parameter snapshots, `log_run()` mlflow helper.
 
 ## 3. Module architecture (flat, no subpackages, no utils)
 
@@ -226,8 +227,9 @@ Each is independently shippable. Done-when = acceptance check.
   source-distribution CLI smoke tests pass and the Pages deployment is green.*
 - **M15 — first public release**: publish the validated `azoic==0.4.1`
   distributions through PyPI trusted publishing from a `v0.4.1` GitHub release.
-  M16–M30 are prerequisites; rebuild and revalidate the corrected source using
-  M14's distribution checks before publication.
+  M16–M42 and the separate tutorial review are prerequisites; rebuild and revalidate the corrected source using M14's
+  distribution checks before publication. Recording pending milestones does
+  not authorize publishing.
   *Done when PyPI exposes the release, a fresh isolated install reports version
   `0.4.1` and all five CLI commands, and the release and documentation workflows
   are green.*
@@ -452,6 +454,107 @@ probes in a fresh review:
 
 Acceptance and evidence live in
 [PROGRESS.md](PROGRESS.md#m33--post-hardening-fixes--2026-09-19).
+
+### M34–M39 — source audit remediation (planned 2026-10-01)
+
+The source audit at `d6f7cae` reproduced silent prediction, weighting,
+calibration, diagnostic, and provenance defects despite a green 839-test
+baseline (4 upstream skips). Deliver M34 → M35 → M36 → M37 → M38 → M39,
+one independently green milestone per session. M34–M39 completed 2026-10-01.
+
+Prefer public sklearn `validate_data`, `check_array`, and
+`check_consistent_length` over custom schema/array validation. Schema-only
+DataFrame validation preserves native categoricals but does not check numeric
+targets or weights. Retain small domain guards for strict one-dimensional
+vectors, optional special-column schemas, exposure floors, sign constraints,
+and outcome consistency. Reuse existing `_pop_weight` / `_as_arrays`; add no
+validation framework, dependency, subpackage, or compatibility shim.
+
+- **M34 — estimator schema, targets, and scoring weights:** reject changed
+  model-feature names/order in prediction/scoring; validate finite GBM targets
+  on DataFrame inputs; give frequency–severity scoring the existing weight and
+  override rules. Keep prediction without exposure and native categorical/NaN
+  feature support. Use glum's public distribution import and correct sklearn's
+  declared minimum to cover `validate_data` (introduced in 1.6). Strict 1D
+  targets intentionally reject sklearn's column-vector flattening convention;
+  record that conformance check as an expected failure with a direct regression.
+- **M35 — configuration, preprocessing, and input inspection:** forbid unknown
+  `DatasetSpec` fields, require/validate configured preprocessing weights,
+  validate bin counts and fitted mapping overrides, profile boolean features,
+  and preserve URI strings in the profiling CLI.
+  Configured exposure/claim-count columns must exist and be finite; exposure
+  retains the one-day floor and claim counts must be non-negative. No configured
+  exposure means explicit unweighted operation; target-column/y fallback stays.
+  Overrides replace the entire mapping, accept only currently mapped columns,
+  and validate edges/vocabularies before replacing state.
+- **M36 — training-only tariff calibration:** default CLI recalibration uses
+  stored training positions for direct and distilled exports; validate vector
+  outcomes before recalibration. Preserve explicit library calibration frames
+  and structural exports. Separate frame objects do not prove disjoint rows;
+  direct distillation callers own that independence contract, while CLI tests
+  verify stored partitions.
+- **M37 — stable tariff arithmetic and literal workbook labels:** compute
+  tariffs in log space, reject unrepresentable factors/rates, retain zero-total
+  recalibration, and write user text as literal Excel strings with unchanged
+  typed labels and the existing three-sheet schema.
+- **M38 — complete and unambiguous diagnostics:** reuse numeric validation in
+  plots, prevent double-lift label collisions and degenerate exposure groups,
+  and retain a real group for constant unweighted predictions. Preserve zero
+  weights for ranking and meaningful missing groups.
+- **M39 — reproducible results and comparable evaluation:** fingerprint full
+  categorical metadata, snapshot configuration/parameters, and warn on mixed
+  evaluation contexts while preserving descriptive comparisons and table shape.
+  Include unused vocabulary, category dtype/order, and the ordered flag; later
+  caller mutations must not rewrite recorded config or nested parameters.
+  Public containers remain mutable. Compare holdout positions as sets and warn
+  once naming affected runs when fingerprints or target/exposure definitions
+  differ as well. Older category fingerprints need fresh evaluation.
+  Keep small stdlib logger cleanup within this milestone.
+
+Interfaces retain their signatures, except the profiling CLI accepts URI
+strings correctly. On implementation, invalid inputs will raise, comparisons
+can emit a warning, and category-aware fingerprints will intentionally change.
+The numerical regression cases, complexity/effort estimates, checkpoints, and
+exact acceptance commands
+are recorded in [PROGRESS.md](PROGRESS.md#source-audit-remediation-plan--2026-10-01).
+CI/CD and documentation/tutorial review are separate; publication is not part
+of this plan.
+
+### M40–M42 — prerelease fixes (2026-10-02)
+
+Two exploratory installed-wheel runs reproduced 88 failures, chiefly string
+handling and read-only pandas array mutation, without tracked changes. Deliver
+M40 → M41 → M42 → M15, one independently green milestone per session.
+
+- **M40 (completed 2026-10-02):** require pandas ≥3.0, recognize default `str`, nullable string, and
+  object predictors through the shared categorical conversion. Preserve numeric
+  columns, declared category metadata, and caller frames; keep Copy-on-Write.
+  Correct mutating tests and deprecated categorical construction; regress
+  category influence, tariff extraction, category order, and unused levels.
+  Add a runtime-only distribution smoke script for GLM/GBM fit/score, categorical
+  influence, installed imports, and version consistency. Validate wheel and
+  sdist outside the checkout with independently resolved dependencies and CLI
+  help. Correct migration/model-choice guidance. Require full suite, strict
+  docs, exact first-model categorical influence, full tutorial render, and
+  isolated scoring-chapter render. pandas 2 support ends; estimator signatures
+  and actuarial units stay unchanged.
+- **M41:** align documentation with training-only CLI tariff recalibration,
+  caller-selected library calibration frames, DatasetSpec exposure routing and
+  conflicting non-null override errors, standalone HTML dashboards, and
+  absolute-rate lift. Keep prose changes minimal, inspect rendered pages and
+  verify examples/local references against source.
+- **M42 (completed locally 2026-10-02):** add Python 3.12 PR/main validation with read-only contents permission,
+  all locked extras/groups, Ruff/Ty/pytest/strict docs/distribution checks and
+  M40 artifact smokes. Reuse action pins. Keep tutorial render in Pages, add
+  fixed `pages` concurrency with cancellation, and lock dependency sync.
+  Local workflow/shell validation, full checks, strict docs, builds, and installed
+  artifact smokes passed. Pushed PR checks and Pages cancellation remain
+  unverified and need separate authorization.
+
+Every unit passes `just check` and `git diff --check`; documentation also passes
+`just docs-build`. M15 remains a separate trusted-publisher/release review;
+private settings, tagging, and publication are separately authorized. Execution
+checklists and checkpoints live in [PROGRESS.md](PROGRESS.md#prerelease-fixes--2026-10-02).
 
 ## 7. Later iterations (optional, none blocking)
 

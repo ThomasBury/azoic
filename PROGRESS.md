@@ -9,28 +9,1058 @@ Legend: ☐ pending · ◐ in progress · ☑ done
 
 ## Current focus
 
-- **Goal:** none active.
-- **Active milestone:** none; M33 ☑ completed 2026-09-19. **Next: the
-  separate M15 release review in a new session** (its backlog now includes
-  the deferred M33 observations listed in the M33 section).
-- **State:** M31 ☑ / M32 ☑ committed and pushed 2026-09-19
-  (`2fafc78..3c18296`); M33 ☑ fixes pushed the same day. The follow-up
-  review verified eight residual findings with runnable probes; user
-  decisions recorded in the M33 section.
-- **Scope for M31 (P1):** input validation in `metrics._as_arrays` (plus
-  `double_lift_table` `pred_b` and `calibration_table` `claim_count`);
-  `_pop_weight` raises in `fit`/`score` when a configured `exposure_col` is
-  missing from X. `predict` stays permissive.
-- **Scope for M32 (P2):** DatasetSpec distinctness; preprocessing
-  column/strategy validation; freq-sev component and clipping warnings;
-  group-label and `"nan"` namespacing; `RiskGBM.score` unknown-objective
-  raise; `ModelSpec` exposure contradiction raise + `effective_params`.
-- **Resume here:** inspect `git status --short`, read M31's latest checkpoint
-  in the hardening plan below. Run the milestone's acceptance checks fresh;
-  do not count the review session's green run as M31 evidence.
+- **Goal:** complete prerelease fixes before the separate M15 release review.
+- **Active milestone:** none. M42 ☑ completed 2026-10-02; M15 is next.
+- **State:** M40–M42 prerelease fixes are locally green. PR/main CI validates
+  Python 3.12 with read-only permissions, locked all-extras/groups sync, source
+  checks, strict docs, distributions, and installed artifact smokes. Pages uses
+  locked sync and cancels superseded runs in the fixed `pages` group. Final
+  `just check`: Ruff/Ty green, **1051 passed, 4 upstream skips, 2 expected
+  strict-target failures**. Prior work is preserved. Remote PR execution and
+  Pages cancellation remain unverified until a separately authorized push.
+- **Delivery order:** M40 → M41 → M42 → M15, one green milestone per session.
+- **Resume here:** in a new session read M42's completion checkpoint and the
+  current working tree, then perform only the separate M15 release review.
+  Private settings, push, tagging, and publication remain separately authorized.
 
 This section and the delivery order below supersede historical statements that
 M15 is next. Completed milestones and their evidence remain historical records.
+
+## Prerelease fixes — 2026-10-02
+
+Review evidence and scope come from the accepted three-unit plan. pandas 2
+support ends; estimator signatures and actuarial rate/weight units remain.
+No compatibility shim or new runtime dependency is required.
+
+| Status | Milestone | Scope |
+|---|---|---|
+| ☑ | M40 — pandas 3 migration and distribution checks | pandas ≥3.0, string conversion, Copy-on-Write tests, categorical regressions, installed artifact smoke checks, migration guidance |
+| ☑ | M41 — documentation matches implemented behavior | training-only CLI recalibration, DatasetSpec exposure routing/conflicts, standalone HTML dashboards, absolute-rate lift, rendered pages and local links |
+| ☑ | M42 — pre-merge validation and controlled Pages runs | Python 3.12 PR/main checks with read permissions, all locked extras/groups, Ruff/Ty/tests/docs/build/artifact checks, fixed pages concurrency with cancellation, locked Pages sync |
+
+### M40 — pandas 3 migration and distribution checks
+
+- [x] Raise pandas minimum to 3.0 and regenerate the lock retaining unrelated versions.
+- [x] Convert native `str`, nullable strings, and object columns at shared model
+  boundaries; preserve numerics, categorical metadata, and caller inputs.
+- [x] Request copies in tests that mutate pandas arrays; replace deprecated
+  categorical construction while retaining Copy-on-Write.
+- [x] Check categorical influence, tariff extraction, order, and unused levels.
+- [x] Add runtime-only `tests/smoke_distribution.py`; run it plus CLI help for
+  independently resolved wheel and sdist installs outside the checkout.
+- [x] Correct installation/model-choice guidance and remove pandas 2 limitation.
+- [x] Pass `just check`, `just docs-build`, `git diff --check`; execute the exact
+  first-model example and verify its categorical predictor affects predictions.
+- [x] Complete full tutorial and isolated scoring-chapter renders under pandas 3;
+  record successful exit statuses before marking complete.
+
+Checkpoint — kickoff 2026-10-02: read Current focus, M39 evidence, shared helper
+and its callers, release validation, and environment. Current lock uses pandas
+2.3.3; existing uncommitted changes saved to `/tmp/azoic-before-m40.patch`.
+Context7 and pandas migration/Copy-on-Write guidance confirm selecting
+`object` plus `string` and explicitly copying arrays intended for mutation.
+Next: add behavioral regressions, migrate the environment, reproduce failures,
+then fix the shared helper and run acceptance. M41/M42 remain pending.
+
+Checkpoint — implementation 2026-10-02: pandas is locked at **3.0.6**.
+MLflow **3.15.1** cannot be retained: its `pandas<3` requirement makes the new
+contract unsatisfiable. The related mlflow/mlflow-skinny/mlflow-tracing packages
+therefore move to **3.16.1**; pandas no longer needs pytz. Other versions remain.
+Shared conversion selects object/string and frequency–severity prediction now
+uses the same conversion. Nine of 17 new regressions failed before the repair;
+all **17 pass** afterward, including categorical influence, numeric/input
+preservation, missingness, ordered/unused vocabularies, and tariff extraction.
+Mutating exposure tests request copies. Release validation adds runtime-only
+wheel/sdist model smokes outside checkout alongside CLI help. Strict docs,
+Ruff, Ty, and distribution build passed. The exact first-model example ran and
+its fixed-policy rural/suburban/urban rates were **244.478 / 446.861 / 657.109**.
+The full suite and full tutorial render are running. An initial smoke assertion
+was too strict for uv's symlinked package cache; installed-file ownership now
+uses distribution metadata. Next: finish suite, correct any remaining migration
+failures/warnings, rerun artifact smokes, complete isolated scoring render, and
+run final acceptance gates. M40 remains ◐.
+
+Checkpoint — acceptance repairs 2026-10-02: the migrated full suite reported
+**1050 passed, 1 failed, 4 skipped, 2 expected failures** (302.34 s). The failure
+was a third test mutating a read-only target array before calling the estimator;
+it now requests `copy=True`. Two pandas deprecation warnings in the category
+fingerprint regression now use `cat.set_categories` without changing values.
+All **7 focused repair checks passed**, without those warnings. Both separately
+resolved Python **3.12** wheel and sdist installs passed runtime-only behavioral
+checks and CLI help outside the checkout; metadata verifies installed imports
+and `0.4.1` version agreement with pandas **3.0.6**. Authored local links resolve
+and all four changed Python files pass Ruff format checks. Final `just check`
+and full tutorial render are running. Next: complete those runs and the separate
+isolated scoring chapter, then record exit statuses and mark M40 green only
+when all acceptance checks pass.
+
+Checkpoint — tutorial environment 2026-10-02: the first full render exited
+**1** in chapter 05 because the existing ignored tutorial MLflow SQLite store
+had the 3.15.1 schema. Preserved a consistent, integrity-checked backup at
+`/tmp/azoic-m40-mlflow-before-3.16.1.db`, then used the documented
+`uv run mlflow db upgrade sqlite:////home/bsatom/Documents/azoic/examples/_artifacts/fremtpl2/mlflow.db`.
+Migration succeeded (exit **0**); no historical runs were deleted. Installation
+troubleshooting now documents this local upgrade step. A fresh `just demo`
+full-book render is running; final suite and isolated scoring render remain
+the next acceptance checks. The failed render log is preserved at
+`/tmp/azoic-m40-tutorial-before-db-upgrade.log`.
+
+Checkpoint — final code gate 2026-10-02: `just check` exited **0** with
+Ruff and production Ty green, **1051 passed, 4 upstream array-API skips,
+2 expected strict-target failures**, in **281.47 s**, with no pandas warnings.
+Strict `just docs-build` exited **0** after the local MLflow troubleshooting
+addition. Distribution behavior/CLI checks, the exact first model, Ruff format,
+authored local links, release YAML/shell syntax, and `git diff --check` are green.
+Remaining acceptance is the full `just demo` rerender after the backed-up local
+store migration and a separate fresh scoring-chapter render. M40 stays ◐ until
+both finish; M41/M42 and release remain pending.
+
+Checkpoint — isolated scoring acceptance 2026-10-02: copied byte-identical
+`.qmd`/`.yml` tutorial sources plus the paired joined-data/cleaning-audit inputs
+to `/tmp/azoic-m40-scoring`, with an empty scoring artifact directory. Ran
+`uv run --project /home/bsatom/Documents/azoic quarto render /tmp/azoic-m40-scoring/examples/04-scoring-tariff.qmd --to html --execute --no-cache --execute-daemon-restart`.
+All **21 cells** passed with a fresh kernel under the migrated environment;
+render exited **0** and wrote its own `_book/04-scoring-tariff.html`. It shares
+no generated scoring artifacts with the full render. The upgraded tutorial
+tracking database also passed integrity checking and retained all **102 prior
+runs**. Full book acceptance is the only remaining item; M40 stays ◐.
+
+### M40 completion checkpoint — 2026-10-02
+
+Changed: pandas minimum **3.0**, lock **3.0.6**; shared object/string conversion
+for GLM, GBM, and frequency–severity fit/predict/score; three intentional array
+mutations request copies; category fingerprint tests use the native setter.
+Added 17 category/missingness/metadata/input-preservation regressions and the
+runtime-only `tests/smoke_distribution.py`. Release validation now runs model
+smokes plus CLI help for independently resolved wheel/sdist installs outside
+checkout. Installation and model-choice guidance explain automatic conversion,
+direct LightGBM backend preparation, pandas 2 support ending, and existing
+local tutorial database migration. M40–M42 scope and delivery order are recorded
+in PRD/AGENTS and here; pre-existing M34–M39 changes remain intact.
+
+Acceptance evidence:
+
+- `uv sync --locked --all-extras --all-groups` and `uv lock --check` exited **0**.
+  Only pandas and the necessary MLflow trio changed versions; pandas dropped
+  pytz. MLflow 3.15.1 could not resolve against pandas ≥3, so its three related
+  packages are **3.16.1**. No new dependency, compatibility shim, module,
+  estimator signature, actuarial unit, or Copy-on-Write override was introduced.
+- The 17 new checks reproduced **9 failures / 8 passes** before the repair and
+  all pass afterward. Final `just check` exited **0**: Ruff/Ty green,
+  **1051 passed, 4 upstream array-API skips, 2 expected strict-target failures**
+  in **281.47 s**, without pandas warnings. Existing strict-target behavior
+  remains intentional.
+- `just docs-build` exited **0** in strict mode; affected authored local links
+  resolve. Ruff format check on all four changed Python files, release YAML
+  parsing and smoke shell syntax, and `git diff --check` passed.
+- `uv build` exited **0**. Runtime-only wheel and sdist model/import/version
+  checks and both CLI help commands each exited **0** on Python **3.12** outside
+  checkout with fresh, independently resolved dependencies (pandas **3.0.6**).
+  Imports are verified against installed distribution files, including uv's
+  symlinked package cache, and version metadata agrees at **0.4.1**.
+- Executed the exact first-model documentation example in `/tmp` under the
+  migrated environment. Its region predictor is retained in backend category
+  metadata and fixed-policy rural/suburban/urban predictions are
+  **244.478 / 446.861 / 657.109**, proving informative categorical influence.
+- Final **`just demo` exited 0**, freshly executing all **136 cells**
+  across ten executable chapters plus the index, with the freMTPL2 chapters on
+  **667,673 policies**, and creating `examples/_book/index.html`. The first run's
+  local MLflow schema failure is preserved above; after a consistent backup,
+  its documented database migration exited **0**. Database integrity passed
+  and all **102 prior runs** remain. No tracked tutorial source changed in M40.
+- The separate scoring-chapter command recorded above exited **0**, executing
+  all **21 cells** with a fresh kernel from byte-identical temporary tutorial
+  sources, paired cached cleaning inputs, and an empty artifact directory.
+  Its generated outputs are independent of the full book. Tutorial output,
+  charts, data, workbooks, and tracking state remain ignored.
+
+Remaining: M41 documentation parity and M42 CI/Pages controls, followed by the
+separate M15 trusted-publisher/release review. M40 blockers: none. No commit,
+push, tag, publication, or private configuration change was performed.
+
+Exact next action: start a new session, mark **M41 only** ◐, trace CLI export
+calibration, DatasetSpec exposure overrides, dashboard return values, and lift
+units against current source; apply the minimum prose corrections and verify
+examples/local links and rendered affected pages. Run `just check`, strict docs,
+and diff checks, then stop after M41's green handoff. Do not start M42 here.
+
+### M41 — documentation matches implemented behavior
+
+Make minimum prose corrections against current source. CLI export recalibrates
+on training observations; library callers supply a calibration frame and keep
+evaluation separate. Exposure comes from DatasetSpec and conflicting non-null
+model overrides raise. Dashboards return standalone HTML strings. Lift uses
+absolute observed/predicted rates. Run all-unit checks plus strict docs, inspect
+affected rendered pages, and verify authored local links.
+
+- [x] Trace CLI/library tariff calibration, DatasetSpec exposure routing,
+  dashboard outputs, and lift units against current implementations and tests.
+- [x] Correct stale exposure override, dashboard, lift, and recalibration prose;
+  retain existing accurate training-only CLI and caller-selected library guidance.
+- [x] Verify relevant documentation examples and authored local links; inspect
+  affected rendered pages after a strict build.
+- [x] Pass `just check`, `just docs-build`, and `git diff --check`; record a green
+  completion checkpoint and hand off to M42 without starting it.
+
+Checkpoint — kickoff 2026-10-02: read Current focus, M40 completion evidence,
+M41 scope, and the existing working-tree changes. Preserve all prior milestone
+work. Next: trace tariff export, exposure routing, dashboard return values, and
+lift units; correct only affected documentation, then run the required checks.
+M42 and release remain pending.
+
+Checkpoint — prose corrections 2026-10-02: traced `ModelSpec.effective_params`
+and `build`, CLI `export_tariff`, library `export_tariff`,
+`comparison_dashboard`, and `plot_lift`, plus their existing regressions.
+Five documentation pages now explain conflicting non-null exposure overrides,
+standalone HTML strings with embedded Plotly JavaScript, absolute-rate lift,
+and training-only CLI versus caller-selected library calibration. Existing
+accurate tariff guidance is preserved. Locked all-extras/all-groups sync and
+the initial diff check exited **0**. Next: run the full suite and strict docs,
+execute relevant examples, inspect rendered content, and verify local links.
+No runtime code, dependency, theme, or workflow change is needed for M41.
+
+### M41 completion checkpoint — 2026-10-02
+
+Changed: minimum prose corrections in `docs/guide/operations.md`,
+`docs/guide/diagnostics-visualization.md`, `docs/reference/configuration-cli.md`,
+`docs/reference/glossary.md`, and `docs/reference/workflow-operations.md`.
+Exposure routing now states that omitted/null overrides use DatasetSpec,
+matching values are accepted, and conflicting non-null values raise, including
+frequency–severity's outer special-column params. Dashboards return standalone
+HTML strings with embedded Plotly JavaScript. Lift plots absolute observed and
+predicted rates. The glossary now reflects training-only CLI recalibration and
+caller-selected library calibration frames with separate evaluation rows.
+Existing accurate guide/reference tariff guidance and prior changes remain.
+
+Acceptance evidence:
+
+- `uv sync --locked --all-extras --all-groups` exited **0**.
+- `just check` exited **0**: Ruff and production Ty green; **1051 passed,
+  4 upstream array-API skips, 2 expected strict-target failures**, in **238.40 s**.
+  Log: `/tmp/azoic-m41-check.log`. Existing CLI regressions cover direct/distilled
+  exports with both recalibration settings and unchanged holdout boundaries.
+- `just docs-build` exited **0** with no issues in strict mode.
+  Log: `/tmp/azoic-m41-docs.log`. Inspected generated content and local browser
+  screenshots for all five affected pages; no theme or JavaScript edits.
+- Executed the exact reporting, partition-recovery, and diagnostic-table Python
+  snippets with seeded synthetic data. Checked GLM/GBM omitted, null, matching,
+  and conflicting exposure overrides; dashboard HTML embeds its JavaScript
+  without external script sources; lift line values equal absolute table rates;
+  library calibration reproduces the caller-selected training claim total.
+  All passed; example artifacts stay in `/tmp/azoic-m41-examples`.
+- `uv run python /tmp/azoic-m41-verify-docs.py` exited **0**: all five rendered
+  pages contain the corrected claims, all **17 authored local file links** and
+  **17 rendered local links including fragment targets** resolve. The stale
+  claims are absent. `git diff --check` passed.
+
+Remaining: M42 CI/Pages controls, then the separate M15 release review.
+Blockers: none. No runtime, dependency, generated tracked artifact, commit,
+push, tag, publication, or private configuration change was made for M41.
+
+Exact next action: start a new session, read this checkpoint and the current
+working tree, mark **M42 only** ◐, then implement and locally validate its
+PR/main checks and Pages concurrency/locked sync. Do not start M42 here.
+
+### M42 — pre-merge validation and controlled Pages runs
+
+Reuse action pins and project commands for PRs and pushes to main on Python
+3.12 with `contents: read`. Sync all locked extras/groups; run Ruff, Ty, pytest,
+strict docs, distribution builds, and M40 wheel/sdist checks. Keep real-data
+rendering in Pages; add workflow concurrency group `pages` with
+`cancel-in-progress: true` and locked sync. Validate configuration locally;
+remote PR checks and superseded deployment cancellation require separate push
+authorization. Every unit requires `just check` and `git diff --check`.
+
+- [x] Add PR/main Python 3.12 validation with read-only permissions and existing action pins.
+- [x] Configure locked all-extras/groups sync, Ruff, Ty, pytest, strict docs, builds,
+  and installed wheel/sdist model and CLI checks outside the checkout.
+- [x] Add fixed `pages` workflow concurrency with cancellation and locked sync;
+  retain real-data tutorial rendering in Pages.
+- [x] Validate workflow configuration and shell blocks locally; pass `just check`,
+  `just docs-build`, distribution smokes, and `git diff --check`.
+- [x] Record evidence, remote limitations, and the separate M15 handoff.
+
+Checkpoint — kickoff 2026-10-02: read Current focus, M41 completion evidence,
+M42 scope in PROGRESS/PRD, existing workflows, project commands, and M40's
+runtime-only smoke script. Preserved the pre-existing tracked diff at
+`/tmp/azoic-before-m42.patch`. Context7 confirms PR/main triggers, read-only
+permissions, fixed concurrency cancellation, and locked sync behavior.
+Next: reuse release validation in a PR/main workflow; add Pages concurrency and
+locked sync; validate locally. Remote checks/deployment cancellation and M15
+remain separate. No prior milestone changes will be reverted.
+
+Checkpoint — implementation 2026-10-02: added `.github/workflows/ci.yml`
+for all pull requests and main pushes, using Python 3.12, `contents: read`, and
+release workflow pins/validation commands through both installed artifact
+smokes. Pages reuses the same setup pins, syncs all locked extras/groups, and
+uses workflow-level `pages` concurrency with `cancel-in-progress: true`; its
+real-data render/deployment stays intact. AGENTS now records workflow roles.
+The installed actionlint 1.7.12 binary validates all three workflows; locked sync
+passed. Builds passed; full `just check` and strict docs are running. Next:
+check workflow contracts/shell blocks and execute wheel/sdist smokes, then record
+all exit statuses before marking green. No release workflow edits in M42.
+
+Checkpoint — local acceptance 2026-10-02: strict docs, distribution builds,
+actionlint, workflow contract assertions, and every run block's `bash -n` check
+passed. Exact new CI smoke blocks passed for both 0.4.1 artifacts in Python
+3.12 outside the checkout, resolving runtime dependencies independently
+(pandas 3.0.6), including model behavior/import/version checks and CLI help.
+The initial local run selected old ignored 0.4.0 files from `dist/` and failed
+its model-score assertion. Staging only the newly built artifacts under
+`/tmp/azoic-m42-built` reproduces a fresh runner without deleting prior builds;
+both corrected runs exited 0. Logs are `/tmp/azoic-m42-wheel-current.log` and
+`/tmp/azoic-m42-sdist-current.log`. All pre-existing diffs outside M42's allowed
+workflow/documentation files remain byte-identical to the kickoff patch.
+Next: wait for the running full `just check`, then record its exit/counts, run
+final diff validation, and complete the handoff. M42 remains ◐ until green.
+
+### M42 completion checkpoint — 2026-10-02
+
+Changed: added `.github/workflows/ci.yml` for all pull requests and main pushes.
+It reuses release action pins and validation steps on Python 3.12 with only
+`contents: read`: locked all-extras/groups sync, Ruff, Ty, pytest, strict docs,
+wheel/sdist build, and runtime-only installed model/import/version/CLI smokes
+outside the checkout. Pages retains its real-data tutorial render and deployment,
+reuses the pinned checkout/Python/uv actions, adds workflow-level fixed `pages`
+concurrency with cancellation, and locks sync. AGENTS records these roles;
+PRD marks this milestone complete. No runtime/dependency/release workflow or
+tutorial source was changed in M42; earlier uncommitted work is preserved.
+
+Acceptance evidence:
+
+- `uv sync --locked --all-extras --all-groups` and `uv lock --check` exited **0**.
+- Final `just check` exited **0**: Ruff and production Ty green; **1051 passed,
+  4 upstream array-API skips, 2 expected strict-target failures**, in **244.61 s**
+  on Python **3.12.7**. Log: `/tmp/azoic-m42-check.log`.
+- `just docs-build` exited **0**, with no issues in strict mode.
+  Log: `/tmp/azoic-m42-docs.log`.
+- `uv build` exited **0**, producing the **0.4.1** wheel and sdist.
+  Log: `/tmp/azoic-m42-build.log`. Its existing uv/build-backend version warning
+  is non-fatal; the configured backend remains unchanged.
+- Exact CI wheel and sdist smoke blocks each exited **0** in a clean temporary
+  artifact workspace, with independent runtime resolution outside the checkout
+  on Python **3.12**, pandas **3.0.6**. GLM/GBM behavior, installed module paths,
+  metadata versions, categorical influence, and both CLI help commands pass.
+  Logs: `/tmp/azoic-m42-wheel-current.log`, `/tmp/azoic-m42-sdist-current.log`.
+  The earlier stale 0.4.0 local-artifact failure and correction are recorded above.
+- Installed **actionlint 1.7.12** exited **0** for CI, Pages, and release workflows.
+  `uv run python /tmp/azoic-m42-validate-workflows.py` exited **0**: triggers,
+  permissions, Python, release-step parity, Pages concurrency/locked sync,
+  retained tutorial deployment, and all shell blocks' `bash -n` checks pass.
+  Final `git diff --check` passed. No tracked generated artifacts were added.
+
+Remaining: remote PR/main checks and superseded Pages cancellation require a
+separately authorized push; they are not claimed as executed local evidence.
+M15 remains the separate trusted-publisher/release review. Blockers: none for
+M42's local scope. No commit, push, tag, publication, or private setting change.
+
+Exact next action: start a new session, read this checkpoint/current working
+tree, and perform **M15 only**: verify publisher repository/workflow/environment
+claims, prepare a validated commit, artifact hashes, and proposed `v0.4.1` tag.
+Obtain the required separate authorization before push, private settings,
+tagging, or publication. Stop this session after M42.
+
+M15 stays separate: verify trusted-publisher repository/workflow/environment
+claims; prepare a validated commit, artifact hashes, and proposed `v0.4.1` tag.
+Private settings, tagging, and publication require separate authorization.
+
+## Source audit remediation plan — 2026-10-01
+
+### Scope, validation, and completion rules
+
+Group fixes by their shared boundary rather than adding a framework per finding.
+The audit covers `src`; tests provide evidence. CI/CD, tutorial/editorial review,
+and publication are deferred to the separate requested review. Update affected
+API/configuration text when implementing a changed contract, without expanding
+that into the second review. No new dependencies, subpackages, validation base
+classes, or compatibility shims.
+
+Prefer public `sklearn.utils.validation` functions:
+
+- `validate_data(reset=True)` records a training schema; `reset=False` checks
+  subsequent input. For native categorical DataFrames, `skip_check_array=True`
+  preserves the frame and checks names/counts only: it does **not** validate
+  targets, weights, finiteness, or lengths. Keep CLI-required full input metadata
+  and the optional exposure/outcome prediction contract; check the post-pop
+  model-feature sequence explicitly where the full schema cannot represent it.
+- `check_array` supplies numeric conversion and finite-value validation;
+  `check_consistent_length` supplies row-count checks. A strict vector contract
+  still needs `ndim == 1`: `ensure_2d=False` also accepts 2D arrays, and
+  `column_or_1d` would silently flatten a column vector.
+- Reuse `_pop_weight` and `_as_arrays` at their existing shared boundaries.
+  Retain domain checks for exposure floors, non-negative weights/claims,
+  nonzero fitting weights, outcome consistency, and segment totals. Keep native
+  missing-feature handling, valid explicit weights, and zero-weight ranking
+  behaviour. Do not use private sklearn validation functions.
+
+Public API references: [validate_data](https://scikit-learn.org/stable/modules/generated/sklearn.utils.validation.validate_data.html),
+[check_array](https://scikit-learn.org/stable/modules/generated/sklearn.utils.check_array.html),
+and [check_consistent_length](https://scikit-learn.org/stable/modules/generated/sklearn.utils.check_consistent_length.html).
+Local feasibility checks confirmed categorical preservation, reordered-feature
+rejection, finite-target validation, and length checks with installed sklearn
+1.9.0. M34 must align the declared minimum with `validate_data`, added in 1.6;
+At planning, the `>=1.5` claim did not cover APIs already used by Azoic.
+
+For each milestone, reproduce the defect and add the smallest regression in
+existing test modules before fixing it. Run focused tests, `just check`, and
+`git diff --check`; run the strict docs build if guide/API text changes and
+`just demo` only if executable tutorial sources change. Record actual results,
+mark ☑ only when green, update Current focus, and stop with a handoff.
+
+Scores are estimated **complexity / effort**, each 1–5. Complexity measures
+the smallest sound repair; effort includes regressions (1 = hours, 2 ≈ one
+day, 3 = several days, 4 = about a week, 5 = larger work). Finding numbers refer
+to the source audit, with their behaviour restated in the checklists below.
+
+| Status | Milestone | Priority | Findings grouped | C/E |
+|---|---|---|---|---|
+| ☑ | M34 — estimator schema, targets, and scoring weights | P1/P2 | #1, #4, #11; public backend import and sklearn minimum | 2/2 |
+| ☑ | M35 — configuration, preprocessing, and input inspection | P1/P2 | #3, #5, #12, #14; bin counts and profile URIs | 2/3 |
+| ☑ | M36 — training-only tariff calibration | P1/P2 | #2, #8; distillation independence boundary | 1/2 |
+| ☑ | M37 — stable tariff arithmetic and literal workbook labels | P2 | #6, #15 | 3/2 |
+| ☑ | M38 — complete and unambiguous diagnostics | P2/P3 | #7, #13; zero-exposure double lift and constant quantiles | 2/2 |
+| ☑ | M39 — reproducible results and comparable evaluation | P2 | #9, #10; comparison context and small logger cleanup | 2/2 |
+
+### M34 — estimator schema, targets, and scoring weights
+
+- [x] Reject reordered, renamed, missing, or extra model predictors in both
+  wrappers' `predict` and `score`, including frequency–severity components.
+  Use sklearn schema validation where applicable; retain the small post-pop
+  sequence guard needed for optional special columns. Do not silently reorder.
+- [x] Validate finite one-dimensional targets and lengths before GBM backend
+  fitting, including DataFrame inputs; preserve the existing supported target
+  families and categorical/NaN feature behaviour.
+- [x] Route frequency–severity scoring weights through `_pop_weight`'s rules:
+  validate weights and the popped exposure floor, and allow explicit weights
+  without an exposure column. Prediction remains exposure-optional.
+- [x] Use glum's public `TweedieDistribution` import; align the sklearn minimum
+  with the public APIs used (at least 1.6), without a compatibility shim.
+
+Acceptance: regressions for swapped/renamed predictors in fit-derived schemas,
+NaN/inf DataFrame targets, target/weight shape and length, negative/all-zero
+scoring weights, sub-day popped exposure, explicit overrides, and prediction
+without special columns. Exercise native categoricals, both wrappers,
+frequency–severity, pipelines, existing sklearn estimator checks, and an
+isolated import/CLI smoke at the declared sklearn minimum. The audit
+observed swapped-column prediction changes of 15.44 (GLM) / 11.04 (GBM), NaN
+GBM labels equivalent to zero labels, and negative-exposure FSM D² above one.
+
+### M35 — configuration, preprocessing, and input inspection
+
+- [x] Give `DatasetSpec` `extra="forbid"`; a misspelled optional special-column
+  field must fail before it can leave an outcome among default predictors.
+- [x] Require configured exposure/claim-count columns during preprocessing fit
+  and validate their numeric values before weighting, division, or pooling.
+  Keep the documented target/y fallback and explicit unweighted operation when
+  no exposure column is configured; preserve existing one-day floor rules.
+- [x] Reject non-integer or below-two `max_bins`; validate fitted mapping
+  override keys and finite, strictly increasing bin edges before replacing
+  state. Preserve the current replacement semantics and valid group vocabularies.
+- [x] Profile bool/nullable-bool columns without requesting continuous numeric
+  descriptive statistics. Preserve local paths and `s3://` strings in CLI
+  profiling; use a mocked loader in tests, never a network request.
+
+Acceptance: typo `claim_count_col` raises instead of exposing claim counts as
+features; missing/negative/NaN/inf exposure and invalid claim counts raise;
+valid weighted mappings retain their units. Unknown override columns,
+descending/NaN/inf/duplicate edges, and invalid bin counts fail without partially
+replacing fitted state. Valid override round-trips, bool profiling, and exact
+URI forwarding pass. The audit accepted missing weight columns and invalid
+grouper exposures, produced overlapping intervals from descending edges, and
+reproduced bool `KeyError: 'min'` and `s3:/` path corruption.
+
+### M35 checkpoint — 2026-10-01, in progress
+
+Changed: added regressions in the existing data, preprocessing, profile, and CLI
+test modules; marked M35 ◐. Preserved the pre-existing M34 working-tree changes.
+
+Verified: focused new regressions on unchanged production source: **47 failed,
+11 passed, 209 deselected**. Reproduced accepted misspelled DatasetSpec fields,
+missing/invalid weight columns, sub-day exposure, invalid bin counts and edges,
+unknown override keys, partially replaced grouper state, bool profiling failure,
+and local/S3 path alteration. Existing positive cases cover replacement semantics,
+target fallback, and exposure units. No network calls in the URI regressions.
+
+Remaining: production fixes, affected contract docs, focused/full checks, strict
+docs build, and final handoff. Blockers: none; the sandbox wrapper intermittently
+fails before commands launch, so local reads/checks use approved escalation.
+Next action: implement shared column validation and atomic mapping replacement,
+then the small DatasetSpec/profile/CLI fixes. Do not start M36.
+
+### M35 checkpoint — 2026-10-01, implementation validated locally
+
+Changed: DatasetSpec forbids extra fields. Both preprocessors use their shared
+column reader to require configured exposure/claim-count columns and validate
+finite 1D numeric values, non-negative counts, and the existing tolerant one-day
+exposure floor before arithmetic. Binner target resolution reuses validated
+exposure. Bin counts reject floats, booleans, and values below two. Mapping
+overrides check fitted columns and build edges/vocabularies locally before
+replacing state; omitted columns still pass through. Boolean profiling uses
+discrete stats; CLI profiling forwards strings unchanged. Updated affected API,
+guide, configuration reference, actuarial engineering rule, and PRD scope text.
+
+Verified: affected modules (`tests/test_data.py`, `tests/test_preprocessing.py`,
+`tests/test_profile.py`, `tests/test_cli.py`) passed **265 tests, 2 upstream
+array-API skips**. This includes all 58 new cases and existing transformer
+estimator checks, weighted mappings, pipelines, override round-trips, and CLI
+local-file smoke tests. Ruff and production Ty checks passed.
+
+Remaining: full `just check`, strict documentation build (running), format/diff
+checks, and completion handoff. Blockers: none. No tutorial sources changed.
+Next action: finish those checks, mark M35 ☑ only when green, set M36 as the next
+milestone, and stop without beginning it.
+
+### M35 completion checkpoint — 2026-10-01
+
+Changed: completed all four M35 checklist items and the affected contract docs.
+The implementation uses the existing column reader and public sklearn checks;
+mapping overrides validate completely before replacing fitted mappings and
+vocabularies. Preserved the pre-existing M34 changes. No dependencies, modules,
+generated artifacts, or compatibility shims were added.
+
+Verified:
+
+- The 58 new synthetic regression cases first yielded **47 failures and 11
+  passes** on unchanged production source. All now pass, covering misspelled
+  configuration, missing/negative/non-finite/non-numeric weight columns, sub-day
+  exposure and day-count tolerance, invalid bin counts/edges/keys, unchanged
+  state after invalid overrides, replacement semantics, target fallback, rate
+  units, boolean profiling, and exact mocked local/S3 path forwarding.
+- Affected data/preprocessing/profile/CLI modules: **265 passed, 2 upstream
+  array-API skips**, including transformer estimator checks and pipeline tests.
+- Final `just check`: Ruff and production Ty green; **932 passed, 4 upstream
+  array-API skips, 2 expected strict-target failures** in 563.68 seconds.
+- `just docs-build` passed strict mode. Ruff format check for all eight changed
+  source/test files and `git diff --check` passed. No tutorial sources changed,
+  so `just demo` was not required; the full gate includes tutorial smoke tests.
+
+Remaining: M36–M39 and the separately scoped CI/CD/documentation/tutorial review.
+The previously recorded pandas 3 compatibility issue remains outside this
+milestone. Blockers for M35: none.
+Next action: in a new implementation session, reproduce M36's holdout leakage
+and two-dimensional recalibration outcome failures; mark only M36 ◐, implement
+training-only CLI recalibration and vector validation, validate direct/distilled
+exports and independence documentation, then stop after its green handoff.
+Stop this session with M35 ☑; do not begin M36.
+
+### M36 — training-only tariff calibration
+
+- [x] CLI export recalibrates from `Run.train_indices` only, for direct GLMs
+  and distilled students. Keep the fitted estimator and existing holdout for
+  evaluation/fidelity; `--no-recalibrate` remains the structural export.
+- [x] Validate one-dimensional recalibration outcomes and matching frame length
+  with public array/length checks before deriving observed totals. Direct
+  `export_tariff` callers still choose their calibration frame explicitly.
+- [x] State that the distillation object-identity guard is not proof of row
+  independence. Keep the CLI's stored partitions and test them; direct callers
+  must supply disjoint observations. Add no speculative row-identity API.
+
+Acceptance: changing only held-out outcomes cannot change exported rates,
+training calibration factors, or the distilled student's fitted predictions.
+Workbook rates reproduce training totals and structural exports stay unchanged.
+Two-dimensional outcomes raise rather than summing extra columns. The audit's
+holdout-only loss change multiplied the CLI base by 2.85 with identical training
+predictions; a two-column outcome array changed an export base from 1.00049 to
+27.68014. Cover direct and distilled CLI exports and the changed-data guard.
+
+### M36 checkpoint — 2026-10-01, in progress
+
+Changed: marked M36 ◐ and added synthetic regressions in the existing tariff
+and CLI test modules. Preserved the M34/M35 working-tree changes. Extended the
+changed-input guard coverage to direct GLM exports as well as distilled GBMs.
+
+Verified: `uv run pytest -q tests/test_tariff.py tests/test_cli.py -k
+'rejects_2d_outcomes or ignores_holdout_outcomes'` on unchanged production source
+reported **6 failed, 2 passed, 64 deselected**. Four accepted 2D ndarray/DataFrame
+outcome cases failed to raise. Changing only holdout losses multiplied both
+direct and distilled workbook bases by about **2.56**, with identical fitted
+predictions. Both structural exports already passed, including workbook rate
+reproduction. Tests use non-positional index labels and a returned split seed
+different from the YAML seed to enforce stored positional partition reuse.
+
+Remaining: production fixes, affected contract documentation, focused/full
+checks, strict docs build, and handoff. Blockers: none. The sandbox wrapper
+intermittently fails before launching; an approved local read bypass succeeded.
+Next action: slice calibration inputs using `Run.train_indices`, validate outcome
+vectors with public sklearn checks, and document the distillation independence
+boundary. Do not start M37.
+
+### M36 checkpoint — 2026-10-01, implementation validated locally
+
+Changed: CLI calibration reuses `Run.train_indices` for both direct GLMs and
+distilled students; fitting and fidelity retain the existing training/test
+partitions. Tariff export validates finite numeric outcomes with public
+`check_array`, rejects non-vector shapes, and checks frame length with
+`check_consistent_length` before summing observed claims. Negative claims and
+the exposure floor remain guarded. Updated CLI help, API docstrings, operations
+guide, configuration reference, and the tutorial's repeated calibration prose.
+The distillation identity guard is explicitly not a row-independence guarantee;
+direct callers remain responsible for disjoint observations. No new API or
+dependency was added.
+
+Verified: `uv run pytest -q tests/test_tariff.py tests/test_cli.py` passed
+**72 tests**, including all eight new defect regressions and direct/distilled
+changed-input guards. Workbooks reproduce fitted rates and training totals;
+training factors and student predictions are invariant to holdout loss changes.
+Structural exports remain at the original scale. Ruff format passed for all
+four affected Python files. Initial Ruff and diff checks passed.
+
+Remaining: final `just check`, strict docs build, completion status and handoff.
+Blockers: none. No executable tutorial cells or configuration changed, so M36's
+acceptance does not require a real-data render. Next action: complete the full
+gate and documentation build, mark M36 ☑ only when green, then hand off M37.
+
+### M36 checkpoint — 2026-10-01, completed
+
+Changed: completed all three M36 checklist items. Direct and distilled CLI
+exports calibrate only on stored training positions. Public sklearn array and
+length checks reject invalid recalibration outcomes before total calculation;
+direct library callers retain explicit frame selection. Documented that distinct
+distillation frame objects do not prove disjoint observations. Updated affected
+help/API/guide/reference text and the tutorial's repeated prose only. Preserved
+the existing M34/M35 changes; no dependencies, new APIs, modules, compatibility
+shims, or generated artifacts were added.
+
+Verified:
+
+- The eight new synthetic defect cases first reported **6 failures and 2
+  passes** against unchanged production source. All now pass. They cover
+  one-/two-column ndarray and DataFrame outcomes, direct/distilled calibration,
+  unchanged structural exports, and holdout-loss invariance of workbook rates,
+  training factors, fitted student predictions, and fidelity metadata.
+- `uv run pytest -q tests/test_tariff.py tests/test_cli.py`: **72 passed**.
+  Existing library exports still balance their explicitly chosen frame. New
+  CLI checks apply saved workbook factors, reconcile training claim totals,
+  use non-positional labels and the returned run's actual split, and extend
+  changed-dataset rejection to direct GLMs as well as distilled students.
+- Final `just check`: Ruff/Ty green, **942 passed, 4 upstream array-API skips,
+  2 expected strict-target failures** in 189.38 seconds. The gate includes
+  pipeline, estimator, distillation, tuning, workflow, and tutorial smoke tests.
+- `just docs-build` passed strict mode. Ruff format check for the four affected
+  Python files and `git diff --check` passed. A comparison with HEAD confirmed
+  every tutorial fenced code/configuration block is unchanged; the prose-only
+  correction required no real-data render under this plan's acceptance rules.
+
+Remaining: M37–M39 and the separately scoped CI/CD/documentation/tutorial review.
+Blockers for M36: none. Direct callers still own fit/validation observation
+independence; M36 deliberately adds no row-identity API.
+Next action: in a new implementation session, reproduce M37's unstable tariff
+arithmetic and Excel formula-like label defects, mark only M37 ◐, and implement
+its stable arithmetic and literal workbook text requirements. Stop here with
+M36 ☑; do not begin M37.
+
+### M37 — stable tariff arithmetic and literal workbook labels
+
+- [x] Sum the linear predictor before exponentiating in tariff application;
+  fold categorical reference coefficients into the intercept before computing
+  the structural base. Reject non-finite/unrepresentable extracted factors,
+  workbook factors, and final rates instead of returning NaN/inf silently.
+  Preserve a legitimately zero base from zero observed-total recalibration.
+- [x] Use the installed openpyxl writer's literal string cell handling for
+  user-provided feature/level/reference/mapping text. Preserve typed numeric
+  and boolean labels; do not escape by changing the label's value.
+
+Acceptance: coefficient 1000 at x=0.001 produces e, cancelling large terms
+produce one, and accepted tariffs agree with GLM predictions. Unrepresentable
+workbook factors fail clearly; existing typed-level, reference, recalibration,
+and three-sheet round-trips pass. A category `=1+1` stays that exact string
+with Excel string cell type rather than becoming a formula. This takes ownership
+of M33's deferred tariff-overflow observation.
+
+### M37 checkpoint — 2026-10-01, in progress
+
+Changed: added synthetic regressions in the existing tariff test module and
+marked M37 ◐. Preserved the completed M34–M36 working-tree changes.
+
+Verified: the final new-case reproduction reported **29 failures and 1 pass**
+against unchanged production source. Arithmetic cases reproduce coefficient-exponentiation overflow,
+lost cancellation, invalid coefficients/factors/rates, and recalibration
+overflow/underflow. Literal-label cases cover direct and pipeline exports;
+zero-observed-total recalibration remains a preservation check. Corrected test
+setup to use varying GLM targets and the existing grouper's public parameters.
+
+Remaining: implement log-space arithmetic and literal string cells, update
+affected API/guide text, run focused tests, `just check`, strict docs build, and
+diff checks. Blockers: none; shell checks use the approved sandbox fallback
+after `bwrap` failed to initialize loopback networking.
+Next action: repair the shared tariff extraction/application/export boundaries
+and finish only M37. Do not start M38.
+
+### M37 checkpoint — 2026-10-01, implementation validated locally
+
+Changed: tariff application now sums the linear predictor before exponentiating;
+extraction folds categorical reference coefficients into the intercept first.
+Shared exponentiation checks reject overflow, underflow to zero, and non-finite
+results. Numeric coefficients stay in log space until application; export also
+checks representability of per-unit factors. Recalibration uses log arithmetic
+and preserves a zero base for zero observed claims. Workbook strings use the
+installed openpyxl writer's string cell type without changing values; typed
+numeric and boolean levels remain intact. Updated affected API and guide text.
+
+Verified: `uv run pytest -q tests/test_tariff.py tests/test_cli.py` passed
+**102 tests**, including all **30 new cases**, existing reference/typed-level
+and three-sheet round-trips, distillation, and training-only recalibration.
+Focused Ruff checks, formatting, and `git diff --check` passed.
+
+Remaining: full `just check` and strict `just docs-build`, then final review and
+completion handoff. Blockers: none. Tutorial executable sources are unchanged;
+no manual real-data render is required. Next action: finish the full gates and
+mark only M37 ☑ when green; do not start M38.
+
+### M37 completion checkpoint — 2026-10-01
+
+Changed: completed both M37 checklist items. Tariffs sum log contributions
+before exponentiating, including categorical reference folding and total
+recalibration. Invalid coefficients/base/factors and overflow or underflow to
+zero raise clearly; zero observed-total recalibration remains valid. Numeric
+coefficients can be applied when their per-unit workbook factors cannot be
+represented; those exports fail before opening the output file. Workbook text
+uses literal string cells without altered labels, preserving numeric/boolean
+types and the three-sheet schema. Updated API/guide contracts and PRD status.
+Preserved all pre-existing M34–M36 changes; no dependencies or generated
+artifacts were added.
+
+Verified:
+
+- The final **30 new synthetic cases** first reported **29 failures and 1
+  preservation pass** against unchanged production source. All now pass.
+  Coefficient 1000 at x=0.001 yields e; cancelling large numeric terms yield
+  one; cancelling intercept/reference coefficients agree with GLM predictions.
+  Checks cover non-finite parameters, unrepresentable base/categorical/per-unit
+  factors and rates, stable extreme-total recalibration, and its output guards.
+- `uv run pytest -q tests/test_tariff.py tests/test_cli.py`: **102 passed**.
+  Existing references, typed ordered levels, structural/recalibrated workbook
+  round-trips, pipeline mappings, distillation, and training-only exports pass.
+  Direct/pipeline workbook inspection verifies `=1+1`, formula-like feature and
+  mapping text, and `#N/A` remain literal strings; numbers and booleans retain
+  their cell types. Zero observed claims still yield zero applied rates, with
+  unknown-category validation preserved.
+- Final `just check` exited successfully: Ruff/Ty green, **972 passed,
+  4 upstream array-API skips, 2 expected strict-target failures**, in 177.37
+  seconds. `just docs-build` passed strict mode with no issues. Focused Ruff
+  format checks and `git diff --check` passed.
+- Executable tutorial sources are unchanged, so no real-data render was
+  required. Working-tree status contains no new generated files.
+
+Remaining: M38–M39 and the separate CI/CD/documentation/tutorial review.
+Blockers for M37: none. Next action: in a new implementation session, reproduce
+M38's plot-validation, double-lift grouping, and constant-quantile failures;
+mark only M38 ◐ and implement its acceptance checks. Stop here with M37 ☑;
+do not begin M38.
+
+### M38 — complete and unambiguous diagnostics
+
+- [x] Extend existing `_as_arrays` with public finite-array and length checks
+  instead of adding a second validation layer; retain strict vector and
+  actuarial sign rules. Reuse it for actual-versus-predicted plots and remove
+  the separate flattening helper. Require positive exposure for rate division.
+- [x] Validate double-lift generated column names against each other and
+  reserved outputs before aggregation; reject degenerate segment exposure using
+  the existing calibration/one-way threshold. Ranking curves retain zero weights.
+- [x] Give constant unweighted predictions one real quantile group while
+  preserving supplied missing group labels as a distinct segment. Reuse
+  `make_strata` for diagnostic quantiles; do not change weighted tie semantics.
+
+Acceptance: `label_a="observed"` cannot overwrite observed rates and equal
+model labels raise; zero-exposure double-lift groups fail clearly. Invalid
+plotting values raise even with explicit axis limits, and valid charts retain
+all input exposure/claims. Constant prediction tables preserve totals with an
+ordinary group label. The audit replaced observed 15 by predicted 1.5 through a
+label collision and plotted exposure 2 of 3 with a NaN prediction. This takes
+ownership of M33's deferred constant-qcut observation.
+
+### M38 checkpoint — 2026-10-01, in progress
+
+Changed: added regressions in the existing metrics, plots, and validation test
+modules; marked only M38 ◐. Preserved the pre-existing M34–M37 changes.
+
+Verified: the 44 new synthetic cases against unchanged production code reported
+**34 failed, 10 passed, 218 deselected**. Reproduced colliding double-lift labels,
+zero/sub-day segment exposure, unweighted constant predictions labelled missing,
+accepted non-finite/negative plotting inputs, malformed vectors, and flattened
+DataFrames. Positive density-total and zero-weight preservation cases passed.
+Context7 confirmed public sklearn array/length checks and Matplotlib hexbin
+exposure aggregation. No network or real-data calls in tests.
+
+Remaining: production fixes, affected contract documentation, focused tests,
+`just check`, strict docs build, diff checks, and final handoff. Blockers: none;
+the sandbox wrapper intermittently fails before launch, so checks use approved
+escalation. Next action: reuse `_as_arrays` for plotting, guard generated
+double-lift columns and segment totals, and fix constant strata in `make_strata`.
+Do not start M39.
+
+### M38 checkpoint — 2026-10-01, implementation validated locally
+
+Changed: `_as_arrays` uses public `check_array` and `check_consistent_length`
+with strict vectors and existing sign guards. Actual-versus-predicted plots
+reuse it, require positive exposure, and no longer flatten DataFrames. Double
+lift checks generated names before aggregation and rejects segment exposure
+below the existing one-day threshold. Calibration reuses `make_strata`, whose
+unweighted constant observations receive group 0 while missing rows keep -1;
+weighted ties remain unchanged. Updated docstrings and the diagnostics guide.
+
+Verified: `uv run pytest -q tests/test_metrics.py tests/test_plots.py
+tests/test_validation.py --tb=short`: **262 passed** in 16.95 seconds. Shared
+finite/length checks emit sklearn's native errors, so existing tests now accept
+those messages. Corrected the sub-day fixture to put its low-weight observation
+in a distinct weighted quantile; a low-weight row absorbed into a valid segment
+must remain legal. Focused Ruff lint and format checks passed before this small
+fixture correction. Density tests reconcile all claims and exposure in both
+panels, including zero claims and pandas Series; supplied missing groups and
+weighted quantile behavior stay green.
+
+Remaining: full `just check`, strict docs build, final format/diff checks, and
+completion handoff. No dependencies, tutorial source changes, or generated
+artifacts added. Blockers: none. Next action: finish those gates, mark only M38
+☑ when green, and set M39 as next for a separate implementation session.
+
+### M38 completion checkpoint — 2026-10-01
+
+Changed: completed all three M38 checklist items. Metrics and
+actual-versus-predicted plots share public array/length validation with strict
+vectors and existing sign rules; plotting requires positive exposure before
+rate division. Removed the flattening helper. Double-lift model columns cannot
+collide with each other or reserved outputs, and segment exposure uses the
+same one-day threshold as calibration/one-way tables. Unweighted constant
+predictions have group 0 through `make_strata`; supplied missing groups and
+weighted ties retain their meaning. Updated API docstrings, the diagnostics
+guide, and PRD status. Preserved all pre-existing M34–M37 work.
+
+Verified:
+
+- The initial 44 new synthetic cases reproduced **34 failures and 10
+  preservation passes** against unchanged production source. All final cases
+  pass, covering NaN/inf with explicit axis limits, negative claims/exposure,
+  zero exposure, scalar/column/DataFrame and mismatched inputs, generated-column
+  collisions, zero/sub-day segments, and constant quantiles with missing rows.
+- `uv run pytest -q tests/test_metrics.py tests/test_plots.py
+  tests/test_validation.py --tb=short`: **262 passed** in 16.95 seconds.
+  Density totals reconcile exposure and claims in both panels; pandas Series,
+  exact-zero claims/predictions, supplied missing segments, weighted boundaries,
+  zero-weight ranking curves, and valid double-lift segments remain supported.
+- Final `just check` exited successfully: Ruff/Ty green, **1016 passed,
+  4 upstream array-API skips, 2 expected strict-target failures**, in 187.86
+  seconds. `just docs-build` passed strict mode with no issues. Ruff format
+  checks for all six changed source/test files and `git diff --check` passed.
+- No executable tutorial sources changed in M38, so no real-data render was
+  required; the full gate includes the tutorial smoke tests. No dependencies
+  or generated files were added.
+
+Remaining: M39 and the separate CI/CD/documentation/tutorial review. Blockers
+for M38: none. Next action: in a new implementation session, reproduce M39's
+categorical-fingerprint, configuration-snapshot, and comparison-context defects;
+mark only M39 ◐, implement its checklist and logger cleanup, run its acceptance
+checks, then stop after a green handoff. Stop here with M38 ☑; do not begin M39.
+
+### M39 — reproducible results and comparable evaluation
+
+- [x] Extend `_data_fingerprint` with categorical vocabulary (including unused
+  levels and its dtype), declared order, and the ordered flag, using existing
+  pandas hashing. Changed fingerprints are intentional; old runs need fresh
+  evaluation rather than a compatibility path.
+- [x] Deep-copy the configuration and recorded parameter containers when
+  constructing a run so caller mutations cannot rewrite its history. Do not
+  add a deep-freeze framework or promise that public dicts/DataFrames are immutable.
+- [x] Warn once when a comparison mixes dataset fingerprints, target/exposure
+  definitions, or holdout membership. Compare positions as sets, since row order
+  does not change the evaluated sample. Keep the table schema and permit
+  intentionally descriptive comparisons; make the warning name the affected runs.
+- [x] Simplify logger parameter conversion with a comprehension and finite
+  metric filtering with `math.isfinite`; preserve existing logged values.
+
+Acceptance: category-order/vocabulary/dtype/ordered-flag changes alter the
+fingerprint even when observed cell values match; an unchanged frame matches.
+Mutating the caller's config and nested params leaves the recorded run intact.
+Matched comparisons are warning-free; unmatched comparisons warn without losing
+rows; permutation of the same holdout membership is accepted. Logger tests stay
+green. The audit changed grouping membership without changing the fingerprint
+and rewrote a historical run's family by mutating its source configuration.
+
+### M39 checkpoint — 2026-10-01, in progress
+
+Changed: added synthetic regressions in the existing workflow/reporting modules,
+extended logger coverage, and marked only M39 ◐. Preserved M34–M38 changes.
+
+Verified: targeted regressions on unchanged production source: **16 failed,
+3 passed, 89 deselected**. Categorical order, unused vocabulary, category dtype,
+and ordered flag leave the fingerprint unchanged; caller config and nested
+dict/list parameters rewrite recorded history; mixed comparison contexts emit
+no warning. Holdout permutations and logger preservation cases pass.
+
+Remaining: shared-boundary fixes, affected API/guide text, focused tests,
+`just check`, strict docs build, format/diff checks, and completion handoff.
+Blockers: none. The sandbox wrapper intermittently fails before launch; local
+reads/checks use approved escalation. Next action: implement M39 without adding
+dependencies, a deep-freeze framework, or fingerprint compatibility handling.
+
+### M39 checkpoint — 2026-10-01, implementation validated locally
+
+Changed: fingerprints hash categorical vocabularies plus column position,
+category dtype/order, unused levels, and the ordered flag. Shared evaluation
+deep-copies config and recorded nested parameters. Comparison tables warn once
+with the baseline and mismatched run names for different fingerprint,
+target/exposure definitions, or holdout membership; generators, rows, columns,
+and metrics are preserved, and holdout permutations do not warn. Dashboards
+and CLI reuse that boundary. Logger conversion uses a comprehension and finite
+filtering uses `math.isfinite`. Corrected misleading result immutability text
+and updated affected guide/API/configuration/PRD contracts.
+
+Verified: `uv run pytest -q tests/test_workflow.py tests/test_reporting.py
+tests/test_mlops.py tests/test_tune.py tests/test_cli.py --tb=short`:
+**158 passed** in 63.28 seconds. Ruff and production Ty checks passed;
+`git diff --check` passed. `just docs-build` passed strict mode with no issues.
+
+Remaining: final `just check`, format/diff review, and completion handoff.
+Blockers: none. No tutorial sources, dependencies, or generated files added.
+Next action: finish the full gate, mark M39 ☑ only when green, and stop;
+the separate CI/CD/documentation/tutorial review remains outside this milestone.
+
+### M39 completion checkpoint — 2026-10-01
+
+Changed: completed all four M39 checklist items. Dataset fingerprints include
+categorical vocabulary, unused levels, category dtype, declared order, and the
+ordered flag. Workflow and tuning share configuration/parameter snapshotting.
+Tables, dashboards, and CLI comparisons share one warning for incompatible
+evaluation contexts, retaining every metric row and accepting holdout
+permutations. Logger cleanup preserves parameter strings and finite metrics.
+Updated affected contract docs and PRD status; preserved all M34–M38 work.
+No dependencies, modules, compatibility paths, or generated files were added.
+
+Verified:
+
+- The final targeted reproduction first produced **16 failures and 3
+  preservation passes** on unchanged production source. All cases now pass,
+  covering category order/vocabulary/dtype/ordered flag, unchanged frames,
+  config and nested dict/list parameter mutation, mixed fingerprint/target/
+  exposure/holdout contexts, one warning naming affected runs, retained table
+  schema and metrics, generator inputs, holdout permutations, and dashboard
+  warnings. Logger coverage preserves None/container strings, zero/negative
+  finite metrics, and filtering of NaN and both infinities.
+- Focused workflow/reporting/MLflow/tuning/CLI checks: **158 passed** in
+  63.28 seconds, including fitted estimator return, tuning's outer partition,
+  model cards, optional integrations, and existing CLI smoke tests.
+- Final `just check`: Ruff and production Ty green; **1034 passed,
+  4 upstream array-API skips, 2 expected strict-target failures**, in 194.62
+  seconds. `just docs-build` passed strict mode with no issues. Ruff format
+  checks for all six M39 source/test files and `git diff --check` passed.
+- No tutorial source changed in M39, so no real-data render was required;
+  the full gate includes the synthetic tutorial integration tests.
+
+Remaining: no M39 work. Public dictionaries/DataFrames remain mutable; old
+category-bearing runs need fresh evaluation rather than fingerprint migration.
+The separate CI/CD/documentation/tutorial review and M15 release review remain.
+Blockers for M39: none. Next action: start that separate review when requested,
+then assess M15 readiness; publication requires its own authorization.
+Stop this session with M39 ☑; do not begin the separate review or M15.
+
+### Planning checkpoint — 2026-10-01
+
+Changed: recorded M34–M39 as pending, replaced stale Current focus instructions,
+and mirrored the plan in PRD/AGENTS. M33's completed evidence remains historical;
+its mapping, overflow, constant-quantile, and distillation observations now have
+explicit owners. The small native cleanups stay within the related milestones.
+Verified: source audit baseline `just check` (839 passed, 4 upstream skips);
+fresh native-validation feasibility probe; official sklearn API documentation
+and installed implementation inspected. After this Markdown update, fresh
+`just check` passed Ruff, Ty, and **839 tests with 4 upstream skips**;
+milestone consistency and the local plan-link target passed; `git diff --check`
+passed. Only AGENTS.md, PRD.md, and PROGRESS.md changed.
+Remaining: all six implementation milestones and the separate CI/CD,
+documentation, and tutorial review. Nothing has been implemented by this update.
+Blockers: none.
+Next action: in the next implementation session, reproduce M34 and mark only
+M34 ◐ before editing production code.
+
+### M34 checkpoint — 2026-10-01, in progress
+
+Changed: added synthetic regressions in `tests/test_models.py`; marked M34 ◐.
+Verified: before production edits, `uv run pytest tests/test_models.py -k m34
+-q --tb=short` produced **30 failures, 2 passes**. Predictor changes were
+accepted, invalid targets reached backend construction, GBM accepted column
+weights, and FSM scoring accepted invalid exposure and could not use explicit
+weights without exposure. Native categorical/NaN-feature control passed.
+Public sklearn validation documentation and the installed glum public import
+were checked. sklearn's column-vector target conformance check conflicts with
+the required strict-vector contract; record only that check as an expected
+failure for each wrapper, with a direct regression enforcing rejection.
+Remaining: implementation, focused/full checks, docs build, and isolated
+sklearn-minimum import/CLI smoke. Blockers: none.
+Next action: fix the shared estimator boundaries, preserving full public fit
+metadata and optional special columns.
+
+### M34 checkpoint — 2026-10-01, implementation validated locally
+
+Changed: public `validate_data` records full fit metadata and checks ordinary
+schemas; one post-pop sequence guard covers optional special columns. Shared
+target and weight boundaries now reject non-finite values, column vectors, and
+mismatched lengths. FSM scoring uses `_pop_weight`, preserving explicit-weight
+overrides and exposure-free predictions. Switched to the public glum import;
+raised the sklearn minimum to 1.6 in package/lock metadata and documented the
+input contract. Existing audit-plan edits were preserved.
+Verified: `uv run pytest tests/test_models.py -x -q --tb=short` passed **278
+tests, 2 upstream skips, 2 expected column-vector contract failures**. Added
+GBM-component FSM coverage and scoring-target regressions afterward; their
+final checks are running. `uv sync --all-extras --all-groups --locked` passed;
+strict `just docs-build` passed. Full `just check` has passed Ruff and Ty and
+is running pytest. `git diff --check` passed. The isolated runtime installation
+with `scikit-learn==1.6.0` succeeded.
+Remaining: final full-suite results, isolated minimum-version import/CLI and
+estimator results, final diff review, and completion handoff. Blockers: none.
+Next action: finish acceptance checks, then mark only M34 complete.
+
+Minimum-version investigation: the installed wheel imported and the isolated
+CLI `--help` passed with sklearn 1.6.0. A broader estimator run initially had
+36 failures / 247 passes / 2 expected failures: the unconstrained installer
+selected pandas 3.0.6, which changes default string dtype and NumPy writeability.
+This is independent of sklearn and outside M34; leave pandas 3 support for a
+separate decision. Rerun with the repository's locked pandas 2.3.3 to isolate
+the declared sklearn minimum. No pandas compatibility code or dependency cap
+has been added.
+
+Verified after isolating pandas: the installed-wheel estimator suite on
+sklearn 1.6.0 / pandas 2.3.3 passed **283 tests, 2 expected column-vector
+contract failures**. The import and CLI smoke passed, including the public
+glum distribution import. M34 checklist items are implemented and their
+focused acceptance checks pass; retain ◐ until the final full suite is green.
+
+### M34 completion checkpoint — 2026-10-01
+
+Changed: completed all four M34 checklist items. Predictor schemas are checked
+in both wrappers and FSM, including GLM/GBM components and pipelines. Full fit
+metadata remains available to the CLI, and prediction accepts omitted special
+columns. Targets and weights reject invalid shapes, lengths, and values before
+backend use. FSM scoring validates exposure and supports explicit overrides
+without exposure. Public glum import, sklearn >=1.6 package/lock declarations,
+and API/installation/engineering contract text are updated.
+
+Verified:
+
+- New regressions first failed **30 cases** on the original production source;
+  the final suite includes **37 M34 cases**, covering ordinary/post-pop schemas,
+  optional specials, native categories and NaN features, target/weight shape
+  and length, non-finite targets, invalid scoring weights, exposure floors,
+  explicit overrides, both component backends, and pipelines.
+- `uv sync --all-extras --all-groups --locked` and final `just check` passed:
+  Ruff/Ty green, **874 passed, 4 upstream array-API skips, 2 expected failures**.
+  The two expected failures are sklearn's column-vector flattening check;
+  strict 1D target rejection is intentional, documented, and directly tested.
+- `just docs-build` passed strict mode. `uv run ruff format --check
+  src/azoic/models.py tests/test_models.py`, `uv lock --check`,
+  `uv run azoic --help`, and `git diff --check` passed.
+- A fresh installed wheel in `/tmp/azoic-m34-sklearn16` imported Azoic and the
+  public glum distribution, and its CLI `--help` passed with sklearn **1.6.0**.
+  Its complete estimator test module passed **283 tests, 2 expected failures**
+  with the repository's locked pandas **2.3.3**.
+- No tutorial sources changed; `just demo` was not required. No dependencies,
+  generated artifacts, subpackages, or compatibility shims were added.
+
+Remaining: M35–M39, separate CI/CD/documentation/tutorial review, and the
+independently observed pandas 3 string-dtype/writeability compatibility issue.
+The unconstrained minimum-environment failure and controlled rerun are recorded
+above; M34 does not claim pandas 3 compatibility. Blockers for M34: none.
+Next action: in a new implementation session, reproduce M35's configuration,
+preprocessing, mapping, boolean-profile, and URI failures; mark only M35 ◐,
+then implement and validate its checklist. Stop this session with M34 ☑.
 
 ## Fail-closed hardening plan — 2026-09-14
 
@@ -1161,8 +2191,9 @@ its distribution builds and isolated CLI checks before publication. Stop here.
   stability, remove obsolete MLflow roadmap language, and validate wheel and
   source distributions before a least-privilege publish job.
 - ☐ **M15 — first public release** — publish and verify `azoic==0.4.1` through
-  GitHub Releases and PyPI trusted publishing, after M16–M30 are green.
-  Follow **Current focus**; this tutorial plan does not authorize publication.
+  GitHub Releases and PyPI trusted publishing, after M16–M39 are green and
+  the separate review is complete. Follow **Current focus**; recording this
+  plan does not authorize publication.
 - ☑ **M16 — preserve the experiment holdout** — immutable fit/test positions
   reused by tutorial diagnostics, training calibration, and CLI distillation.
 - ☑ **M17 — reject inconsistent frequency-severity outcomes** — issue 2.
@@ -1173,6 +2204,14 @@ its distribution builds and isolated CLI checks before publication. Stop here.
 
 - ☑ **M22 — show what fitted preprocessing does**.
 - ☑ **M23 — evaluate the exported tariff against claims**.
+
+- ☑ **M34 — estimator schema, targets, and scoring weights**.
+- ☑ **M35 — configuration, preprocessing, and input inspection**.
+- ☑ **M36 — training-only tariff calibration**.
+- ☑ **M37 — stable tariff arithmetic and literal workbook labels**.
+- ☑ **M38 — complete and unambiguous diagnostics**.
+- ☑ **M39 — reproducible results and comparable evaluation**.
+  Scope and acceptance checks are in the source audit remediation plan above.
 
 ## Earlier remediation status (historical)
 

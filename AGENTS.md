@@ -21,8 +21,11 @@ policy admin, Guidewire integration.
 On a new session or after context compaction, read `PROGRESS.md`'s **Current
 focus**, the active milestone, and its latest checkpoint before editing. Resume
 an in-progress milestone first; otherwise use the explicit delivery order, not
-the lowest milestone number or an older handoff. The tutorial improvement plan
-is M25–M30; its scope is mirrored in `PRD.md` section 6.
+the lowest milestone number or an older handoff. The prerelease fixes
+plan is M40–M42, follows completed M34–M39, and supersedes earlier M15 release
+handoffs; Current focus is the authority for its active/next milestone. Its
+scope, and the completed M25–M30 tutorial plan, are mirrored in `PRD.md` section 6. CI/CD and
+documentation/tutorial review are separate.
 
 Update the milestone checklist and checkpoint after each meaningful chunk and
 before handing off: changes, checks actually run and their results, remaining
@@ -84,6 +87,12 @@ examples/_quarto.yml  # main path and optional recipes; only sources committed, 
 
 ## Code style
 
+- **Validation** — sklearn >=1.6; prefer public `sklearn.utils.validation.validate_data`,
+  `check_array`, and `check_consistent_length`; reuse `_pop_weight` / `_as_arrays`.
+  Schema-only DataFrame checks (`skip_check_array=True`) preserve categoricals
+  but do not validate targets/weights/values. Keep strict-vector and actuarial
+  domain guards, plus the minimal schema guard for optional special columns.
+  Do not import private sklearn validators or create a validation framework.
 - **sklearn API** — `fit`/`transform`/`predict`, fitted attrs end in `_`, no
   logic in `__init__`, params explicit **never** `**kwargs` (LightGBM kwargs
   break `get_params`).
@@ -131,8 +140,8 @@ examples/_quarto.yml  # main path and optional recipes; only sources committed, 
 10. Tune on an inner split of outer training data; evaluate outer test once.
 11. Tariff application rejects unseen categories and non-finite numerics.
 12. Exposure is at least one day (`MIN_EXPOSURE = 1/366`, `EXPOSURE_FLOOR`
-    with 0.1% tolerance): enforced at the portfolio boundary, FSM fit, popped
-    exposure columns, calibration/one-way segment sums, and tariff
+    with 0.1% tolerance): enforced at the portfolio boundary, preprocessing fit,
+    FSM fit, popped exposure columns, calibration/one-way segment sums, and tariff
     recalibration. Explicit `sample_weight` is exempt (severity routes claim
     counts). Zero-weight rows stay legal for ranking curves only.
 
@@ -140,8 +149,10 @@ examples/_quarto.yml  # main path and optional recipes; only sources committed, 
 
 - `pytest`, seeded synthetic portfolio fixture in `tests/conftest.py`
   (`make_synthetic_portfolio(seed=42)`).
-- Every estimator/transformer passes
-  `sklearn.utils.estimator_checks.parametrize_with_checks`.
+- Every estimator/transformer runs
+  `sklearn.utils.estimator_checks.parametrize_with_checks`. The wrappers
+  explicitly expect `check_supervised_y_2d` to fail because Azoic rejects
+  column-vector targets; a direct regression enforces the strict 1D contract.
 - No network, no S3, no real data in automated tests. Real-data fetching is
    permitted only during manual rendering of the `examples/` tutorial book.
 - New module -> new `tests/test_<module>.py` with at least one runnable
@@ -158,6 +169,17 @@ examples/_quarto.yml  # main path and optional recipes; only sources committed, 
   rendering and isolated chapter rendering are separate manual checks.
 - Run `just check` (or `uv run ruff check . && uv run ty check && uv run pytest`) before
   finishing any task.
+
+## CI workflows
+
+- `.github/workflows/ci.yml` validates PRs and main pushes on Python 3.12 with
+  read-only contents permissions: locked all-extras/groups sync, Ruff, Ty,
+  pytest, strict docs, distributions, and installed wheel/sdist model/CLI smokes.
+- `.github/workflows/docs.yml` renders the real-data tutorial and deploys Pages
+  on main pushes with locked sync; the fixed `pages` concurrency group cancels
+  superseded runs. Real-data rendering stays outside PR validation.
+- Release publication remains in `.github/workflows/release.yml`; private
+  settings, tagging, and publication require separate authorization.
 
 ## PR / commits
 
