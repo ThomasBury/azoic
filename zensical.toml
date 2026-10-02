@@ -27,7 +27,6 @@ nav = [
         {"Workflow and operations" = "reference/workflow-operations.md"},
         {"Glossary" = "reference/glossary.md"},
     ]},
-    {"Migration to 0.4" = "migration.md"},
 ]
 
 [project.markdown_extensions]

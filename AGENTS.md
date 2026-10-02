@@ -117,6 +117,8 @@ examples/_quarto.yml  # main path and optional recipes; only sources committed, 
 - **Documentation** — keep Zensical's default theme; use cards only on section
   hubs; JavaScript is limited to the official MathJax helper/runtime; never
   commit generated site, tutorial, chart, or fetched-data artifacts.
+  Before the first public release, document current behavior without a
+  version-migration guide.
 - **Format**: ruff defaults, double quotes, line-length 100, py312 target.
 
 ## Actuarial rules (do not violate; full context in PRD.md sections 4-5)

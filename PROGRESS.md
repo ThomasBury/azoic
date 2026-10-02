@@ -23,6 +23,26 @@ Legend: ☐ pending · ◐ in progress · ☑ done
 This section and the delivery order below supersede historical statements that
 M15 is next. Completed milestones and their evidence remain historical records.
 
+## Requested prerelease documentation cleanup — 2026-10-02
+
+Checkpoint — source cleanup applied: removed `docs/migration.md` and its
+Zensical navigation entry because neither earlier versions nor the current
+version have been publicly released. No other live page links to it. AGENTS/PRD
+now describe the prerelease documentation scope; renamed the completed v0.4
+tracker entry to distinguish release tooling from pending public publication.
+Historical migration-work checkpoints remain. No milestone started.
+
+Checks pending: strict docs build, rendered navigation/local references,
+`just check`, and diff review. Next: finish checks, record results, then commit
+and push this documentation unit using the authorized delivery workflow.
+
+Checkpoint — validation complete: strict `just docs-build` passed; all 15
+navigation targets and 16 rendered HTML pages have no migration links or page.
+`just check` exited **0**: Ruff/Ty green, **1055 passed, 4 skipped, 2 expected
+failures**, **240.27 s** (`/tmp/azoic-migration-removal-check.log`). Diff review
+and `git diff --check` passed. Remaining work: Git delivery only; M15 stays
+pending. Runtime code, versions, dependencies, and tutorial sources unchanged.
+
 ## Requested local artifact cleanup — 2026-10-02
 
 Checkpoint — cleanup applied: removed the ignored obsolete single-page tutorial
@@ -2452,7 +2472,9 @@ its distribution builds and isolated CLI checks before publication. Stop here.
 - ☑ **v0.3 — exportable GBM distillation** — positive Tweedie/Poisson/Gamma
   GBMs distil to log-link GLM students on the existing train/test boundary;
   held-out fidelity and provenance travel in the three-sheet tariff workbook.
-- ☑ **v0.4 — Azoic release** — renamed distribution, imports, and CLI; Zensical site and GitHub Pages/PyPI OIDC workflows.
+- ☑ **v0.4 — Azoic rename and release tooling** — renamed distribution, imports,
+  and CLI; Zensical site and GitHub Pages/PyPI OIDC workflows. Public publication
+  remains pending under M15.
 - ☑ **Documentation onboarding** — complete install and network-free first-model
   path; five focused guides; comprehensive configuration/CLI reference;
   top-level freMTPL2 tutorial; official MathJax integration; runnable checkout

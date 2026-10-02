@@ -184,6 +184,8 @@ Each is independently shippable. Done-when = acceptance check.
   and first-model path, five focused guides, comprehensive configuration/CLI
   reference, prominent freMTPL2 bridge, and MathJax 3 using Zensical's official
   helper. The default theme and existing dependencies remain unchanged.
+  No Azoic version has been publicly released; the site documents current
+  behavior without a version-migration page.
   *Done when the documented first model and checkout YAML run,
   `just docs-build` is strict-green, generated HTML contains navigation, tables,
   highlighted code, Arithmatex wrappers, and both MathJax scripts, and project
