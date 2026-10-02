@@ -58,6 +58,12 @@ def test_make_strata_low_cardinality_collapses_bins() -> None:
     assert all(0 <= c < 10 for c in labels)
 
 
+@pytest.mark.parametrize("values", [[7, 7], [7, np.nan, 7], [np.nan, np.nan]])
+def test_unweighted_constant_strata_distinguishes_missing(values) -> None:
+    expected = np.where(np.isnan(values), -1, 0)
+    np.testing.assert_array_equal(make_strata(values), expected)
+
+
 def test_make_strata_zero_total_weight_returns_zeros() -> None:
     y = np.linspace(0, 1, 100)
     w = np.zeros(100)

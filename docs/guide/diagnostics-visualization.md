@@ -53,6 +53,13 @@ distinct values than bins; at or below that count the actual levels are kept.
 label per row in place of the default prediction deciles; NaN labels form their
 own segment.
 
+Constant predictions form one ordinary calibration group, including without
+exposure weights. Missing labels supplied through `groups=` still form a
+separate segment. Calibration, one-way, and double-lift segments must each sum
+to at least one day (`1/366`) of exposure; zero weights remain valid for ranking
+curves. Double-lift model labels must produce distinct output columns and must
+not overwrite reserved columns: for example, `label_a="observed"` raises.
+
 Numeric missing values remain a separate `Missing` segment in `one_way_table`,
 including with `n_bins=None`, low-cardinality features, and entirely missing
 features. Its exposure, observed claims, and predicted claims contribute to the
@@ -185,6 +192,9 @@ equivalently the midrank formula; no pairwise differences are computed.
 For `plot_actual_vs_predicted`, `y_true` remains aggregate claim amount.
 The function divides it by exposure before drawing both observed values and
 residuals, so both axes and the residual calculation use pure-premium rates.
+Inputs must be finite, one-dimensional vectors of equal length, with
+non-negative claim amounts and strictly positive exposure. Invalid inputs
+raise even when `ax_lim` is supplied.
 
 Every plot accepts `path=` for direct file output and returns its primary
 matplotlib axes. Standalone one-way and double-lift charts add a lower exposure
@@ -240,7 +250,9 @@ it enough horizontal space.
     measure level. A model needs both kinds of evidence.
 
 - A Lorenz curve that crosses another does not establish dominance.
-- Lift should rise with risk while observed and predicted levels stay close.
+- Lift plots absolute observed and predicted pure-premium rates by predicted-risk
+  segment, without dividing by the portfolio average. Observed rates should rise
+  with predicted risk while observed and predicted levels stay close.
 - Calibration points far from the diagonal indicate segment bias; larger
   exposure points deserve more weight.
 - One-way disagreement reveals where bias sits, not automatically why.

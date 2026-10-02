@@ -383,6 +383,65 @@ def test_plot_actual_vs_predicted_with_ax_lim() -> None:
     assert ax.get_ylim() == (0.0, 5.0)
 
 
+@pytest.mark.parametrize("slot", ["y_true", "y_pred", "sample_weight"])
+@pytest.mark.parametrize("bad", [np.nan, np.inf, -np.inf])
+def test_actual_vs_predicted_rejects_nonfinite_with_limits(slot, bad) -> None:
+    inputs = {
+        "y_true": np.array([10.0, 20.0, 30.0]),
+        "y_pred": np.array([1.0, 2.0, 3.0]),
+        "sample_weight": np.ones(3),
+    }
+    inputs[slot][1] = bad
+    with pytest.raises(ValueError, match="finite|NaN|infinity"):
+        plot_actual_vs_predicted(**inputs, ax_lim=(0, 40))
+
+
+@pytest.mark.parametrize("slot", ["y_true", "y_pred", "sample_weight"])
+@pytest.mark.parametrize("malformed", ["short", "column", "frame", "scalar"])
+def test_actual_vs_predicted_rejects_malformed_vectors(slot, malformed) -> None:
+    inputs = {name: [1.0, 2.0, 3.0] for name in ("y_true", "y_pred", "sample_weight")}
+    inputs[slot] = {
+        "short": [1.0, 2.0],
+        "column": np.ones((3, 1)),
+        "frame": pd.DataFrame({"value": [1.0, 2.0, 3.0]}),
+        "scalar": 1.0,
+    }[malformed]
+    with pytest.raises(ValueError, match="same length|inconsistent numbers|one-dimensional"):
+        plot_actual_vs_predicted(**inputs, ax_lim=(0, 4))
+
+
+@pytest.mark.parametrize("exposure", [[0, 1, 1], [-1, 1, 1]])
+def test_actual_vs_predicted_requires_positive_exposure(exposure) -> None:
+    with pytest.raises(ValueError, match="positive|non-negative"):
+        plot_actual_vs_predicted([1, 2, 3], [1, 2, 3], exposure, ax_lim=(0, 4))
+
+
+def test_actual_vs_predicted_rejects_negative_claims() -> None:
+    with pytest.raises(ValueError, match="non-negative"):
+        plot_actual_vs_predicted([1, -2, 3], [1, 2, 3], ax_lim=(0, 4))
+
+
+@pytest.mark.parametrize("weighted", [False, True])
+def test_actual_vs_predicted_preserves_density_totals(monkeypatch, weighted) -> None:
+    claims = np.array([0.0, 2.0, 30.0])
+    prediction = pd.Series([1.0, 2.0, 3.0])
+    exposure = pd.Series([0.1, 1.0, 2.0]) if weighted else None
+    weights = exposure.to_numpy() if weighted else np.ones(3)
+    calls = []
+    original_hexbin = plt.Axes.hexbin
+
+    def capture_hexbin(self, *args, **kwargs):
+        calls.append(kwargs)
+        return original_hexbin(self, *args, **kwargs)
+
+    monkeypatch.setattr(plt.Axes, "hexbin", capture_hexbin)
+    ax = plot_actual_vs_predicted(pd.Series(claims), prediction, exposure, bins=None)
+    np.testing.assert_allclose(calls[0]["x"] * weights, claims)
+    np.testing.assert_allclose(calls[1]["y"], claims / weights - prediction)
+    for panel in [ax, ax.get_figure().axes[1]]:
+        assert panel.collections[0].get_array().sum() == pytest.approx(weights.sum())
+
+
 def test_all_charts_round_trip_headless(tmp_path) -> None:
     y_true, y_pred, w = _portfolio_and_predictions()
     tbl = calibration_table(y_true, y_pred, w, n_bins=8)

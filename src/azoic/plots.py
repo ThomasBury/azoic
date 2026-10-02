@@ -24,7 +24,7 @@ import pandas as pd
 from cycler import cycler
 from matplotlib.figure import Figure, SubFigure
 
-from azoic.metrics import lorenz
+from azoic.metrics import _as_arrays, lorenz
 
 __all__ = [
     "AZOIC_STYLE",
@@ -500,13 +500,6 @@ def plot_double_lift(
         return ax
 
 
-def _as_float_array(values) -> np.ndarray:
-    return np.asarray(
-        values.to_numpy().ravel() if hasattr(values, "to_numpy") else values,
-        dtype=float,
-    )
-
-
 def plot_actual_vs_predicted(
     y_true,
     y_pred,
@@ -532,6 +525,8 @@ def plot_actual_vs_predicted(
     rate with a zero reference. Density colouring is exposure-weighted
     (Σ exposure per hex) when supplied, otherwise log counts; the two panels
     get independent colorbars. ``cividis`` by default (CVD-safe).
+    Inputs must be finite, one-dimensional, and equal-length; claims must be
+    non-negative and exposure strictly positive for rate division.
 
     Interpret credible exposure-weighted grouped mean residuals, not the
     densest band in zero-heavy outcomes. A constant non-zero mean residual
@@ -545,15 +540,13 @@ def plot_actual_vs_predicted(
     Callers can adjust the axes after plotting. ``bins="log"`` controls density
     colour independently of the residual axis scale.
     """
+    claim_amount, y_pred, w = _as_arrays(y_true, y_pred, sample_weight)
+    if np.any(w <= 0):
+        raise ValueError("sample_weight must contain only positive exposures for rate division")
+    observed_rate = claim_amount / w
+    sample_weight = w if sample_weight is not None else None
     with azoic_style():
         cmap = "cividis" if cmap is None else cmap
-        claim_amount = _as_float_array(y_true)
-        y_pred = _as_float_array(y_pred)
-        if sample_weight is not None:
-            sample_weight = _as_float_array(sample_weight)
-            observed_rate = claim_amount / sample_weight
-        else:
-            observed_rate = claim_amount
         if ax is None:
             fig, axd = plt.subplot_mosaic([["scatter", "residual"]], figsize=(11, 4.5))
             ax_scatter, ax_resid = axd["scatter"], axd["residual"]

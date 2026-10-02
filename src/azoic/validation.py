@@ -55,10 +55,15 @@ def make_strata(y, sample_weight=None, *, n_strata: int = 10) -> np.ndarray:
         contiguous -- sklearn stratifiers only need distinct labels. Drop
         ``-1`` rows or remap to ``0`` before passing to a splitter that
         rejects negative labels.
+        Constant unweighted observations belong to group 0; missing rows
+        still receive -1. Weighted tie semantics are unchanged.
     """
     y = np.asarray(y, dtype=float)
     if sample_weight is None:
-        codes = pd.qcut(pd.Series(y), n_strata, labels=False, duplicates="drop")
+        values = pd.Series(y)
+        codes = pd.qcut(values, n_strata, labels=False, duplicates="drop")
+        if values.nunique() == 1:
+            codes = codes.mask(~np.isnan(y), 0)
         return codes.fillna(-1).astype(int).to_numpy()
     w = np.asarray(sample_weight, dtype=float)
     edges = _weighted_quantile_edges(y, w, n_quantiles=n_strata)

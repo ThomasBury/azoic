@@ -28,6 +28,7 @@ from sklearn.metrics import (
     mean_poisson_deviance,
     mean_tweedie_deviance,
 )
+from sklearn.utils.validation import check_array, check_consistent_length
 
 from azoic.data import EXPOSURE_FLOOR
 from azoic.validation import make_strata
@@ -63,13 +64,18 @@ def _as_arrays(y_true, y_pred, sample_weight=None):
         sample_weight = np.asarray(sample_weight, dtype=float)
     if any(values.ndim != 1 for values in (y_true, y_pred, sample_weight)):
         raise ValueError("inputs must be one-dimensional")
-    if len({len(y_true), len(y_pred), len(sample_weight)}) != 1:
-        raise ValueError("inputs must have the same length")
-    if not np.isfinite(y_true).all() or np.any(y_true < 0):
+    y_true, y_pred, sample_weight = (
+        check_array(values, dtype=float, ensure_2d=False, ensure_min_samples=0, input_name=name)
+        for name, values in (
+            ("y_true", y_true),
+            ("y_pred", y_pred),
+            ("sample_weight", sample_weight),
+        )
+    )
+    check_consistent_length(y_true, y_pred, sample_weight)
+    if np.any(y_true < 0):
         raise ValueError("y_true must contain only non-negative finite claim amounts")
-    if not np.isfinite(y_pred).all():
-        raise ValueError("y_pred must contain only finite predictions")
-    if not np.isfinite(sample_weight).all() or np.any(sample_weight < 0):
+    if np.any(sample_weight < 0):
         raise ValueError("sample_weight must contain only finite non-negative exposures")
     return y_true, y_pred, sample_weight
 
@@ -283,14 +289,12 @@ def calibration_table(
     (``dropna=False``). Columns: group, exposure, claim_amount,
     predicted_claim_amount, observed_pure_premium, predicted_pure_premium,
     o_p_ratio; plus `claim_count` when provided.
+    Constant predictions form one real group, including without weights.
     """
     weighted = sample_weight is not None
     y_true, y_pred, w = _as_arrays(y_true, y_pred, sample_weight)
     if groups is None:
-        if weighted:
-            groups = make_strata(y_pred, w, n_strata=n_bins)
-        else:
-            groups = pd.qcut(pd.Series(y_pred), n_bins, labels=False, duplicates="drop").to_numpy()
+        groups = make_strata(y_pred, w if weighted else None, n_strata=n_bins)
     df = pd.DataFrame(
         {"y_true": y_true, "y_pred": y_pred, "exposure": w, "group": np.asarray(groups)}
     )
@@ -467,7 +471,22 @@ def double_lift_table(
 
     Both predictions are floored at ``_RATIO_EPS`` to avoid division-by-zero
     when a GBM objective returns exact zeros (Poisson on never-claimed rows).
+    Generated model columns must be distinct and must not match reserved output
+    columns (for example, ``label_a="observed"`` is invalid). Each segment must
+    sum to at least one day of exposure, as in calibration and one-way tables.
     """
+    rate_columns = [f"{label_a}_pure_premium", f"{label_b}_pure_premium"]
+    reserved = {
+        "group",
+        "mean_ratio",
+        "exposure",
+        "claim_amount",
+        "predicted_claim_amount_a",
+        "predicted_claim_amount_b",
+        "observed_pure_premium",
+    }
+    if len(set(rate_columns)) != 2 or reserved.intersection(rate_columns):
+        raise ValueError("double_lift_table: model column names must be distinct and unreserved")
     y_true, pred_a, w = _as_arrays(y_true, pred_a, sample_weight)
     pred_b = np.asarray(pred_b, dtype=float)
     if pred_b.shape != pred_a.shape:
@@ -501,7 +520,13 @@ def double_lift_table(
         predicted_claim_amount_a=("predicted_claim_amount_a", "sum"),
         predicted_claim_amount_b=("predicted_claim_amount_b", "sum"),
     )
+    if (out["exposure"] < EXPOSURE_FLOOR).any():
+        bad = out.index[out["exposure"] < EXPOSURE_FLOOR].tolist()
+        raise ValueError(
+            "double_lift_table: segment exposure must sum to at least 1/366 "
+            f"(one day); degenerate segments: {bad}"
+        )
     out["observed_pure_premium"] = out["claim_amount"] / out["exposure"]
-    out[f"{label_a}_pure_premium"] = out["predicted_claim_amount_a"] / out["exposure"]
-    out[f"{label_b}_pure_premium"] = out["predicted_claim_amount_b"] / out["exposure"]
+    out[rate_columns[0]] = out["predicted_claim_amount_a"] / out["exposure"]
+    out[rate_columns[1]] = out["predicted_claim_amount_b"] / out["exposure"]
     return out.reset_index()

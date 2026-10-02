@@ -348,7 +348,7 @@ def test_diagnostic_quantiles_ignore_missing_exposure(kind) -> None:
         if kind == "calibration":
             if missing:
                 # M31: a NaN prediction raises instead of silently dropping the row.
-                with pytest.raises(ValueError, match="finite"):
+                with pytest.raises(ValueError, match="finite|NaN|infinity"):
                     calibration_table(amounts, v, w, n_bins=3)
                 continue
             table = calibration_table(amounts, v, w, n_bins=3)
@@ -369,7 +369,7 @@ def test_diagnostic_quantiles_ignore_missing_exposure(kind) -> None:
         else:
             if missing:
                 # M31: same fail-closed contract for the ratio strata.
-                with pytest.raises(ValueError, match="finite"):
+                with pytest.raises(ValueError, match="finite|NaN|infinity"):
                     double_lift_table(amounts, v, np.ones(len(v)), w, n_bins=3)
                 continue
             table = double_lift_table(amounts, v, np.ones(len(v)), w, n_bins=3)
@@ -593,7 +593,7 @@ def test_diagnostics_reject_nonfinite_inputs(func, slot, bad) -> None:
     arrays.update({"y_true": y_true, "y_pred": y_pred, "sample_weight": w})
     arrays[slot] = arrays[slot].copy()
     arrays[slot][2] = bad
-    with pytest.raises(ValueError, match="finite"):
+    with pytest.raises(ValueError, match="finite|NaN|infinity"):
         _call_diag(func, arrays["y_true"], arrays["y_pred"], arrays["sample_weight"])
 
 
@@ -613,7 +613,7 @@ def test_diagnostics_reject_negative_claims_and_weights(func) -> None:
 )
 def test_diagnostics_reject_mismatched_or_multidimensional_inputs(func) -> None:
     y_true, y_pred, w = _diag_inputs()
-    with pytest.raises(ValueError, match="same length"):
+    with pytest.raises(ValueError, match="inconsistent numbers"):
         _call_diag(func, y_true, y_pred[:-1], w)
     with pytest.raises(ValueError, match="one-dimensional"):
         _call_diag(func, y_true.reshape(-1, 1), y_pred, w)
@@ -640,7 +640,7 @@ def test_double_lift_nan_prediction_raises_instead_of_dropping_claims() -> None:
     pred_a = np.array([np.nan, 1.0, 2.0])
     pred_b = np.array([5.0, 1.0, 1.0])
     w = np.ones(3)
-    with pytest.raises(ValueError, match="finite"):
+    with pytest.raises(ValueError, match="finite|NaN|infinity"):
         double_lift_table(y_true, pred_a, pred_b, w, n_bins=2)
 
 
@@ -661,3 +661,37 @@ def test_one_way_table_keeps_genuine_nan_string_distinct_from_missing() -> None:
     assert genuine["claim_amount"].item() == 1.0
     assert missing["claim_amount"].item() == 3.0
     assert missing["level_label"].item() == "nan"
+
+
+@pytest.mark.parametrize("label_a, label_b", [("observed", "B"), ("A", "observed"), ("A", "A")])
+def test_double_lift_rejects_colliding_labels(label_a, label_b) -> None:
+    with pytest.raises(ValueError, match="column names"):
+        double_lift_table([10, 20], [1, 2], [2, 3], label_a=label_a, label_b=label_b)
+
+
+@pytest.mark.parametrize("exposure", [[0, 0], [0.001, 0.001], [0.001, 1]])
+def test_double_lift_rejects_degenerate_segments(exposure) -> None:
+    with pytest.raises(ValueError, match="1/366"):
+        double_lift_table([10, 20], [1, 2], [1, 1], exposure, n_bins=2)
+
+
+def test_double_lift_keeps_zero_weight_rows_in_valid_segments() -> None:
+    table = double_lift_table([10, 20, 30], [1, 1, 1], [2, 2, 2], [1, 0, 2])
+    assert table.exposure.sum() == 3
+    assert table.claim_amount.sum() == 60
+    assert table.predicted_claim_amount_a.sum() == 3
+    assert table.predicted_claim_amount_b.sum() == 6
+
+
+@pytest.mark.parametrize("weighted", [False, True])
+@pytest.mark.parametrize("n_bins", [1, 10])
+@pytest.mark.parametrize("prediction", [0.0, 1.5])
+def test_constant_calibration_has_real_group_and_preserves_totals(weighted, n_bins, prediction):
+    exposure = np.array([1, 2, 3]) if weighted else None
+    table = calibration_table([10, 20, 30], [prediction] * 3, exposure, n_bins=n_bins)
+    assert len(table) == 1
+    assert table.group.notna().all()
+    assert table.group.item() >= 0
+    assert table.exposure.item() == (6 if weighted else 3)
+    assert table.claim_amount.item() == 60
+    assert table.predicted_claim_amount.item() == prediction * table.exposure.item()
