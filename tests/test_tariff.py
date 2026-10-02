@@ -240,6 +240,165 @@ def test_apply_tariff_roundtrips_to_glm_predict() -> None:
     assert np.allclose(applied, predicted, rtol=1e-6, atol=1e-3)
 
 
+@pytest.mark.parametrize(
+    ("numeric", "values", "expected"),
+    [
+        ({"x": 1000.0}, {"x": [0.001]}, np.e),
+        ({"x": 1000.0, "z": -1000.0}, {"x": [1.0], "z": [1.0]}, 1.0),
+    ],
+)
+def test_apply_tariff_sums_before_exponentiating(numeric, values, expected) -> None:
+    tariff = {"base_rate": 1.0, "numeric": numeric, "categorical": {}}
+    assert apply_tariff(tariff, pd.DataFrame(values)) == pytest.approx([expected])
+
+
+def test_extract_tariff_folds_reference_before_exponentiating() -> None:
+    X = pd.DataFrame({"cat": pd.Categorical(["a", "b"] * 10)})
+    glm = RiskGLM(family="poisson", link="log").fit(X, np.tile([1.0, 2.0], 10))
+    glm.backend_.intercept_ = 1000.0
+    glm.backend_.coef_[:] = [-1000.0, -999.0]
+    tariff = extract_tariff(glm)
+    assert tariff["base_rate"] == pytest.approx(1.0)
+    np.testing.assert_allclose(apply_tariff(tariff, X), glm.predict(X))
+
+
+@pytest.mark.parametrize("bad", [np.nan, np.inf, -np.inf])
+def test_extract_tariff_rejects_nonfinite_coefficients(bad) -> None:
+    glm, _ = _fit_glm(n=100)
+    glm.backend_.coef_[0] = bad
+    with pytest.raises(ValueError, match="finite"):
+        extract_tariff(glm)
+
+
+@pytest.mark.parametrize("coefficient", [-1000.0, 1000.0])
+@pytest.mark.parametrize("part", ["base", "categorical", "workbook"])
+def test_tariff_rejects_unrepresentable_factors(tmp_path, coefficient, part) -> None:
+    X = pd.DataFrame({"x": [0.001] * 20, "cat": pd.Categorical(["a", "b"] * 10)})
+    glm = RiskGLM(family="poisson", link="log").fit(X, np.tile([1.0, 2.0], 10))
+    glm.backend_.intercept_ = coefficient if part == "base" else 0.0
+    glm.backend_.coef_[:] = 0.0
+    glm.backend_.coef_[0 if part == "workbook" else 2] = coefficient if part != "base" else 0.0
+    out = tmp_path / "invalid.xlsx"
+    if part == "workbook":
+        tariff = extract_tariff(glm)
+        np.testing.assert_allclose(apply_tariff(tariff, X), glm.predict(X))
+    with pytest.raises(ValueError, match="positive and finite"):
+        if part == "workbook":
+            export_tariff(glm, out, recalibrate=False)
+        else:
+            extract_tariff(glm)
+    assert not out.exists()
+
+
+@pytest.mark.parametrize(
+    "part, bad",
+    [(part, bad) for part in ["base", "numeric", "categorical"] for bad in [np.nan, np.inf]]
+    + [("base", -1.0), ("categorical", -1.0), ("categorical", 0.0)],
+)
+def test_apply_tariff_rejects_invalid_parameters(bad, part) -> None:
+    tariff = {"base_rate": 1.0, "numeric": {"x": 0.0}, "categorical": {"cat": {"a": 1.0}}}
+    if part == "base":
+        tariff["base_rate"] = bad
+    elif part == "numeric":
+        tariff["numeric"]["x"] = bad
+    else:
+        tariff["categorical"]["cat"]["a"] = bad
+    with pytest.raises(ValueError, match="finite"):
+        apply_tariff(tariff, pd.DataFrame({"x": [0.001], "cat": ["a"]}))
+
+
+@pytest.mark.parametrize("coefficient", [-1000.0, 1000.0])
+def test_apply_tariff_rejects_unrepresentable_rates(coefficient) -> None:
+    tariff = {"base_rate": 1.0, "numeric": {"x": coefficient}, "categorical": {}}
+    with pytest.raises(ValueError, match="positive and finite"):
+        apply_tariff(tariff, pd.DataFrame({"x": [1.0]}))
+
+
+def test_zero_total_recalibration_keeps_zero_rates(tmp_path) -> None:
+    glm, df = _fit_glm(n=100)
+    X = df[list(glm.feature_names_in_)]
+    out = export_tariff(
+        glm, tmp_path / "zero.xlsx", X=X, y=np.zeros(len(X)), exposure_col="exposure"
+    )
+    tariff = extract_tariff(glm)
+    tariff["base_rate"] = pd.read_excel(out, sheet_name="base_rate").loc[0, "base_rate"]
+    np.testing.assert_array_equal(apply_tariff(tariff, X), np.zeros(len(X)))
+    with pytest.raises(ValueError, match="unknown levels"):
+        apply_tariff(tariff, X.assign(region="unknown"))
+
+
+@pytest.mark.parametrize(
+    "base, predicted, observed, expected",
+    [
+        (1e300, 1e300, 1e-300, 1e-300),
+        (1e-300, 1e-300, 1e300, 1e300),
+    ],
+)
+def test_recalibration_avoids_intermediate_overflow(base, predicted, observed, expected) -> None:
+    result = recalibrate_for_total(
+        {"base_rate": base}, predicted_total=predicted, observed_total=observed
+    )
+    assert result / expected == pytest.approx(1.0)
+
+
+@pytest.mark.parametrize("base, predicted, observed", [(1e300, 1e-300, 1.0), (1e-300, 1e300, 1.0)])
+def test_recalibration_rejects_unrepresentable_base(base, predicted, observed) -> None:
+    with pytest.raises(ValueError, match="positive and finite"):
+        recalibrate_for_total(
+            {"base_rate": base}, predicted_total=predicted, observed_total=observed
+        )
+
+
+@pytest.mark.parametrize("pipeline", [False, True])
+def test_export_tariff_preserves_literal_text_and_typed_labels(tmp_path, pipeline) -> None:
+    from openpyxl import load_workbook
+    from sklearn.pipeline import Pipeline
+
+    from azoic.preprocessing import AutoGrouper
+
+    X = pd.DataFrame(
+        {
+            "=feature": pd.Categorical(
+                ["=1+1", "#N/A"] * 20, categories=["=1+1", "#N/A"], ordered=True
+            ),
+            "number": pd.Categorical([2, 1] * 20),
+        }
+    )
+    model = RiskGLM(family="poisson", link="log")
+    if pipeline:
+        model = Pipeline(
+            [("grouper", AutoGrouper(cols=["=feature"], strategy="rare")), ("model", model)]
+        )
+    else:
+        X["flag"] = pd.Categorical([True, False] * 20)
+    model.fit(X, np.tile([1.0, 2.0], 20))
+    out = export_tariff(
+        model, tmp_path / "literal.xlsx", reference={"=feature": "=1+1"}, recalibrate=False
+    )
+    workbook = load_workbook(out)
+    assert workbook.sheetnames == ["base_rate", "factors", "mappings"]
+    rows = list(workbook["factors"].iter_rows(min_row=2))
+    for row in rows:
+        feature, level = row[:2]
+        if feature.value == "=feature":
+            assert feature.data_type == "s"
+            assert level.value in {"=1+1", "#N/A", "Other"}
+            assert level.data_type == "s"
+        elif feature.value == "flag":
+            assert type(level.value) is bool and level.data_type == "b"
+        else:
+            assert type(level.value) is int and level.data_type == "n"
+    assert any(cell.value == "=1+1" for row in rows for cell in row)
+    mapping_rows = list(workbook["mappings"].iter_rows(min_row=2))
+    assert any(row[1].value == "grouped" for row in mapping_rows) == pipeline
+    assert any(row[5].value == "=1+1" for row in mapping_rows)
+    for sheet in workbook:
+        for row in sheet:
+            for cell in row:
+                if isinstance(cell.value, str):
+                    assert cell.data_type == "s"
+
+
 def test_extract_tariff_preserves_typed_ordered_levels() -> None:
     rng = np.random.default_rng(42)
     intervals = [pd.Interval(0, 1), pd.Interval(1, 2)]
@@ -371,14 +530,14 @@ def test_export_tariff_recalibration_rejects_invalid_y(tmp_path, bad) -> None:
     feats = ["driver_age", "vehicle_age", "region", "vehicle_brand", "exposure"]
     y = df["claim_amount"].astype(float).copy()
     y.iloc[0] = bad
-    with pytest.raises(ValueError, match="finite|non-negative"):
+    with pytest.raises(ValueError, match="NaN|infinity|finite|non-negative"):
         export_tariff(glm, tmp_path / "t.xlsx", X=df[feats], y=y, exposure_col="exposure")
 
 
 def test_export_tariff_recalibration_rejects_mismatched_y_length(tmp_path) -> None:
     glm, df = _fit_glm()
     feats = ["driver_age", "vehicle_age", "region", "vehicle_brand", "exposure"]
-    with pytest.raises(ValueError, match="same length"):
+    with pytest.raises(ValueError, match="inconsistent numbers of samples"):
         export_tariff(
             glm,
             tmp_path / "t.xlsx",
@@ -386,6 +545,21 @@ def test_export_tariff_recalibration_rejects_mismatched_y_length(tmp_path) -> No
             y=df["claim_amount"].iloc[:10],
             exposure_col="exposure",
         )
+
+
+@pytest.mark.parametrize("n_columns", [1, 2])
+@pytest.mark.parametrize("as_frame", [False, True])
+def test_export_tariff_recalibration_rejects_2d_outcomes(
+    tmp_path: Path, n_columns: int, as_frame: bool
+) -> None:
+    glm, df = _fit_glm(n=500)
+    y = np.tile(df["claim_amount"].to_numpy()[:, None], (1, n_columns))
+    if as_frame:
+        y = pd.DataFrame(y)
+    out = tmp_path / "invalid.xlsx"
+    with pytest.raises(ValueError, match="one-dimensional"):
+        export_tariff(glm, out, X=df[list(glm.feature_names_in_)], y=y, exposure_col="exposure")
+    assert not out.exists()
 
 
 # ---------------------------------------------------------------------------

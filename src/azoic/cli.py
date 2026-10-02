@@ -119,7 +119,7 @@ def export_tariff(
     recalibrate: bool = typer.Option(
         True,
         "--recalibrate/--no-recalibrate",
-        help="Shift the base so the tariff reproduces the observed portfolio "
+        help="Shift the base so the tariff reproduces the observed training "
         "total claim amount (default: on).",
     ),
 ) -> None:
@@ -150,8 +150,10 @@ def export_tariff(
         raise typer.BadParameter("dataset changed since fitting; rerun with an unchanged input")
     X = df[list(est.feature_names_in_)]
     y = df[cfg.spec.target]
+    train_indices = list(run.train_indices)
+    X_train = X.iloc[train_indices]
     if isinstance(final_est, RiskGBM):
-        est = _distill_gbm(est, X.iloc[list(run.train_indices)], X.iloc[list(run.test_indices)])
+        est = _distill_gbm(est, X_train, X.iloc[list(run.test_indices)])
         metrics = vars(est)["distillation_metrics_"]
         typer.echo(
             "Distillation fidelity: "
@@ -162,8 +164,8 @@ def export_tariff(
     _export_tariff(
         est,
         out,
-        X=X,
-        y=y,
+        X=X_train,
+        y=y.iloc[train_indices],
         exposure_col=cfg.spec.exposure,
         recalibrate=recalibrate,
     )

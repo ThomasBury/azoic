@@ -29,11 +29,13 @@ from __future__ import annotations
 
 from collections.abc import Hashable
 from copy import deepcopy
+from math import fsum
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 from sklearn.pipeline import Pipeline
+from sklearn.utils.validation import check_array, check_consistent_length
 
 from azoic.data import EXPOSURE_FLOOR
 from azoic.metrics import mean_tweedie_deviance
@@ -66,6 +68,11 @@ def distill_gbm(
     contains copied, already-fitted upstream preprocessing (bins and group
     mappings are not relearned) and exposes the metrics in
     ``distillation_metrics_``.
+
+    Callers must supply disjoint observations for fitting and validation.
+    The object-identity guard only rejects reuse of the same frame object;
+    distinct frames (including copies) do not prove row independence. The CLI
+    uses the run's stored training and test positions.
     """
     if not isinstance(X_fit, pd.DataFrame) or not isinstance(X_validation, pd.DataFrame):
         raise TypeError("distill_gbm requires pandas DataFrame fit and validation frames")
@@ -158,6 +165,14 @@ def _require_log_link(backend) -> None:
     )
 
 
+def _positive_exp(log_value, name):
+    with np.errstate(over="ignore", under="ignore", invalid="ignore"):
+        value = np.exp(log_value)
+    if not np.isfinite(value).all() or np.any(value <= 0):
+        raise ValueError(f"{name} must be representable as positive and finite values")
+    return value
+
+
 def extract_tariff(glm: RiskGLM, *, reference: dict[str, Hashable] | None = None) -> dict:
     """Decompose a fitted ``RiskGLM`` into a multiplicative tariff structure.
 
@@ -175,6 +190,11 @@ def extract_tariff(glm: RiskGLM, *, reference: dict[str, Hashable] | None = None
     ``export_tariff`` with the ``(X, y, exposure_col, recalibrate=True)``
     quadruple) to shift the base so the tariff reproduces an observed
     portfolio total.
+
+    Coefficients must be finite; the structural base and categorical factors
+    must be representable as positive, finite floats. Numeric coefficients
+    remain in log space; workbook export additionally requires representable
+    per-unit factors.
     """
     if not hasattr(glm, "backend_"):
         raise ValueError("extract_tariff: glm must be fitted (no `backend_` attr).")
@@ -183,6 +203,8 @@ def extract_tariff(glm: RiskGLM, *, reference: dict[str, Hashable] | None = None
 
     coefs = np.asarray(backend.coef_, dtype=float)
     intercept = float(backend.intercept_)
+    if not np.isfinite(coefs).all() or not np.isfinite(intercept):
+        raise ValueError("extract_tariff: coefficients and intercept must be finite")
     term_names = list(getattr(backend, "term_names_", []) or [])
     cat_levels: dict[str, list[Hashable]] = dict(getattr(backend, "categorical_levels_", {}) or {})
     if len(term_names) != len(coefs):
@@ -232,16 +254,25 @@ def extract_tariff(glm: RiskGLM, *, reference: dict[str, Hashable] | None = None
         else:
             chosen_ref[feat] = levels[0]
 
-    base_rate = float(np.exp(intercept))
-    for feat, ref in chosen_ref.items():
-        base_rate *= float(np.exp(raw_cat[feat][ref]))
+    base_rate = float(
+        _positive_exp(
+            fsum([intercept, *(raw_cat[feat][ref] for feat, ref in chosen_ref.items())]),
+            "extract_tariff: structural base",
+        )
+    )
 
     categorical: dict[str, dict[Hashable, float]] = {}
     for feat, levels in cat_levels.items():
         level_coefs = raw_cat[feat]
         ref_coef = level_coefs[chosen_ref[feat]]
         categorical[feat] = {
-            level: float(np.exp(level_coefs[level] - ref_coef)) for level in levels
+            level: float(
+                _positive_exp(
+                    level_coefs[level] - ref_coef,
+                    f"extract_tariff: categorical factor {feat!r}/{level!r}",
+                )
+            )
+            for level in levels
         }
 
     return {
@@ -300,7 +331,9 @@ def _factors_frame(tariff: dict) -> pd.DataFrame:
             {
                 "feature": feat,
                 "level": "_per_unit",
-                "multiplicative_factor": float(np.exp(coef)),
+                "multiplicative_factor": float(
+                    _positive_exp(coef, f"export_tariff: per-unit factor {feat!r}")
+                ),
                 "application": "raise_factor ** value",
             }
         )
@@ -325,11 +358,16 @@ def apply_tariff(tariff: dict, X: pd.DataFrame) -> np.ndarray:
 
     Equivalent to ``RiskGLM.predict(X)`` when ``tariff`` has not been
     recalibrated. Numeric inputs must be finite and categorical levels must
-    have been seen when the tariff was extracted.
+    have been seen when the tariff was extracted. The linear predictor is
+    summed before exponentiation. Invalid factors and unrepresentable rates
+    raise ``ValueError``; a zero recalibrated base produces zero rates.
     """
     if not isinstance(X, pd.DataFrame):
         raise TypeError("apply_tariff requires a pandas DataFrame X.")
-    rate = np.full(len(X), float(tariff["base_rate"]), dtype=float)
+    base = float(tariff["base_rate"])
+    if not np.isfinite(base) or base < 0:
+        raise ValueError("apply_tariff: base rate must be non-negative and finite")
+    linear = np.full(len(X), np.log(base) if base > 0 else 0.0, dtype=float)
 
     for feat, coef in tariff["numeric"].items():
         if feat not in X.columns:
@@ -337,20 +375,31 @@ def apply_tariff(tariff: dict, X: pd.DataFrame) -> np.ndarray:
         values = X[feat].to_numpy(dtype=float)
         if not np.isfinite(values).all():
             raise ValueError(f"apply_tariff: numeric feature {feat!r} must be finite")
-        rate = rate * np.power(np.exp(coef), values)
+        if not np.isfinite(coef):
+            raise ValueError(f"apply_tariff: numeric coefficient {feat!r} must be finite")
+        with np.errstate(over="ignore", invalid="ignore"):
+            linear += coef * values
 
     for feat, lvl_factors in tariff["categorical"].items():
         if feat not in X.columns:
             raise KeyError(f"apply_tariff: categorical feature {feat!r} not in X.columns")
+        level_values = np.asarray(list(lvl_factors.values()), dtype=float)
+        if not np.isfinite(level_values).all() or np.any(level_values <= 0):
+            raise ValueError(
+                f"apply_tariff: categorical factors {feat!r} must be positive and finite"
+            )
         factors = X[feat].map(lvl_factors)
         if factors.isna().any():
             unknown = X.loc[factors.isna(), feat].drop_duplicates().tolist()
             raise ValueError(
                 f"apply_tariff: categorical feature {feat!r} has unknown levels: {unknown}"
             )
-        rate = rate * factors.to_numpy(dtype=float)
+        with np.errstate(over="ignore", invalid="ignore"):
+            linear += np.log(factors.to_numpy(dtype=float))
 
-    return rate
+    if base == 0:
+        return np.zeros(len(X), dtype=float)
+    return _positive_exp(linear, "apply_tariff: rates")
 
 
 def recalibrate_for_total(
@@ -363,13 +412,24 @@ def recalibrate_for_total(
 
     ``predicted_total`` is the sum of model-predicted pure premium times
     exposure; ``observed_total`` is the sum of observed aggregate claim amount.
-    Returns the new base rate.
+    Returns the new base rate. A zero observed total returns zero; otherwise
+    an unrepresentable adjusted base raises ``ValueError``.
     """
     if not np.isfinite(predicted_total) or predicted_total <= 0:
         raise ValueError("recalibrate: model predicted total must be positive and finite")
     if not np.isfinite(observed_total) or observed_total < 0:
         raise ValueError("recalibrate: observed total must be non-negative and finite")
-    return float(tariff["base_rate"] * (observed_total / predicted_total))
+    base = float(tariff["base_rate"])
+    if not np.isfinite(base) or base < 0:
+        raise ValueError("recalibrate: base rate must be non-negative and finite")
+    if observed_total == 0 or base == 0:
+        return 0.0
+    return float(
+        _positive_exp(
+            fsum([np.log(base), np.log(observed_total), -np.log(predicted_total)]),
+            "recalibrate: base rate",
+        )
+    )
 
 
 def _pipeline_parts(estimator, X):
@@ -435,6 +495,15 @@ def export_tariff(
     expected; the base is shifted so the tariff reproduces the observed
     portfolio total claim amount. Pass ``recalibrate=False`` for the structural
     tariff (intercept + reference levels only).
+
+    ``y`` must be a finite, non-negative one-dimensional vector of aggregate
+    claim amounts with one value per row of ``X``. Library callers choose this
+    calibration frame explicitly; keep evaluation observations separate. The
+    CLI recalibrates only on the run's stored training positions.
+
+    Base and factors must be representable as finite floats (strictly positive
+    except for a zero-total recalibrated base). User text is written as literal
+    Excel strings; numeric and boolean level labels retain their types.
     """
     if recalibrate and (X is None or y is None or exposure_col is None):
         raise ValueError(
@@ -451,18 +520,16 @@ def export_tariff(
     recalibrated = False
     if recalibrate and X is not None and y is not None and exposure_col is not None:
         exposure = np.asarray(X[exposure_col].to_numpy(), dtype=float)
-        y_arr = np.asarray(y, dtype=float)
-        if len(y_arr) != len(X):
-            raise ValueError(
-                f"recalibrate: y has {len(y_arr)} rows but X has {len(X)}; "
-                "they must have the same length"
-            )
+        y_arr = check_array(y, dtype=float, ensure_2d=False, input_name="y")
+        if y_arr.ndim != 1:
+            raise ValueError("recalibrate: y must be one-dimensional")
+        check_consistent_length(X, y_arr)
         if not np.isfinite(exposure).all() or np.any(exposure <= 0):
             raise ValueError("recalibrate: exposure must contain only positive finite values")
         if np.any(exposure < EXPOSURE_FLOOR):
             raise ValueError("recalibrate: exposure must be at least 1/366 (one day)")
-        if not np.isfinite(y_arr).all() or np.any(y_arr < 0):
-            raise ValueError("recalibrate: y must contain only non-negative finite values")
+        if np.any(y_arr < 0):
+            raise ValueError("recalibrate: y must contain only non-negative values")
         pred_total = float((np.asarray(glm.predict(transformed_X), dtype=float) * exposure).sum())
         obs_total = float(y_arr.sum())
         tariff["base_rate"] = recalibrate_for_total(
@@ -498,4 +565,9 @@ def export_tariff(
         base_sheet.to_excel(writer, sheet_name="base_rate", index=False)
         factors_sheet.to_excel(writer, sheet_name="factors", index=False)
         mapping_sheet.to_excel(writer, sheet_name="mappings", index=False)
+        for sheet in writer.sheets.values():
+            for row in sheet:
+                for cell in row:
+                    if isinstance(cell.value, str):
+                        cell.data_type = "s"
     return p

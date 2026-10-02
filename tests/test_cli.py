@@ -12,6 +12,7 @@ from __future__ import annotations
 from pathlib import Path
 from types import SimpleNamespace
 
+import numpy as np
 import pandas as pd
 import pytest
 from typer.testing import CliRunner
@@ -298,9 +299,10 @@ def test_cli_export_tariff_gbm_model_rejected(tmp_path: Path) -> None:
     assert "RiskGLM" in result.output or "GLM" in result.output
 
 
+@pytest.mark.parametrize("distill", [False, True])
 @pytest.mark.parametrize("changed_data", [False, True])
-def test_cli_export_tariff_distills_gbm_with_provenance(
-    monkeypatch, tmp_path: Path, changed_data: bool
+def test_cli_export_tariff_uses_stored_split_and_rejects_changed_data(
+    monkeypatch, tmp_path: Path, changed_data: bool, distill: bool
 ) -> None:
     import azoic.cli as cli
 
@@ -333,8 +335,8 @@ def test_cli_export_tariff_distills_gbm_with_provenance(
             "--config",
             str(cfg),
             "--model",
-            "gbm-tweedie",
-            "--distill",
+            "gbm-tweedie" if distill else "glm-tweedie",
+            *(["--distill"] if distill else []),
             "--no-recalibrate",
             "--out",
             str(out),
@@ -349,6 +351,10 @@ def test_cli_export_tariff_distills_gbm_with_provenance(
         return
 
     assert result.exit_code == 0, result.output
+    if not distill:
+        assert not partitions
+        assert out.exists()
+        return
     assert "Distillation fidelity" in result.output
     run = runs[0]
     frame = pd.read_parquet(data)
@@ -363,6 +369,101 @@ def test_cli_export_tariff_distills_gbm_with_provenance(
     assert base["teacher_objective"] == "tweedie"
     assert float(base["teacher_student_deviance"]) >= 0
     assert float(base["student_teacher_total_ratio"]) == pytest.approx(1.0, rel=0.05)
+
+
+@pytest.mark.parametrize("distill", [False, True])
+@pytest.mark.parametrize("recalibrate", [False, True])
+def test_cli_export_tariff_ignores_holdout_outcomes(
+    monkeypatch, tmp_path: Path, distill: bool, recalibrate: bool
+) -> None:
+    import azoic.cli as cli
+    from azoic.tariff import apply_tariff, extract_tariff
+
+    frame = make_synthetic_portfolio(n=1000)
+    frame.index = np.arange(len(frame)) * 3 + 17
+    data = tmp_path / "portfolio.parquet"
+    frame.to_parquet(data)
+    cfg = _write_yaml(
+        tmp_path,
+        _yaml(str(data))
+        + "preprocessing:\n  binner:\n    cols: [driver_age, vehicle_age]\n    max_bins: 4\n",
+    )
+    actual_run = cli.run_experiment
+    actual_export = cli._export_tariff
+    runs = []
+    exports = []
+
+    def record_run(config, **kwargs):
+        run, estimators = actual_run(config.model_copy(update={"random_state": 7}), **kwargs)
+        runs.append(run)
+        return run, estimators
+
+    def record_export(est, out, **kwargs):
+        exports.append((est, kwargs["X"].copy(), kwargs["y"].copy()))
+        return actual_export(est, out, **kwargs)
+
+    monkeypatch.setattr(cli, "run_experiment", record_run)
+    monkeypatch.setattr(cli, "_export_tariff", record_export)
+    workbooks = []
+    for attempt in range(2):
+        out = tmp_path / f"tariff-{attempt}.xlsx"
+        result = runner.invoke(
+            app,
+            [
+                "export-tariff",
+                "--config",
+                str(cfg),
+                "--model",
+                "gbm-tweedie" if distill else "glm-tweedie",
+                *(["--distill"] if distill else []),
+                *([] if recalibrate else ["--no-recalibrate"]),
+                "--out",
+                str(out),
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        workbooks.append(pd.read_excel(out, sheet_name=None))
+        if attempt == 0:
+            changed = frame.copy()
+            target_col = changed.columns.get_loc("claim_amount")
+            changed.iloc[list(runs[0].test_indices), target_col] *= 10
+            changed.to_parquet(data)
+
+    assert runs[0].train_indices == runs[1].train_indices
+    assert runs[0].test_indices == runs[1].test_indices
+    assert set(runs[0].train_indices).isdisjoint(runs[0].test_indices)
+    assert runs[0].data_fingerprint != runs[1].data_fingerprint
+    est, calibration_X, calibration_y = exports[0]
+    X = frame[list(est.feature_names_in_)]
+    np.testing.assert_allclose(est.predict(X), exports[1][0].predict(X))
+    for sheet in workbooks[0]:
+        pd.testing.assert_frame_equal(workbooks[0][sheet], workbooks[1][sheet])
+
+    train = frame.iloc[list(runs[0].train_indices)]
+    glm = est.steps[-1][1]
+    tariff = extract_tariff(glm)
+    structural_base = tariff["base_rate"]
+    base = float(workbooks[0]["base_rate"].iloc[0]["base_rate"])
+    factor = train["claim_amount"].sum() / np.dot(
+        est.predict(X.iloc[list(runs[0].train_indices)]), train["exposure"]
+    )
+    assert base / structural_base == pytest.approx(factor if recalibrate else 1.0)
+    if recalibrate:
+        pd.testing.assert_frame_equal(calibration_X, X.iloc[list(runs[0].train_indices)])
+        pd.testing.assert_series_equal(calibration_y, train["claim_amount"])
+
+    tariff["base_rate"] = base
+    for row in workbooks[0]["factors"].itertuples(index=False):
+        if row.level == "_per_unit":
+            tariff["numeric"][row.feature] = np.log(row.multiplicative_factor)
+        else:
+            tariff["categorical"][row.feature][row.level] = row.multiplicative_factor
+    workbook_rates = apply_tariff(tariff, est[:-1].transform(X))
+    np.testing.assert_allclose(workbook_rates, est.predict(X) * (factor if recalibrate else 1.0))
+    if recalibrate:
+        assert np.dot(
+            workbook_rates[list(runs[0].train_indices)], train["exposure"]
+        ) == pytest.approx(train["claim_amount"].sum())
 
 
 # tune (M7 / v0.2 part 1)
