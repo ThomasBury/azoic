@@ -1,7 +1,8 @@
 # Installation
 
-Azoic requires Python 3.12 or newer. Use a virtual environment so its compiled
-`glum` and LightGBM dependencies do not conflict with another project.
+Azoic requires Python 3.12 or newer and pandas 3.0 or newer. pandas 2 is no
+longer supported. Use a virtual environment so its compiled `glum` and LightGBM
+dependencies do not conflict with another project.
 
 ## Work from a checkout
 
@@ -53,8 +54,11 @@ azoic --help
 
 ## Optional extras
 
-Core installation already includes pandas, scikit-learn, glum, LightGBM,
-matplotlib, and xlsx export. Add only the integration you use.
+Core installation already includes pandas 3.0 or later, scikit-learn 1.6 or
+later, glum, LightGBM, matplotlib, and xlsx export. `RiskGLM`, `RiskGBM`, and `FrequencySeverityModel`
+automatically convert pandas `str`, nullable `string`, and `object` predictors
+to categories. Numeric columns and declared category order/unused levels are
+preserved, and caller frames are unchanged. Add only the integration you use.
 
 | Extra | Install command | Adds |
 |---|---|---|
@@ -107,6 +111,7 @@ network-free. Automated tests and the First Model page remain network-free.
 | Python version resolution fails | The interpreter is older than 3.12 | Install Python 3.12 and rerun `uv sync`, or create a 3.12 virtual environment for pip |
 | `No matching distribution` for glum or LightGBM | Unsupported Python or platform wheel | Confirm a supported 64-bit Python 3.12 environment before compiling from source |
 | `ModuleNotFoundError: mlflow`, `optuna`, `plotly`, or `s3fs` | The matching optional extra is absent | Install only the extra named in the error |
+| Tutorial MLflow reports an out-of-date database schema after an upgrade | The existing local SQLite store predates the installed MLflow version | Back up the database, then run `uv run mlflow db upgrade sqlite:///examples/_artifacts/fremtpl2/mlflow.db` from the checkout |
 | `quarto: command not found` | Quarto is external to the Python environment | Install Quarto and ensure `quarto` is on `PATH` |
 | `just: command not found` | `just` is a task runner, not a Python dependency | Run the underlying `uv run ...` command shown in `justfile` or install `just` |
 | LightGBM cannot load a shared library | A system OpenMP runtime is missing | Install the platform OpenMP runtime, then reinstall LightGBM |

@@ -156,10 +156,12 @@ the feature contributions reproduces the raw LightGBM score. For this Tweedie
 model the raw score is on the log scale, so exponentiating it reproduces the
 public pure-premium prediction.
 
-The example casts both `object` and `string` dtypes explicitly for a reason:
-the estimator's fit-time auto-cast converts only `object` columns to
-categorical, so pandas `string` dtype columns pass through unchanged unless you
-cast them yourself.
+Azoic estimators automatically convert pandas `str`, nullable `string`, and
+`object` predictors to categories when fitting, predicting, and scoring. They
+preserve numeric columns, declared category order and unused levels, and caller
+frames. This example calls LightGBM's `backend_.predict` directly, so it must
+prepare the categorical columns itself; the backend call bypasses Azoic's
+conversion.
 
 !!! warning "Interpretation boundaries"
 

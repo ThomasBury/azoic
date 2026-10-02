@@ -354,7 +354,7 @@ def test_freq_severity_fit_rejects_aggregate_or_mismatched_target() -> None:
 
 def test_freq_severity_fit_rejects_nonfinite_target() -> None:
     df = _df(n=200)
-    rate = (df["claim_amount"] / df["exposure"]).to_numpy()
+    rate = (df["claim_amount"] / df["exposure"]).to_numpy(copy=True)
     rate[0] = np.inf
     model = FrequencySeverityModel(
         freq=RiskGLM(family="poisson", link="log"),
@@ -704,7 +704,7 @@ def test_fit_score_reject_invalid_sample_weight(estimator, bad) -> None:
         if isinstance(estimator, RiskGLM)
         else RiskGBM(objective="tweedie", n_estimators=10)
     )
-    w = df["exposure"].to_numpy()
+    w = df["exposure"].to_numpy(copy=True)
     w[0] = bad
     with pytest.raises(ValueError, match=match):
         clean.fit(_features(df).drop(columns=["exposure"]), y, sample_weight=w)
@@ -736,7 +736,7 @@ def test_explicit_sample_weight_is_not_floored() -> None:
     df = _df(n=2000)
     X = _features(df).drop(columns=["exposure"])
     y = (df["claim_amount"] / df["exposure"]).to_numpy()
-    w = df["exposure"].to_numpy()
+    w = df["exposure"].to_numpy(copy=True)
     w[0] = 1e-6
     RiskGBM(objective="tweedie", n_estimators=10).fit(X, y, sample_weight=w)
 
@@ -927,3 +927,84 @@ def test_m34_gbm_keeps_native_missing_features():
     y = (df["claim_amount"] / df["exposure"]).to_numpy()
     model = RiskGBM(exposure_col="exposure", n_estimators=10, n_jobs=1).fit(X, y)
     assert np.isfinite(model.predict(X)).all()
+
+
+@pytest.mark.parametrize("dtype", ["str", "string", "object", "category"])
+@pytest.mark.parametrize("kind", ["glm", "gbm", "frequency-severity-glm", "frequency-severity-gbm"])
+def test_m40_categories_affect_fit_predict_score_without_mutating_input(dtype, kind):
+    from azoic.tariff import extract_tariff
+
+    levels = ["low", "high"] * 200
+    X = pd.DataFrame({"x": np.tile(np.arange(20), 20) / 20})
+    category_dtype = pd.CategoricalDtype(["high", "unused", "low"], ordered=True)
+    X["segment"] = pd.Series(levels, dtype=category_dtype if dtype == "category" else dtype)
+    X["exposure"] = 1.0
+    counts = np.where(X["segment"] == "high", 2.0, 1.0)
+    severity = np.where(X["segment"] == "high", 30.0, 10.0) * np.exp(0.1 * X["x"])
+    y = counts * severity
+    if kind == "glm":
+        model = RiskGLM(family="tweedie", link="log", exposure_col="exposure")
+    elif kind == "gbm":
+        model = RiskGBM(exposure_col="exposure", n_estimators=60, n_jobs=1)
+    else:
+        X["claim_count"] = counts
+        X["claim_amount"] = y
+        if kind.endswith("glm"):
+            freq, sev = RiskGLM(family="poisson"), RiskGLM(family="gamma")
+        else:
+            freq = RiskGBM(objective="poisson", n_estimators=60, n_jobs=1)
+            sev = RiskGBM(objective="gamma", n_estimators=60, n_jobs=1)
+        model = FrequencySeverityModel(freq=freq, sev=sev)
+    original = X.copy(deep=True)
+    model.fit(X, y)
+    prediction = model.predict(X)
+    assert np.isfinite(prediction).all()
+    assert model.score(X, y) > 0.8
+    probe = X.iloc[:2].drop(columns=["claim_count", "claim_amount"], errors="ignore").copy()
+    probe["x"] = 0.5
+    low, high = model.predict(probe)
+    assert high > 2 * low
+    pd.testing.assert_frame_equal(X, original)
+    if kind == "glm":
+        tariff = extract_tariff(model)
+        factors = tariff["categorical"]["segment"]
+        assert factors["high"] > 2 * factors["low"]
+        expected = list(category_dtype.categories) if dtype == "category" else ["high", "low"]
+        assert list(factors) == expected
+    backends = (
+        [model.freq_.backend_, model.sev_.backend_]
+        if kind.startswith("frequency")
+        else [model.backend_]
+    )
+    if dtype == "category":
+        for backend in backends:
+            categories = (
+                backend.categorical_levels_["segment"]
+                if hasattr(backend, "categorical_levels_")
+                else backend.booster_.pandas_categorical[0]
+            )
+            assert list(categories) == list(category_dtype.categories)
+
+
+def test_m40_string_conversion_preserves_numeric_categories_and_missing_values():
+    from azoic.models import _categorize_strings
+
+    X = pd.DataFrame(
+        {
+            "native": pd.Series(["b", None, "a"], dtype="str"),
+            "nullable": pd.Series(["b", pd.NA, "a"], dtype="string"),
+            "object": pd.Series(["b", None, "a"], dtype=object),
+            "declared": pd.Categorical(
+                ["b", "a", "b"], categories=["b", "unused", "a"], ordered=True
+            ),
+            "numeric": [1.0, 2.0, 3.0],
+        }
+    )
+    original = X.copy(deep=True)
+    converted = _categorize_strings(X)
+    for name in ("native", "nullable", "object"):
+        assert isinstance(converted[name].dtype, pd.CategoricalDtype)
+        assert converted[name].isna().tolist() == X[name].isna().tolist()
+    pd.testing.assert_series_equal(converted["numeric"], X["numeric"])
+    pd.testing.assert_series_equal(converted["declared"], X["declared"])
+    pd.testing.assert_frame_equal(X, original)

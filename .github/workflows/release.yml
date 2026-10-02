@@ -28,9 +28,18 @@ jobs:
       - name: Build distributions
         run: uv build
       - name: Smoke-test wheel
-        run: uv run --isolated --no-project --with dist/*.whl azoic --help
+        run: |
+          wheel=("$GITHUB_WORKSPACE"/dist/*.whl)
+          cp tests/smoke_distribution.py "$RUNNER_TEMP/smoke_distribution.py"
+          cd "$RUNNER_TEMP"
+          uv run --isolated --no-project --with "${wheel[0]}" python smoke_distribution.py
+          uv run --isolated --no-project --with "${wheel[0]}" azoic --help
       - name: Smoke-test source distribution
-        run: uv run --isolated --no-project --with dist/*.tar.gz azoic --help
+        run: |
+          sdist=("$GITHUB_WORKSPACE"/dist/*.tar.gz)
+          cd "$RUNNER_TEMP"
+          uv run --isolated --no-project --with "${sdist[0]}" python smoke_distribution.py
+          uv run --isolated --no-project --with "${sdist[0]}" azoic --help
       - name: Upload distributions
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

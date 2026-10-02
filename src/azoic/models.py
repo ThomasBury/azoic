@@ -145,21 +145,13 @@ def _validate_target(X, y):
 
 
 def _categorize_strings(X):
-    """Cast object-dtype DataFrame columns to ``category`` so glum and LightGBM
-    route them through their native categorical encoding.
-
-    ponytail: only touches ``object`` dtype -- ``category`` / numeric columns
-    pass through unchanged.
-    """
+    """Convert object and string predictors without changing declared categories."""
     if not isinstance(X, pd.DataFrame):
         return X
-    obj_cols = [c for c in X.columns if pd.api.types.is_object_dtype(X[c])]
-    if not obj_cols:
+    columns = X.select_dtypes(include=["object", "string"]).columns
+    if columns.empty:
         return X
-    out = X.copy()
-    for c in obj_cols:
-        out[c] = out[c].astype("category")
-    return out
+    return X.astype(dict.fromkeys(columns, "category"))
 
 
 class RiskGLM(RegressorMixin, BaseEstimator):
@@ -619,7 +611,7 @@ class FrequencySeverityModel(RegressorMixin, BaseEstimator):
                 raise ValueError("y must equal claim_amount / exposure (pure-premium rate)")
 
         _store_fit_meta(self, X)
-        X_features = self._strip_specials(X) if isinstance(X, pd.DataFrame) else X
+        X_features = _categorize_strings(self._strip_specials(X))
 
         y_freq = cc / exposure
 
@@ -661,7 +653,7 @@ class FrequencySeverityModel(RegressorMixin, BaseEstimator):
 
     def predict(self, X):
         check_is_fitted(self, "freq_")
-        X_features = self._strip_specials(X) if isinstance(X, pd.DataFrame) else X
+        X_features = _categorize_strings(self._strip_specials(X))
         _check_model_features(
             self, X_features, (self.exposure_col, self.claim_count_col, self.claim_amount_col)
         )
