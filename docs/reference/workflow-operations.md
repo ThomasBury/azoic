@@ -10,7 +10,7 @@ examples.
 |---|---|---|
 | `azoic.workflow` | `ExperimentConfig`, `ModelSpec`, `PreprocessingSpec`, `TuningSpec`, `FloatDistribution`, `IntDistribution`, `CategoricalDistribution`, `Run`, `ModelResult`, `run_experiment` | Validated experiment configuration and reproducible runs |
 | `azoic.tariff` | `export_tariff`, `distill_gbm`, `extract_tariff`, `apply_tariff`, `recalibrate_for_total` | Multiplicative xlsx tariff export, GBM-to-GLM distillation, and tariff application |
-| `azoic.reporting` | `model_card`, `comparison_table`, `comparison_dashboard` | Markdown model cards, comparison tables, Plotly dashboard |
+| `azoic.reporting` | `model_card`, `comparison_table`, `comparison_dashboard` | Markdown model cards, comparison tables, standalone HTML dashboard strings |
 | `azoic.mlops` | `log_run` | MLflow run logging (lazy import) |
 | `azoic.tune` | `tune_experiment`, `TuneResult` | Optuna tuning on inner splits of outer training data |
 

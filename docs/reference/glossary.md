@@ -11,7 +11,7 @@ Each entry points to the page that develops it.
 | Tweedie deviance | Exposure-weighted mean deviance at power \(p\); experiment `deviance_test` fixes \(p = 1.5\) |
 | \(D^2\) | \(1 - \text{candidate deviance} / \text{null deviance}\); comparable only within a common response family |
 | Gini / Lorenz concentration | Ranking-only metric from the concentration curve, \(G = 1 - 2\int_0^1 C(u)\,du\); never evidence of calibration -- pair with O/P and `calibration_table` |
-| Lift | Observed pure premium by predicted-risk segment relative to the portfolio average |
+| Lift | Observed and predicted pure-premium rates by predicted-risk segment; Azoic plots absolute rates without dividing by the portfolio average. See [Diagnostics and visualization](../guide/diagnostics-visualization.md) |
 | Double lift | Segments binned by the ratio of two models' predictions, each compared with observations inside the ratio group |
 | Calibration | Agreement between observed and predicted totals, portfolio-level (O/P) and per-segment (`calibration_table`) |
 | Burn-cost factor \(c_m\) | Training-derived multiplier \(\sum_{\text{train}} \text{claim amount} / \sum_{\text{train}} w\,\mu_m\); balances training totals and is frozen before any test inspection |
@@ -19,7 +19,7 @@ Each entry points to the page that develops it.
 | Frequency--severity | Product of a claim-count rate model (all rows) and a claim-size model (rows with `claim_count > 0` only) |
 | PDP / ICE | Partial dependence -- the exposure-weighted average prediction while varying one feature; individual conditional expectation -- one curve per sampled row |
 | Distillation | Fitting an exportable log-link GLM student to a positive-objective GBM teacher's predictions |
-| Recalibration | Shifting the tariff base so it reproduces an observed portfolio claim total; production exports use the full historical frame, evaluation comparisons keep test rows out |
+| Recalibration | Shifting the tariff base to reproduce an observed claim total; CLI export uses training rows only, library callers select their calibration frame and keep evaluation rows separate. See [Reporting and operations](../guide/operations.md) |
 | Temporal split | Outer holdout on the latest fraction of `spec.time_col`; equal timestamps never cross the boundary |
 | Stability | Per-period diagnostics (exposure, O/P, Gini, deviance, \(D^2\)) through real time via `stability_table` |
 

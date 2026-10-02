@@ -25,16 +25,28 @@ A model card is Markdown and records the experiment data contract, fingerprint,
 split, features, model parameters, held-out metrics, and a calibration preview
 (first 12 rows; write full tables separately when every segment is needed).
 
+Workflow runs snapshot the configuration and nested model parameters, so later
+changes to the caller's config do not rewrite a result. Public dictionaries and
+DataFrames remain mutable. The fingerprint includes categorical vocabulary
+(even unused levels), its dtype, declared category order, and the ordered flag.
+Category-aware fingerprints intentionally change; evaluate older runs again
+before comparing them with fresh results.
+
+Comparison tables and dashboards warn once when runs differ in dataset
+fingerprint, target/exposure columns, or holdout membership. The warning names
+the affected runs and preserves every row for descriptive comparison. Different
+orders of the same holdout positions count as the same evaluated sample.
+
 The CLI can run several configs and write their comparison table:
 
 ```bash
 azoic compare baseline.yaml candidate.yaml --out comparison.csv
 ```
 
-The Python-only `comparison_dashboard` API returns standalone Plotly HTML and
-requires the `plot` extra; the CSV table does not. It has no CLI command because
-it returns an interactive Plotly object -- there is no stdout or file output
-channel for it, unlike the CSV comparison.
+The Python-only `comparison_dashboard` API returns a standalone HTML string with
+Plotly JavaScript embedded and requires the `plot` extra; the CSV table does
+not. Write the string to a file as above and open it in a browser. There is no
+dashboard CLI command.
 
 ## Tune without touching outer test
 
@@ -135,18 +147,23 @@ azoic export-tariff \
 | `factors` | Numeric per-unit factors and categorical level relativities |
 | `mappings` | Feature roles, levels, references, and fitted bin/group mappings |
 
-Recalibration is on by default and shifts the base to reproduce observed
-portfolio claim amount. The CLI recalibrates against the full loaded frame, and
-for a production tariff that scope is deliberate: once a winner is chosen, best
-practice retrains it on the whole historical data without changing the model,
-so the base calibrates to every observed claim and no information is left
-uncaptured. No evaluation claim is drawn from that frame afterwards.
+Application sums the linear predictor before exponentiating. Invalid or
+unrepresentable factors and rates raise `ValueError`; export also rejects
+unrepresentable numeric per-unit factors. Zero observed claims can recalibrate
+the base to zero. Workbook labels are literal text, including `=1+1`; numeric
+and boolean level labels keep their types.
 
-The evaluation context is different: while candidates are still being compared
-on held-out rows, test data must stay out of the tariff base. That is why the
-tutorial below exports with `recalibrate=False` plus training-frame metadata
-and a separate external multiplier. Use `--no-recalibrate` the same way when
-the structural model total is intentionally required.
+Recalibration is on by default and shifts the base to reproduce the observed
+claim amount on `Run.train_indices` only. Direct GLMs and distilled students
+keep the existing fit and holdout; the CLI does not refit on the full frame.
+Holdout outcomes cannot change the exported rates or calibration factor.
+
+Use `--no-recalibrate` when the structural model total is required. The tutorial
+exports with `recalibrate=False` plus training-frame metadata and reports a
+separate external training multiplier. Library `export_tariff` callers choose
+their calibration frame explicitly and must supply a finite, non-negative 1D
+vector of aggregate claim amounts with one value per calibration row. Keep
+evaluation rows separate from that frame.
 
 A positive-objective GBM is not itself a multiplicative table. Distill a
 held-out GLM student explicitly:
@@ -166,7 +183,10 @@ is tweedie -- fits with the `RiskGLM` default `alpha=0.001`, and reuses a copy
 of the teacher's already-fitted preprocessing, so bins and group mappings are
 not relearned from the holdout. Teacher predictions and exposure must be
 positive and finite on both the fit and validation frames. Fidelity measures
-agreement with teacher predictions, not accuracy against claims. The
+agreement with teacher predictions, not accuracy against claims. The CLI uses
+the run's stored training and test positions. Direct `distill_gbm` callers must
+supply disjoint observations: the object-identity guard rejects the same frame
+object, but separate objects or copies do not prove row independence. The
 [freMTPL2 tutorial](fremtpl2.md) applies the workbook
 after fitted preprocessing and compares it with the direct GLM, raw GBM, and
 structured teacher on the same held-out claims. It exports with

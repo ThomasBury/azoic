@@ -184,9 +184,9 @@ using the stored train/test partition. Neither export uses holdout claims to
 set its premium level. The training multipliers shown in the scoring chapter
 are separate from these raw workbooks.
 
-Without this flag, CLI export recalibrates against the full loaded frame,
-including its holdout. Such a workbook has consumed the test outcomes and needs
-fresh evaluation data; the earlier raw metrics do not evaluate that adjustment.
+Without this flag, CLI export recalibrates on the stored training rows only,
+keeping holdout claims out of the base. The earlier raw metrics still describe
+the unadjusted estimator; evaluate the adjusted workbook separately on the holdout.
 
 ```{python}
 cli_glm_tariff = ARTIFACT_DIR / "cli_glm_tariff.xlsx"

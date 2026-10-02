@@ -19,6 +19,7 @@ short runnable path, start with the
 `target`, `exposure`, and every protected-column name must be non-empty.
 `protected_cols` must be unique and cannot overlap target, exposure, claim count,
 or time. When data loads, every named field must exist.
+Unknown fields are rejected: use `claim_count`, not `claim_count_col`, in `spec`.
 
 ## `ExperimentConfig`
 
@@ -45,13 +46,18 @@ for the same reason.
 The workflow injects `exposure_col`, `claim_count_col`, and `target_col` from
 `spec`; do not repeat them.
 
+Configured exposure and claim-count columns are required during preprocessing
+fit. Values must be finite, exposure must meet the one-day floor (1/366 with
+0.1% tolerance), and claim counts must be non-negative. Direct transformer calls
+without `exposure_col` use unweighted binning or unit row weights for grouping.
+
 ### Binner
 
 | Setting | Type | Default | Meaning |
 |---|---|---|---|
 | `cols` | list or null | `null` | Numeric columns to bin; null selects numeric non-special columns |
 | `strategy` | `quantile` or `tree` | `quantile` | Exposure-balanced cut points or target-aware decision-tree cuts |
-| `max_bins` | integer | `8` | Maximum bins per feature |
+| `max_bins` | integer | `8` | Maximum bins per feature; at least 2 |
 | `min_exposure` | number or null | `null` | Merge bins below aggregate exposure |
 | `min_claims` | number or null | `null` | Merge bins below aggregate claim count |
 | `monotonic` | false, true, `increasing`, or `decreasing` | `false` | Isotonic smoothing and adjacent-bin merging |
@@ -83,8 +89,10 @@ categoricals only merge adjacent levels.
 | `frequency_severity` | `frequency` and `severity` sub-specs | `FrequencySeverityModel` |
 
 `ModelSpec.kind` defaults to `glm` and `params` defaults to an empty mapping.
-For direct models, `run_experiment` always overwrites `exposure_col` with
-`spec.exposure`.
+For direct GLM and GBM models, the workflow derives `exposure_col` from
+`DatasetSpec.exposure` (`spec.exposure` in YAML). Omit it from model `params`:
+an omitted or null value uses the spec, a matching non-null value is accepted,
+and a conflicting non-null value raises `ValueError`.
 
 ### GLM parameters
 
@@ -149,7 +157,9 @@ models:
 ```
 
 The workflow derives exposure, claim-count, and claim-amount column names from
-`spec`. Frequency fits
+`spec`. Conflicting non-null `exposure_col`, `claim_count_col`, or
+`claim_amount_col` values in the outer model's `params` raise `ValueError`;
+omitted or null values use the spec. Frequency fits
 \(y = \text{claim count}/\text{exposure}\) with exposure weight. Severity fits
 only positive-claim rows on mean claim size with claim-count weight.
 
@@ -345,7 +355,7 @@ models:
 
 | Command | Required input | Main options | Output |
 |---|---|---|---|
-| `azoic profile` | `--data`, `--target`, `--exposure` | `--claim-count`, `--time-col`, `--out` | Screening table to stdout or CSV |
+| `azoic profile` | `--data`, `--target`, `--exposure` | `--claim-count`, `--time-col`, `--out` | Screening table to stdout or CSV; `--data` preserves local paths and `s3://` URI strings |
 | `azoic fit` | `--config` | `--out`, `--quiet` | Markdown model card to stdout and/or a file |
 | `azoic compare` | One or more config paths | `--out` | Comparison table to stdout or CSV |
 | `azoic tune` | `--config` | `--trials` (YAML or 20), `--calibration-penalty` (YAML or 1.0), `--out`, `--quiet` | Best parameters plus Markdown model card |
@@ -357,12 +367,12 @@ Run `azoic COMMAND --help` for Typer's current option spellings.
 
 | Object | Contents |
 |---|---|
-| `Run` | Config, SHA-256 data fingerprint, row counts, exact train/test positions, feature names, and named `ModelResult` objects |
-| `ModelResult` | Model kind, effective YAML parameters, diagnostic metrics, held-out calibration table, and `protected_calibration` mapping |
+| `Run` | Configuration snapshot, SHA-256 data fingerprint including categorical metadata, row counts, exact train/test positions, feature names, and named `ModelResult` objects |
+| `ModelResult` | Model kind, effective parameter snapshot, diagnostic metrics, held-out calibration table, and `protected_calibration` mapping |
 | Metrics | `gini_train`, `gini_test`, `op_ratio_test`, and exposure-weighted Tweedie `deviance_test` at fixed power 1.5 |
 | Optional estimator mapping | Returned by `run_experiment(..., return_estimators=True)` |
 | Model card | Markdown |
-| Comparison | pandas table; `comparison_dashboard(runs)` optionally returns standalone Plotly HTML from Python |
+| Comparison | pandas table; `comparison_dashboard(runs)` optionally returns standalone Plotly HTML from Python; both warn once on mixed evaluation contexts while retaining all rows |
 | Tariff | `base_rate`, `factors`, and `mappings` workbook sheets |
 
 `Run.train_indices` and `Run.test_indices` are immutable `tuple[int, ...]`
@@ -371,9 +381,16 @@ partition order. All models within a run share those positions. For tuning,
 `TuneResult.run` records the final **outer** partition, not an inner trial split.
 
 Recover rows from the exact input frame without sorting, filtering, or changing
-its index. The fingerprint covers shape, columns, dtypes, index, and values;
-matching seeds or row counts alone cannot establish matching partitions. When
-comparing runs, check both their fingerprints and their position tuples.
+its index. The fingerprint covers shape, columns, dtypes, index, values, and
+categorical vocabulary (including unused levels), category dtype/order, and the
+ordered flag. Workflow evaluation deep-copies configuration and nested model
+parameters; public dictionaries and DataFrames remain mutable. Category-aware
+fingerprints intentionally change, so older runs need fresh evaluation.
+
+Matching seeds or row counts alone cannot establish matching partitions.
+Comparisons warn once on different fingerprints, target/exposure columns, or
+holdout membership, naming affected runs without dropping rows. Holdout
+positions are compared as sets, so a permutation alone does not warn.
 
 ```python
 train_frame = portfolio.iloc[list(run.train_indices)]
@@ -381,13 +398,15 @@ test_frame = portfolio.iloc[list(run.test_indices)]
 ```
 
 Convert tuples to a list or integer array: pandas interprets a bare tuple as
-row/column indexing. Use training positions for student fits and any
-evaluation-phase recalibration base, and test positions for diagnostic and
-distillation-fidelity frames. This scoping applies while candidates are being
-evaluated; the production `export-tariff` default deliberately recalibrates on
-the full loaded frame (see [Reporting and operations](../guide/operations.md)).
-CLI `export-tariff --distill` uses the returned run's positions and rejects a
-reloaded dataset whose fingerprint changed after fitting.
+row/column indexing. CLI `export-tariff` recalibrates direct GLMs and distilled
+students on the returned run's training positions only. Student fits use those
+same positions; diagnostic and distillation-fidelity frames use test positions.
+The CLI preserves the fitted estimator and holdout and rejects a reloaded
+dataset whose fingerprint changed after fitting. `--no-recalibrate` preserves
+the structural tariff. Library callers choose their calibration frame and must
+keep distillation fit/validation observations disjoint; distinct frame objects
+alone do not establish independence (see
+[Reporting and operations](../guide/operations.md)).
 
 Run metrics describe raw estimator predictions. If applying a training-derived
 scale factor later, label those adjusted diagnostics separately.
