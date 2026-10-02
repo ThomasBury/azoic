@@ -38,7 +38,7 @@ mlruns/
 
 # Executable tutorial outputs
 examples/_book/
-examples/fremtpl2_files/
+examples/*_files/
 examples/.quarto/
 examples/_freeze/
 examples/_artifacts/

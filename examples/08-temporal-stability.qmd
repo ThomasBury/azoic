@@ -87,6 +87,9 @@ pd.DataFrame(
 )
 ```
 
+The run records row positions, so use `.iloc` even when the portfolio is
+indexed by policy IDs.
+
 ```{python}
 config = ExperimentConfig(
     name="temporal-demo",
@@ -115,8 +118,8 @@ config = ExperimentConfig(
 )
 run, estimators = run_experiment(config, return_estimators=True)
 
-train_periods = portfolio.loc[list(run.train_indices), "period"].unique()
-test_periods = portfolio.loc[list(run.test_indices), "period"].unique()
+train_periods = portfolio.iloc[list(run.train_indices)]["period"].unique()
+test_periods = portfolio.iloc[list(run.test_indices)]["period"].unique()
 assert train_periods.max() < test_periods.min()
 assert len(train_periods) + len(test_periods) == 24
 print(f"train periods: {train_periods.min()}–{train_periods.max()}; "
@@ -124,7 +127,7 @@ print(f"train periods: {train_periods.min()}–{train_periods.max()}; "
 ```
 
 ```{python}
-test_frame = portfolio.loc[list(run.test_indices)].copy()
+test_frame = portfolio.iloc[list(run.test_indices)].copy()
 y_test = test_frame["claim_amount"].to_numpy()
 w_test = test_frame["exposure"].to_numpy()
 prediction = np.asarray(

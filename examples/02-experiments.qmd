@@ -240,8 +240,9 @@ Continue to [essential diagnostics](03-diagnostics.qmd) to assess these candidat
 Start with one GLM and explicit columns. This standalone example needs Azoic,
 pandas, and a Parquet file named `my_portfolio.parquet` in your working directory;
 it does not use the book's loader or shared helpers. Each row is a policy period,
-`paid_claims` is its non-negative aggregate cost, `insured_years` is strictly
-positive exposure in years, and `driver_age` and `vehicle_age` are numeric.
+`paid_claims` is its non-negative aggregate cost, and `insured_years` is finite
+exposure in years, at least one day (`1/366`, with 0.1% tolerance).
+`driver_age` and `vehicle_age` are numeric.
 Clean missing/invalid values and choose a consistent loss layer before fitting.
 
 ```python

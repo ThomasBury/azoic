@@ -459,3 +459,69 @@ def test_own_portfolio_example_predicts_rates_and_period_costs(tmp_path, monkeyp
         namespace["my_estimators"]["direct-glm"].predict(doubled_exposure),
         scored["raw_rate"],
     )
+
+
+@pytest.mark.parametrize("preprocessing", [None, {"binner": {"cols": ["driver_age"]}}])
+def test_operations_scoring_excludes_metadata(tmp_path, preprocessing):
+    from azoic.data import DatasetSpec
+    from azoic.workflow import ExperimentConfig, ModelSpec
+
+    guide = (Path(__file__).parents[1] / "docs" / "guide" / "operations.md").read_text()
+    section = guide.split("## Score an outcome-free frame")[1]
+    snippet = re.search(r"```python\n(.*?)\n```", section, flags=re.DOTALL).group(1)
+    portfolio = make_synthetic_portfolio(n=1_000).rename(columns={"exposure": "insured_years"})
+    portfolio["policy_id"] = [f"policy-{i}" for i in range(len(portfolio))]
+    portfolio["note"] = "review only"
+    path = tmp_path / "portfolio.parquet"
+    portfolio.to_parquet(path)
+    config = ExperimentConfig(
+        data_path=str(path),
+        spec=DatasetSpec(
+            target="claim_amount", exposure="insured_years", claim_count="claim_count"
+        ),
+        features=["vehicle_age", "driver_age"],
+        preprocessing=preprocessing,
+        models={"tweedie-glm": ModelSpec(params={"family": "tweedie", "link": "log"})},
+    )
+    test = portfolio.drop(columns=["claim_amount", "claim_count"]).sample(n=50, random_state=42)
+    namespace = {"config": config, "test": test}
+    exec(snippet, namespace)
+    assert list(namespace["unlabeled"]) == ["vehicle_age", "driver_age", "insured_years"]
+    scored = namespace["scored"]
+    pd.testing.assert_series_equal(scored["policy_id"], test["policy_id"])
+    assert np.isfinite(scored["predicted_rate"]).all()
+    assert scored["predicted_rate"].gt(0).all()
+    np.testing.assert_allclose(
+        scored["expected_period_cost"], scored["predicted_rate"] * test["insured_years"]
+    )
+
+
+def test_temporal_chapter_selects_positions_with_policy_id_index(tmp_path):
+    from azoic.data import DatasetSpec
+    from azoic.metrics import stability_table
+    from azoic.workflow import ExperimentConfig, ModelSpec, run_experiment
+
+    chapter = (Path(__file__).parents[1] / "examples" / "08-temporal-stability.qmd").read_text()
+    cells = re.findall(r"```\{python\}\n(.*?)\n```", chapter, flags=re.DOTALL)
+    portfolio = make_synthetic_portfolio(n=2_400).assign(period=np.repeat(np.arange(24), 100))
+    portfolio.index = pd.Index([f"policy-{i}" for i in range(len(portfolio))], name="policy_id")
+    path = tmp_path / "portfolio.parquet"
+    portfolio.to_parquet(path)
+    namespace = {
+        "np": np,
+        "DatasetSpec": DatasetSpec,
+        "ExperimentConfig": ExperimentConfig,
+        "ModelSpec": ModelSpec,
+        "run_experiment": run_experiment,
+        "stability_table": stability_table,
+        "portfolio": portfolio,
+        "portfolio_path": path,
+        "RANDOM_STATE": 42,
+        "display": lambda *args: None,
+    }
+    for cell in cells:
+        if "config = ExperimentConfig(" in cell or "test_frame =" in cell:
+            exec(cell, namespace)
+    assert namespace["train_periods"].tolist() == list(range(18))
+    assert namespace["test_periods"].tolist() == list(range(18, 24))
+    pd.testing.assert_frame_equal(namespace["test_frame"], portfolio.iloc[1_800:])

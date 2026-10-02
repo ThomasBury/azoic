@@ -11,7 +11,7 @@ short runnable path, start with the
 | Field | Type | Default | Meaning |
 |---|---|---|---|
 | `target` | string | required | Aggregate claim amount column |
-| `exposure` | string | required | Positive exposure column used as model and diagnostic weight |
+| `exposure` | string | required | Finite exposure in years, at least one day (`1/366`, with 0.1% tolerance), used as model and diagnostic weight |
 | `claim_count` | string or null | `null` | Aggregate claim-count column; required for frequency-severity |
 | `time_col` | string or null | `null` | Ordered period used by a temporal split |
 | `protected_cols` | list of strings | `[]` | Review-only subgroup columns retained for held-out calibration and excluded from features |
@@ -369,11 +369,17 @@ Run `azoic COMMAND --help` for Typer's current option spellings.
 |---|---|
 | `Run` | Configuration snapshot, SHA-256 data fingerprint including categorical metadata, row counts, exact train/test positions, feature names, and named `ModelResult` objects |
 | `ModelResult` | Model kind, effective parameter snapshot, diagnostic metrics, held-out calibration table, and `protected_calibration` mapping |
-| Metrics | `gini_train`, `gini_test`, `op_ratio_test`, and exposure-weighted Tweedie `deviance_test` at fixed power 1.5 |
+| Metrics | `gini_train`, `gini_test`, `op_ratio_test`, exposure-weighted Tweedie `deviance_test` at fixed power 1.5, and `d2_test` |
 | Optional estimator mapping | Returned by `run_experiment(..., return_estimators=True)` |
 | Model card | Markdown |
 | Comparison | pandas table; `comparison_dashboard(runs)` optionally returns standalone Plotly HTML from Python; both warn once on mixed evaluation contexts while retaining all rows |
 | Tariff | `base_rate`, `factors`, and `mappings` workbook sheets |
+
+`d2_test` is 1 minus `deviance_test` divided by the null deviance. The null
+predicts the test set's observed mean rate (total claims / total exposure),
+using the same exposure-weighted Tweedie deviance at power 1.5. A negative value
+means worse deviance than that constant-rate null. It is `NaN` for a claim-free
+test set or zero null deviance (including a constant positive observed rate).
 
 `Run.train_indices` and `Run.test_indices` are immutable `tuple[int, ...]`
 values containing the actual fit/evaluation row positions, in their original
@@ -415,8 +421,9 @@ scale factor later, label those adjusted diagnostics separately.
 
 - `ExperimentConfig`, `ModelSpec`, `PreprocessingSpec`, `TuningSpec`, and
   all parameter distributions reject extra fields.
-- Data must be non-empty; exposure must be positive and finite; target and claim
-  count must be non-negative and finite.
+- Data must be non-empty; exposure must be finite and at least one day in years
+  (`1/366`, with 0.1% tolerance: `EXPOSURE_FLOOR = (1/366) * (1 - 0.001)`);
+  target and claim count must be non-negative and finite.
 - Claim-count and target rows must be zero or positive together.
 - Features must exist, be unique, and exclude special columns. Protected columns
   must be unique, non-empty, present in the data, and distinct from other special columns.

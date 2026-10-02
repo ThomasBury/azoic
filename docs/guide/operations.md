@@ -203,15 +203,27 @@ comparisons accompany deviance, D², Gini, O/P, and portfolio totals.
 
 ## Score an outcome-free frame
 
-Fitted workflow pipelines do not need outcome columns at prediction time:
+Fitted workflow pipelines do not need outcome columns at prediction time.
+Select exactly the fitted predictors, in order, followed by the configured
+exposure column. Keep policy identifiers and other metadata alongside the
+output, outside the prediction inputs:
 
 ```python
+from azoic.workflow import run_experiment
+
 run, estimators = run_experiment(config, return_estimators=True)
 pipeline = estimators["tweedie-glm"]
 
-unlabeled = test.drop(columns=["claim_amount", "claim_count"])
+unlabeled = test[[*run.feature_names, config.spec.exposure]]
 predictions = pipeline.predict(unlabeled)
+scored = test[["policy_id"]].copy()
+scored["predicted_rate"] = predictions
+scored["expected_period_cost"] = predictions * test[config.spec.exposure].to_numpy()
 ```
+
+Here `test` is your scoring DataFrame and `policy_id` is its identifier column;
+substitute your identifier name. Merely dropping outcomes can leave unused
+columns that the fitted estimator rejects.
 
 When the config declares preprocessing, a `fit_columns` placeholder step adds
 zero-valued outcome columns so the fitted binner and grouper see their training

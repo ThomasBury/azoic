@@ -13,8 +13,12 @@ access.
 
 ## Run the complete example
 
-Save the following as `first_model.py` in an empty directory and run
-`python first_model.py`.
+After [installing from the checkout](installation.md), save the following as
+`first_model.py` in the `azoic` repository root. From that directory, run:
+
+```bash
+uv run python first_model.py
+```
 
 ```python
 from pathlib import Path
