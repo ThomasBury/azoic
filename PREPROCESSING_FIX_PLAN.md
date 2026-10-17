@@ -1,6 +1,7 @@
 # Preprocessing fixes and release plan
 
-Status: M45 completed locally 2026-10-17; delivery [PR #1](https://github.com/ThomasBury/azoic/pull/1); M15 is in progress.
+Status: M45 merged in [PR #1](https://github.com/ThomasBury/azoic/pull/1).
+M15 completed 2026-10-17: `azoic==0.5.0` is public on PyPI.
 Plan recorded 2026-10-16; execution evidence lives in `PROGRESS.md`.
 Delivery order: **M45 → M15**, one milestone per implementation session.
 This plan authorizes no implementation, Git delivery, private configuration,
@@ -90,7 +91,7 @@ Completed locally on 2026-10-17: 64 focused cases and 279 preprocessing tests
 passed (2 upstream skips). Full `just check` passed Ruff/Ty and 1119 tests
 (4 skips, 2 expected failures); strict docs, rendered contracts, guide links,
 formatting, and diff review passed. See the M45 completion checkpoint in
-`PROGRESS.md` for evidence. Git delivery is submitted in [PR #1](https://github.com/ThomasBury/azoic/pull/1);
+`PROGRESS.md` for evidence. Git delivery merged in [PR #1](https://github.com/ThomasBury/azoic/pull/1);
 its timeline records review, CI, merge, and branch cleanup outcomes.
 
 ## Fix PR
@@ -153,7 +154,7 @@ full diff from `0.4.1` to the release candidate.
   Reuse `tests/smoke_distribution.py` and CLI checks outside the checkout against
   each exact artifact; verify version and all five CLI commands. Exercise the
   focused preprocessing regressions against the installed artifacts as well.
-- [ ] Record candidate commit, artifact hashes, check results, remaining blockers,
+- [x] Record candidate commit, artifact hashes, check results, remaining blockers,
   and concrete release notes before publication.
 
 ### Delivery decision — 2026-10-17
@@ -174,23 +175,27 @@ Retain that authorization; ask only if a new action exceeds its scope.
 
 ### Authorized publication and completion
 
-- [ ] After the release PR is merged and its exact commit has green CI,
+- [x] After the release PR is merged and its exact commit has green CI,
   confirm the recorded authorization covers tagging/publication/private changes.
-- [ ] Create `v0.5.0` at that commit and publish its GitHub release through the
+- [x] Create `v0.5.0` at that commit and publish its GitHub release through the
   existing `.github/workflows/release.yml` flow. Do not retry the old release to
   publish the old source or move its tag.
-- [ ] Confirm release build and publishing jobs succeed. Verify the published
+- [x] Confirm release build and publishing jobs succeed. Verify the published
   package and hashes, then perform a fresh isolated PyPI install, version check,
   preprocessing smoke, and all five CLI command checks.
-- [ ] Confirm the documentation/Pages workflow is green. Mark M15 ☑ only after
+- [x] Confirm the documentation/Pages workflow is green. Mark M15 ☑ only after
   successful PyPI publication and post-publication checks; otherwise record the
   failed step and keep the milestone incomplete. Fix a published defect through
   a new version rather than rewriting release history.
 
 ## Handoff
 
-M45 is merged in PR #1. M15 started on 2026-10-17 at the user's request.
-Read `PROGRESS.md` Current focus and its latest M15 checkpoint for acceptance,
-Git delivery, and publication state. The candidate is `0.5.0` / `v0.5.0`;
-release notes are in `CHANGELOG.md`. Preserve the old `0.4.1` tag and publish
-only after the release PR and acceptance checks pass.
+M45 merged in PR #1. M15 completed 2026-10-17 through release PR #2:
+[`v0.5.0`](https://github.com/ThomasBury/azoic/releases/tag/v0.5.0) and
+[`azoic==0.5.0`](https://pypi.org/project/azoic/0.5.0/) are public. All acceptance
+items above are green, including published hashes/provenance, fresh registry
+install, preprocessing, all five CLI commands, first model, and Quarto/Pages.
+Read `PROGRESS.md` Current focus and the M15 completion checkpoint for exact
+commits, workflow links, and hashes. Preserve existing tags and published
+artifacts. Finish the documentation-only completion record, then stop; no next
+milestone has been selected.

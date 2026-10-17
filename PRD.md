@@ -228,23 +228,21 @@ Each is independently shippable. Done-when = acceptance check.
   publishing job. Add no second tutorial, dependency, or Python interface.
   *Done when `just check`, `just docs-build`, `uv build`, and isolated wheel and
   source-distribution CLI smoke tests pass and the Pages deployment is green.*
-- **M15 — first PyPI release (in progress 2026-10-17)**: reconcile the existing
-  GitHub `0.4.1` release
-  whose publication failed with `invalid-publisher`; refresh live release state,
-  verify the trusted-publisher configuration, and prepare a new candidate.
-  The candidate is `0.5.0` / `v0.5.0`,
-  finalized in a separate release PR covering the full delta since `0.4.1`.
-  Preserve the existing tag. M16–M44 and M45 are prerequisites; rebuild and
-  revalidate the corrected source using M14's distribution checks before
-  publication. Release tags must equal `v` plus the package version; installed
-  artifact smokes cover preprocessing contracts and every CLI command. Registry
-  installation is documented alongside the checkout route. Follow
-  [the recorded plan](PREPROCESSING_FIX_PLAN.md). The 2026-10-17 request authorizes
-  publication once the separate release PR and acceptance checks pass.
-  *Done when PyPI exposes the release, a fresh isolated install reports version
-  matching the finalized candidate and all five CLI commands, installed
-  preprocessing regressions pass, and the release and documentation workflows
-  are green.*
+- **M15 — first PyPI release (completed 2026-10-17)**: published `0.5.0` /
+  `v0.5.0` at commit `8a21acc` through release PR #2 and the existing OIDC
+  workflow. The historical GitHub `0.4.1` release failed to publish because its
+  publisher was not configured; its tag is preserved. The new release covers
+  the full corrected delta through M45. Release tags must equal `v` plus the
+  package version; installed artifact smokes cover preprocessing contracts and
+  every CLI command. Registry installation is documented alongside the checkout
+  route. Full scope/history: [the recorded plan](PREPROCESSING_FIX_PLAN.md).
+  *Done when PyPI exposes the release, a fresh isolated install reports the
+  finalized version and all five CLI commands, installed preprocessing
+  regressions pass, and release/documentation workflows are green.*
+  Codex review, PR/merge CI, full Quarto/Pages, and release build/publish passed.
+  Published hashes and provenance match the workflow artifacts; a fresh Python
+  3.12 registry install, 64 M45 cases, first model, and all five CLI commands
+  passed. See `PROGRESS.md` for the completion checkpoint.
 
 - **M16 — preserve the experiment holdout** — **completed 2026-09-05**:
   immutable `Run.train_indices` and `Run.test_indices` record actual fit and
@@ -598,7 +596,7 @@ changes require a fresh full-book render and isolated scoring, reporting,
 tuning, and temporal chapters. Sources only; generated artifacts stay ignored.
 Execution record: [PROGRESS.md](PROGRESS.md#focused-documentation-revision--2026-10-02).
 
-### M45 — preprocessing correctness (completed locally 2026-10-17)
+### M45 — preprocessing correctness (completed 2026-10-17)
 
 Review confirmed three bugs: nonfinite `target_col` outcomes bypass validation
 (and numeric-string `y` can become nonfinite after conversion), zero-weight
@@ -625,10 +623,10 @@ remain in [PROGRESS.md](PROGRESS.md#preprocessing-correctness-and-release-plan--
 
 Local acceptance passed on 2026-10-17: 64 new cases, full preprocessing tests,
 Ruff/Ty, **1119 tests** (4 skips, 2 expected failures), strict docs, rendered
-contracts, local references, and formatting/diff checks. M15 started 2026-10-17;
-Git delivery is submitted in [PR #1](https://github.com/ThomasBury/azoic/pull/1);
-Codex review and green CI gate its merge. Publication remains in M15 under the
-2026-10-17 authorization, after its separate release PR and acceptance checks.
+contracts, local references, and formatting/diff checks. M45 merged in
+[PR #1](https://github.com/ThomasBury/azoic/pull/1) after Codex review and green
+CI. M15 subsequently published `0.5.0` / `v0.5.0` after release PR #2 and all
+release/post-publication checks passed.
 
 ## 7. Later iterations (optional, none blocking)
 
