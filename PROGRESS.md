@@ -9,30 +9,88 @@ Legend: ☐ pending · ◐ in progress · ☑ done
 
 ## Current focus
 
-- **Goal:** preprocessing fixes complete; separate M15 release review pending.
-- **Active milestone:** none. M45 ☑ completed locally 2026-10-17.
-- **State:** M45 is green: Ruff/Ty, 1119 tests passed (4 skipped, 2 expected
-  failures), strict docs, formatting, rendered contracts, and guide links.
-  The 64 new cases include the three reproduced bugs and preservation checks.
-  M45 delivery: [PR #1](https://github.com/ThomasBury/azoic/pull/1),
-  branch `fix/preprocessing-contracts`; Codex review and CI gate the merge.
-- **Delivery order:** M45 ☑ → M15 ☐. M43–M44 are complete.
-- **Resume here:** read the [preprocessing and release plan](PREPROCESSING_FIX_PLAN.md)
-  and M45's delivery checkpoint below. Confirm PR #1 is merged (otherwise
-  finish its review/CI/merge), then address M15 in a separate session. Do not start
-  M15 here. The 2026-10-17 request authorizes M45 Git delivery and subsequent
-  M15 release/publication after its separate release PR and acceptance checks
-  pass; retain that authorization for the next session.
+- **Goal:** publish the first PyPI release, `0.5.0` / `v0.5.0`.
+- **Active milestone:** M15 ◐ started 2026-10-17; M45 ☑ merged in PR #1.
+- **State:** M45 merge commit `3e2363e` has green CI and full Quarto/Pages.
+  PyPI still returns 404. The pending publisher was verified in the authenticated
+  PyPI UI: project `azoic`, repository `ThomasBury/azoic`, workflow `release.yml`,
+  environment `pypi`; no private changes were needed.
+- **Delivery order:** M45 ☑ → M15 ◐. No further milestone is a prerequisite.
+- **Resume here:** read the [release plan](PREPROCESSING_FIX_PLAN.md) and latest
+  M15 checkpoint below. Prepare the separate release PR, run acceptance, obtain
+  Codex review, merge with green CI, publish GitHub release, then verify PyPI
+  and Pages before marking M15 done. The 2026-10-17 requests authorize the full
+  delivery/publication scope; retain that authorization.
 
 This section and the delivery order below supersede historical statements that
 M15 is next. Completed milestones and their evidence remain historical records.
+
+## M15 — first PyPI release — 2026-10-17
+
+Checkpoint — kickoff: M45 PR #1 is merged at `3e2363e`; both merge CI and the
+full real-data Quarto/Pages run succeeded. Working tree was clean. Reviewed the
+full commit list and file/dependency delta since GitHub `0.4.1`; preserve that
+historical tag and failed publication. Public PyPI JSON still returns 404.
+Authenticated PyPI UI confirms the exact pending publisher identity required by
+the existing workflow (`azoic`, `ThomasBury/azoic`, `release.yml`, `pypi`).
+GitHub's `pypi` environment exists. No credentials or private configuration edits.
+
+M15 alone is now ◐. Branch: `chore/release-0.5.0`. Next: align the three version
+sources, write release notes and registry installation guidance, extend the
+existing installed-distribution smoke to cover M45/all five CLI commands, and
+validate release tag/version agreement. Then run fresh locked acceptance and
+artifacts before Git delivery and publication. Authorization is already given.
+
+Checkpoint — candidate prepared: aligned `pyproject.toml`, runtime version,
+and lockfile to **0.5.0**. Added full release notes since `0.4.1`, registry
+installation commands, and a first-model path that also works outside a checkout.
+Extended the existing runtime-only distribution smoke with nonfinite outcome
+routes, both representation switches, constant bins, and all five CLI helps.
+Added a release tag/version guard; actual workflow command accepts `v0.5.0`
+and rejects `v0.4.1` and unprefixed `0.5.0`. No new dependency or runtime API.
+
+Fresh locked all-extras/groups sync passed. Strict docs passed in **2.91 s**;
+23 local Markdown targets exist. Fresh build output is outside the checkout at
+`/tmp/azoic-m15-artifacts.Jte64m`. Runtime-only smokes passed for wheel and
+sdist in isolated Python 3.13 installs, including actual installed module paths,
+GLM/GBM fit/score and categorical influence, preprocessing, and all five CLI
+commands. All **64 M45 cases passed against each installed artifact** (24.30 s
+wheel, 21.46 s sdist). Metadata/dependency floors/archive scope checks passed.
+
+Local candidate SHA-256:
+
+- Wheel: `7adafa74a55504c7529c6f6b8db5f6c95cf37b9fd0e88147a512e160e85073fa`
+- Sdist: `fe939834f3ee3f9be196ae74c5475fa7baf0cfbb1de9057ef140cfa205fa221c`
+
+Remaining: full `just check` and isolated Python 3.12 first-model run are active.
+Next: collect results, review staged scope, commit/push the release PR, wait for
+Codex/CI, merge, and publish only from the green merge commit. Final GitHub
+release artifacts are rebuilt by the existing workflow and need independent
+published-hash/install checks. M15 remains ◐.
+
+Checkpoint — local acceptance green: `just check` exited **0**, Ruff/Ty
+passed and **1119 tests passed, 4 upstream skips, 2 expected strict-target
+failures**, in **275.61 s** (`/tmp/azoic-m15-check.log`). The exact documented
+first model passed from an isolated Python 3.12 wheel install and wrote its
+calibration chart outside the checkout (`/tmp/azoic-m15-first-model.log`).
+Runtime-only wheel/sdist smokes and all 64 installed regressions each passed;
+source-format and diff checks passed. Release candidate source/lock dependencies
+remain unchanged apart from the local project version; no generated files are
+tracked. Full release notes: `CHANGELOG.md`.
+
+Remaining/blockers: none for PR submission. M15 remains ◐ because GitHub release,
+PyPI publication, published hashes/install, and final Pages checks are pending.
+Next: commit `chore: prepare 0.5.0 release`, push the dedicated branch, open a
+labelled PR, request Codex review, address findings, and merge only with green
+CI. Record the exact candidate/merge commit and workflow artifact hashes in the
+PR/release timeline; tag/publish only that green merge commit.
 
 ## Preprocessing correctness and release plan — 2026-10-16
 
 | Status | Milestone | Scope |
 |---|---|---|
 | ☑ | M45 — preprocessing correctness | Reject nonfinite supplied outcomes; handle empty bins in monotonic pooling; reject input that cannot match fitted preprocessing mappings |
-| ☐ | M15 — first PyPI release | Reconcile the failed GitHub 0.4.1 publication, prepare a fresh release candidate, validate distributions, and publish under the recorded authorization |
+| ◐ | M15 — first PyPI release | Reconcile the failed GitHub 0.4.1 publication, prepare a fresh release candidate, validate distributions, and publish under the recorded authorization |
 
 Checkpoint — planning only: review at `73874e5` reproduced findings 3–5.
 Both transformers also skip mappings on the reverse array-to-DataFrame transition.
@@ -2628,7 +2686,7 @@ its distribution builds and isolated CLI checks before publication. Stop here.
 - ☑ **M14 — documentation parity and release hardening** — document temporal
   stability, remove obsolete MLflow roadmap language, and validate wheel and
   source distributions before a least-privilege publish job.
-- ☐ **M15 — first PyPI release** — prepare candidate `0.5.0` / `v0.5.0` in a
+- ◐ **M15 — first PyPI release** — prepare candidate `0.5.0` / `v0.5.0` in a
   separate release PR after M45 merges. Validate fresh distributions and publish
   through the existing trusted-publisher workflow under the 2026-10-17
   authorization. Follow **Current focus** and `PREPROCESSING_FIX_PLAN.md`.

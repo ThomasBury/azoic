@@ -228,15 +228,19 @@ Each is independently shippable. Done-when = acceptance check.
   publishing job. Add no second tutorial, dependency, or Python interface.
   *Done when `just check`, `just docs-build`, `uv build`, and isolated wheel and
   source-distribution CLI smoke tests pass and the Pages deployment is green.*
-- **M15 — first PyPI release**: reconcile the existing GitHub `0.4.1` release
+- **M15 — first PyPI release (in progress 2026-10-17)**: reconcile the existing
+  GitHub `0.4.1` release
   whose publication failed with `invalid-publisher`; refresh live release state,
-  correct the trusted-publisher configuration with separate authorization, and
-  prepare a new candidate. The recommended candidate is `0.5.0` / `v0.5.0`,
+  verify the trusted-publisher configuration, and prepare a new candidate.
+  The candidate is `0.5.0` / `v0.5.0`,
   finalized in a separate release PR covering the full delta since `0.4.1`.
   Preserve the existing tag. M16–M44 and M45 are prerequisites; rebuild and
   revalidate the corrected source using M14's distribution checks before
-  publication. Follow [the recorded plan](PREPROCESSING_FIX_PLAN.md).
-  Recording pending milestones does not authorize publishing.
+  publication. Release tags must equal `v` plus the package version; installed
+  artifact smokes cover preprocessing contracts and every CLI command. Registry
+  installation is documented alongside the checkout route. Follow
+  [the recorded plan](PREPROCESSING_FIX_PLAN.md). The 2026-10-17 request authorizes
+  publication once the separate release PR and acceptance checks pass.
   *Done when PyPI exposes the release, a fresh isolated install reports version
   matching the finalized candidate and all five CLI commands, installed
   preprocessing regressions pass, and the release and documentation workflows
@@ -621,7 +625,7 @@ remain in [PROGRESS.md](PROGRESS.md#preprocessing-correctness-and-release-plan--
 
 Local acceptance passed on 2026-10-17: 64 new cases, full preprocessing tests,
 Ruff/Ty, **1119 tests** (4 skips, 2 expected failures), strict docs, rendered
-contracts, local references, and formatting/diff checks. M15 remains pending;
+contracts, local references, and formatting/diff checks. M15 started 2026-10-17;
 Git delivery is submitted in [PR #1](https://github.com/ThomasBury/azoic/pull/1);
 Codex review and green CI gate its merge. Publication remains in M15 under the
 2026-10-17 authorization, after its separate release PR and acceptance checks.

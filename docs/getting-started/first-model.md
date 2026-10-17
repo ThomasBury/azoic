@@ -13,8 +13,9 @@ access.
 
 ## Run the complete example
 
-After [installing from the checkout](installation.md), save the following as
-`first_model.py` in the `azoic` repository root. From that directory, run:
+After [installing Azoic](installation.md), save the following as
+`first_model.py` in your project directory or the `azoic` checkout. From that
+directory, run:
 
 ```bash
 uv run python first_model.py

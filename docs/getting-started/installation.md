@@ -4,11 +4,29 @@ Azoic requires Python 3.12 or newer and pandas 3.0 or newer. pandas 2 is no
 longer supported. Use a virtual environment so its compiled `glum` and LightGBM
 dependencies do not conflict with another project.
 
+## Install from PyPI
+
+In an existing uv project, install the release and check the CLI:
+
+```bash
+uv add azoic==0.5.0
+uv run python -c "import azoic; print(azoic.__version__)"
+uv run azoic --help
+```
+
+For a new project, run `uv init --python 3.12 my-pricing-project` and
+`cd my-pricing-project` first. With pip, activate your virtual environment and
+run `python -m pip install azoic==0.5.0`.
+
+Registry extras use package notation, for example
+`uv add 'azoic[mlops,tune]==0.5.0'` or
+`python -m pip install 'azoic[mlops,tune]==0.5.0'`.
+
 ## Work from a checkout
 
 Install [uv](https://docs.astral.sh/uv/getting-started/installation/) and Git,
-then run these commands in a terminal. The checkout is the install route until
-the first public release:
+then run these commands in a terminal. Use the checkout to develop Azoic or
+render the executable tutorial:
 
 ```bash
 git clone https://github.com/ThomasBury/azoic.git
@@ -22,11 +40,6 @@ Keep this terminal in the `azoic` directory for the
 [first model](first-model.md). `uv run` uses the checkout's `.venv`; you do not
 need to activate it. `uv sync` also installs the default development tools,
 but running the test suite is not required to fit your first model.
-
-!!! note "Pending first public release"
-
-    These instructions use the checkout. The planned first PyPI release is
-    0.4.1; do not substitute a registry install for this checkout workflow.
 
 ## Optional extras
 

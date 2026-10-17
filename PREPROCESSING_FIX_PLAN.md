@@ -1,6 +1,6 @@
 # Preprocessing fixes and release plan
 
-Status: M45 completed locally 2026-10-17; delivery [PR #1](https://github.com/ThomasBury/azoic/pull/1); M15 remains pending.
+Status: M45 completed locally 2026-10-17; delivery [PR #1](https://github.com/ThomasBury/azoic/pull/1); M15 is in progress.
 Plan recorded 2026-10-16; execution evidence lives in `PROGRESS.md`.
 Delivery order: **M45 → M15**, one milestone per implementation session.
 This plan authorizes no implementation, Git delivery, private configuration,
@@ -136,20 +136,20 @@ contract and dependency changes. This is a planned candidate, not a version
 change made by this session; finalize it in the release PR after reviewing the
 full diff from `0.4.1` to the release candidate.
 
-- [ ] Start M15 only after M45 is green and delivered.
-- [ ] Refresh public release/PyPI state and reconcile the tracker with it.
-- [ ] Prepare `chore: prepare 0.5.0 release` as a separate PR. Align
+- [x] Start M15 only after M45 is green and delivered.
+- [x] Refresh public release/PyPI state and reconcile the tracker with it.
+- [x] Prepare `chore: prepare 0.5.0 release` as a separate PR. Align
   `pyproject.toml`, `src/azoic/__init__.py`, and the local project entry in
   `uv.lock`; update installation guidance, release notes, and milestone records.
-- [ ] Explain the complete release delta, including stricter outcome/input
+- [x] Explain the complete release delta, including stricter outcome/input
   contracts, raised dependency requirements, and the three preprocessing fixes.
-- [ ] Verify the PyPI trusted publisher matches project `azoic`, GitHub owner
+- [x] Verify the PyPI trusted publisher matches project `azoic`, GitHub owner
   `ThomasBury`, repository `azoic`, workflow `release.yml`, and environment
   `pypi`. Correct private settings only with separate authorization. The existing
   workflow already uses a publishing job with `id-token: write`; do not add
   credentials or another release workflow to work around the identity mismatch.
-- [ ] Run locked all-extras/groups sync, `just check`, and strict docs.
-- [ ] Build fresh wheel/sdist artifacts into a clean temporary output directory.
+- [x] Run locked all-extras/groups sync, `just check`, and strict docs.
+- [x] Build fresh wheel/sdist artifacts into a clean temporary output directory.
   Reuse `tests/smoke_distribution.py` and CLI checks outside the checkout against
   each exact artifact; verify version and all five CLI commands. Exercise the
   focused preprocessing regressions against the installed artifacts as well.
@@ -189,7 +189,8 @@ Retain that authorization; ask only if a new action exceeds its scope.
 
 ## Handoff
 
-Recording this plan started no milestone. M45 was implemented and completed
-locally on 2026-10-17 at the user's request. Read `PROGRESS.md` Current focus and
-M45's completion checkpoint; review/deliver the local changes when requested,
-then address M15 in a separate session. No M15 work was started.
+M45 is merged in PR #1. M15 started on 2026-10-17 at the user's request.
+Read `PROGRESS.md` Current focus and its latest M15 checkpoint for acceptance,
+Git delivery, and publication state. The candidate is `0.5.0` / `v0.5.0`;
+release notes are in `CHANGELOG.md`. Preserve the old `0.4.1` tag and publish
+only after the release PR and acceptance checks pass.

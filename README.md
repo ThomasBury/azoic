@@ -13,6 +13,15 @@ GBM-to-GLM distillation, and multiplicative tariff export.
 
 ## Install
 
+Requires Python 3.12 or newer. In your own uv project:
+
+```bash
+uv add azoic==0.5.0
+uv run azoic --help
+```
+
+For development or the executable tutorial, clone this repository and run:
+
 ```bash
 uv sync --no-dev                    # runtime only
 uv sync                             # default development environment
