@@ -134,7 +134,8 @@ class AutoBinner(TransformerMixin, BaseEstimator):
         with day-count tolerance), and claim counts must be non-negative.
         Without ``exposure_col``, binning is unweighted. For tree binning, the target is
         ``target_col / exposure_col`` (pure premium) when both are set, else
-        ``target_col``, else ``y``.
+        ``target_col``, else ``y``. Supplied outcomes must be finite after
+        numeric and unit conversion; missing outcomes are never treated as zero.
     monotonic : False | True | "increasing" | "decreasing"
         When set, bin means are smoothed to be monotonic in the target via
         ``isotonic_regression`` and adjacent bins with the same smoothed mean
@@ -203,6 +204,8 @@ class AutoBinner(TransformerMixin, BaseEstimator):
         if self.min_claims is not None and cc is None:
             raise ValueError("min_claims requires claim_count_col in X")
         target = _resolve_target(X_df, y, self.target_col, exp)
+        if target is not None:
+            target = check_array(target, dtype=float, ensure_2d=False, input_name="target")
         self.mapping_ = {}
         for col in cols:
             edges = self._edges(X_df[col].to_numpy(dtype=float), target, exp, cc)
@@ -232,12 +235,7 @@ class AutoBinner(TransformerMixin, BaseEstimator):
             return np.array([])
         w = exp[mask] if exp is not None else None
         if self.strategy == "tree" and target is not None:
-            ym = target[mask] if target is not None else None
-            if ym is not None and not np.all(np.isnan(ym)):
-                ym = np.nan_to_num(ym, nan=0.0)
-                edges = self._tree_edges(v, ym, w)
-            else:
-                edges = self._quantile_edges(v, w)
+            edges = self._tree_edges(v, target[mask], w)
         else:
             edges = self._quantile_edges(v, w)
         if target is not None and self._mono_direction() is not None:
@@ -399,6 +397,8 @@ class AutoGrouper(TransformerMixin, BaseEstimator):
     tolerance), and claim counts must be non-negative. Without ``exposure_col``,
     grouping uses unit row weights. ``target_col`` contains aggregate claims;
     when absent, ``y`` supplies rates, multiplied by exposure before pooling.
+    Supplied outcomes must be finite after numeric and unit conversion;
+    missing outcomes are never treated as zero.
 
     Attributes
     ----------
@@ -451,6 +451,8 @@ class AutoGrouper(TransformerMixin, BaseEstimator):
             target = np.asarray(y, dtype=float)
             if exp is not None:
                 target = target * exp
+        if target is not None:
+            target = check_array(target, dtype=float, ensure_2d=False, input_name="target")
         if self.strategy == "similarity" and target is None:
             raise ValueError(
                 "similarity grouping requires a target (target_col in X or y); "

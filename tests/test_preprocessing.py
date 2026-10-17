@@ -125,6 +125,58 @@ def test_preprocessing_preserves_target_fallback_and_exposure_units(cls) -> None
     cls(cols=["x"], **kwargs).fit(df[["x"]], rates).transform(df[["x"]])
 
 
+@pytest.mark.parametrize("cls", [AutoBinner, AutoGrouper])
+@pytest.mark.parametrize("source", ["y", "target_col"])
+@pytest.mark.parametrize(
+    "outcomes",
+    [
+        [np.nan, 0.0, 10.0, 10.0],
+        [np.nan, np.nan, 10.0, 10.0],
+        [np.nan] * 4,
+        [np.inf, 0.0, 10.0, 10.0],
+        [-np.inf, 0.0, 10.0, 10.0],
+        ["nan", "0", "10", "10"],
+        ["inf", "0", "10", "10"],
+        ["-inf", "0", "10", "10"],
+        pd.Series([pd.NA, 0.0, 10.0, 10.0], dtype="Float64"),
+        pd.Series([pd.NA] * 4, dtype="Float64"),
+    ],
+)
+def test_preprocessing_rejects_nonfinite_outcomes(cls, source, outcomes) -> None:
+    df = pd.DataFrame({"x": [0, 0, 1, 1], "exposure": [1.0, 3.0, 1.0, 3.0]})
+    kwargs = {"strategy": "tree", "max_bins": 2} if cls is AutoBinner else {}
+    if source == "target_col":
+        df["amount"] = outcomes
+        kwargs["target_col"] = "amount"
+        y = [1.0, 2.0, 3.0, 4.0]
+    else:
+        y = outcomes
+    with pytest.raises(ValueError, match="NaN|infinity"):
+        cls(cols=["x"], exposure_col="exposure", **kwargs).fit(df, y)
+
+
+@pytest.mark.parametrize("cls", [AutoBinner, AutoGrouper])
+def test_preprocessing_validates_outcomes_before_masking_predictors(cls) -> None:
+    df = pd.DataFrame({"x": [np.nan, 1.0, 2.0], "amount": [np.nan, 0.0, 10.0]})
+    kwargs = {"strategy": "tree", "max_bins": 2} if cls is AutoBinner else {}
+    with pytest.raises(ValueError, match="NaN"):
+        cls(cols=["x"], target_col="amount", **kwargs).fit(df)
+
+
+@pytest.mark.parametrize("cls", [AutoBinner, AutoGrouper])
+def test_preprocessing_rejects_outcome_unit_conversion_overflow(cls) -> None:
+    df = pd.DataFrame({"x": [0, 1, 2], "exposure": [2.0] * 3})
+    kwargs = {}
+    y = [1e308, 1.0, 2.0]
+    if cls is AutoBinner:
+        df["exposure"] = 0.5
+        df["amount"] = y
+        kwargs["target_col"] = "amount"
+        y = None
+    with np.errstate(over="ignore"), pytest.raises(ValueError, match="infinity"):
+        cls(cols=["x"], exposure_col="exposure", **kwargs).fit(df, y)
+
+
 def _df(seed: int = 0, n: int = 4000) -> pd.DataFrame:
     return make_synthetic_portfolio(n=n, seed=seed)
 

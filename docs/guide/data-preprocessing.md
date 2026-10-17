@@ -98,6 +98,10 @@ with a 0.1% day-count tolerance); claim counts must be non-negative. Omitting
 `exposure_col` explicitly selects unweighted binning or unit row weights for
 grouping. A missing `target_col` falls back to `y`: rates stay rates for tree
 binning and are multiplied by exposure before similarity grouping pools them.
+Supplied outcomes must remain finite after numeric and unit conversion. NaN,
+infinity, and entirely missing outcomes raise an error before mappings are
+learned, even when the corresponding predictor is missing. Unknown outcomes
+cannot count as zero claims.
 
 Both transformers expose `mapping_` and accept `set_mapping(...)` after fitting.
 An override replaces the entire mapping; omitted columns pass through unchanged.
