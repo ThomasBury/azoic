@@ -23,8 +23,7 @@ focus**, the active milestone, and its latest checkpoint before editing. Resume
 an in-progress milestone first; otherwise use the explicit delivery order, not
 the lowest milestone number or an older handoff. The focused documentation
 revision M43–M44 is complete, following M40–M42. M45 preprocessing fixes are
-complete and submitted in PR #1; check its merge state before the separate
-M15 release review.
+complete and merged in PR #1; M15 is active for the first PyPI release.
 Current focus is the authority for the active/next milestone. Read
 `PREPROCESSING_FIX_PLAN.md` for the verified bugs, regression scope, PR delivery,
 and release reconciliation. The scope is mirrored in `PRD.md` section 6.
@@ -37,6 +36,7 @@ defines scope. A planning session records pending work without starting it.
 
 ## Setup commands
 
+Registry onboarding uses `uv add azoic==0.5.0` in the user's project.
 Checkout onboarding uses `uv sync` and `uv run` from the repository root;
 install optional integrations with `uv sync --extra NAME`. Contributor checks
 are separate from the first-model path.
@@ -162,7 +162,8 @@ examples/_quarto.yml  # main path and optional recipes; only sources committed, 
   explicitly expect `check_supervised_y_2d` to fail because Azoic rejects
   column-vector targets; a direct regression enforces the strict 1D contract.
 - No network, no S3, no real data in automated tests. Real-data fetching is
-   permitted only during manual rendering of the `examples/` tutorial book.
+   permitted only during local or main-branch Actions rendering of the
+   `examples/` tutorial book.
 - New module -> new `tests/test_<module>.py` with at least one runnable
   check.
 - Keep tutorial HTML, Quarto caches/support files, fetched data, workbooks,
@@ -186,11 +187,13 @@ examples/_quarto.yml  # main path and optional recipes; only sources committed, 
 
 - `.github/workflows/ci.yml` validates PRs and main pushes on Python 3.12 with
   read-only contents permissions: locked all-extras/groups sync, Ruff, Ty,
-  pytest, strict docs, distributions, and installed wheel/sdist model/CLI smokes.
+  pytest, strict docs, distributions, and installed wheel/sdist model,
+  preprocessing, version, and all-five-command CLI smokes.
 - `.github/workflows/docs.yml` renders the real-data tutorial and deploys Pages
   on main pushes with locked sync; the fixed `pages` concurrency group cancels
   superseded runs. Real-data rendering stays outside PR validation.
-- Release publication remains in `.github/workflows/release.yml`; private
+- Release publication remains in `.github/workflows/release.yml`; its tag must
+  equal `v` plus the package version before artifacts can be published. Private
   settings, tagging, and publication require explicit authorization. The 2026-10-17
   request authorizes M45 Git delivery and subsequent M15 release/publication once
   its separate release PR and acceptance checks are green; do not ask again for

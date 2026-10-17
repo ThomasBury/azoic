@@ -17,6 +17,10 @@ jobs:
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
       - name: Sync locked dependencies
         run: uv sync --locked --all-extras --all-groups
+      - name: Check release tag matches package version
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: test "$RELEASE_TAG" = "v$(uv run python -c 'from azoic import __version__; print(__version__)')"
       - name: Lint
         run: uv run ruff check .
       - name: Type-check
