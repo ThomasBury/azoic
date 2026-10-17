@@ -9,19 +9,155 @@ Legend: ☐ pending · ◐ in progress · ☑ done
 
 ## Current focus
 
-- **Goal:** focused documentation revision complete; separate M15 release review pending.
-- **Active milestone:** none. M44 ☑ completed 2026-10-02.
-- **State:** M43–M44 are green. M44: Ruff/Ty, 1055 tests passed (4 skipped,
-  2 expected failures), strict docs, fresh 11-chapter book, four fresh isolated
-  renders, and authored local links. Runtime/API/dependencies/theme unchanged.
-- **Delivery order:** M43 → M44 → M15.
-- **Resume here:** in a new session, read M44's completion checkpoint and the
-  current working tree, then address the separate M15 release review.
-  Do not start M15 in this session. Private settings, push, tagging, and
-  publication remain separately authorized.
+- **Goal:** preprocessing fixes complete; separate M15 release review pending.
+- **Active milestone:** none. M45 ☑ completed locally 2026-10-17.
+- **State:** M45 is green: Ruff/Ty, 1119 tests passed (4 skipped, 2 expected
+  failures), strict docs, formatting, rendered contracts, and guide links.
+  The 64 new cases include the three reproduced bugs and preservation checks.
+  M45 delivery: [PR #1](https://github.com/ThomasBury/azoic/pull/1),
+  branch `fix/preprocessing-contracts`; Codex review and CI gate the merge.
+- **Delivery order:** M45 ☑ → M15 ☐. M43–M44 are complete.
+- **Resume here:** read the [preprocessing and release plan](PREPROCESSING_FIX_PLAN.md)
+  and M45's delivery checkpoint below. Confirm PR #1 is merged (otherwise
+  finish its review/CI/merge), then address M15 in a separate session. Do not start
+  M15 here. The 2026-10-17 request authorizes M45 Git delivery and subsequent
+  M15 release/publication after its separate release PR and acceptance checks
+  pass; retain that authorization for the next session.
 
 This section and the delivery order below supersede historical statements that
 M15 is next. Completed milestones and their evidence remain historical records.
+
+## Preprocessing correctness and release plan — 2026-10-16
+
+| Status | Milestone | Scope |
+|---|---|---|
+| ☑ | M45 — preprocessing correctness | Reject nonfinite supplied outcomes; handle empty bins in monotonic pooling; reject input that cannot match fitted preprocessing mappings |
+| ☐ | M15 — first PyPI release | Reconcile the failed GitHub 0.4.1 publication, prepare a fresh release candidate, validate distributions, and publish under the recorded authorization |
+
+Checkpoint — planning only: review at `73874e5` reproduced findings 3–5.
+Both transformers also skip mappings on the reverse array-to-DataFrame transition.
+Ordinary numeric `y` rejects nonfinite values; `target_col` and numeric-string
+conversion leave gaps. The experiment workflow separately validates portfolio
+outcomes. Baseline `just check` passed Ruff/Ty and **1055 tests, 4 skips,
+2 expected failures**, in **228.22 s**. No fixes have been implemented.
+
+GitHub release `0.4.1` exists; its build succeeded and publication failed with
+`invalid-publisher`. The public PyPI project lookup returned 404 on 2026-10-16.
+Private publisher settings remain uninspected. The full
+[plan](PREPROCESSING_FIX_PLAN.md) records fixes, regressions, one focused fix PR,
+and a separate release PR with recommended candidate `0.5.0` / `v0.5.0`.
+Current package versions and workflow configuration remain unchanged.
+
+Planning-document checks: **12 referenced files** exist; AGENTS/PRD/Current
+focus all point to the saved plan and M45 remains pending. Strict
+`just docs-build` passed. `just check` passed Ruff/Ty and **1055 tests, 4 skips,
+2 expected failures**, in **232.69 s** (`/tmp/azoic-plan-check.log`).
+`git diff --check` passed. Only the plan and AGENTS/PRD/PROGRESS were edited;
+no runtime code, package version, or release configuration changed.
+
+Exact next action: in the next implementation session, read this checkpoint
+and the plan, mark **M45 only** ◐, add failing regressions, then implement its
+three fixes. M15 remains pending. No commit, push, PR, tag, or publication was
+performed by this planning session.
+
+### M45 implementation checkpoint — 2026-10-17
+
+Kickoff: read Current focus, the saved plan, affected transformer methods and
+helpers, existing preprocessing tests, workflow construction, and tariff
+extraction callers. Preserved the uncommitted planning documents. M45 alone is
+active; no implementation yet. Next: add focused regressions, run them against
+the original code to record failures, then implement the three fixes. No
+package version, release workflow, commit, or remote changes are planned here.
+
+Checkpoint — regressions reproduced: the focused M45 selection against the
+original runtime code yielded **46 failed, 18 passed, 217 deselected** in
+**8.79 s** (`/tmp/azoic-m45-red.log`). Failures cover target-column and
+numeric-string outcomes, validation before predictor masking, conversion
+overflow, both representation switches, and occupied-bin monotonic pooling.
+The 18 passing cases retain valid representation behavior and existing numeric
+`y` rejection. Next: validate the implementation and documentation, then run
+M45 acceptance. M45 remains ◐; M15 remains pending.
+
+Checkpoint — source changes: resolved numeric targets now pass public sklearn
+finite validation before either partition learns; removed tree-target zero
+substitution/all-missing fallback. Monotonic pooling selects positive-weight
+occupied bins and preserves original boundary indices. Both transforms use the
+shared frame conversion to reject unmatched mapping columns before application.
+Docstrings and the preprocessing guide state these contracts. All **64 focused
+cases passed** in **2.88 s** (`/tmp/azoic-m45-green.log`). Ruff identified one
+nested test context; it was combined without changing test behavior. Next:
+full preprocessing checks, full quality gate, strict docs, local references,
+and final diff review. M45 remains ◐; M15 is untouched.
+
+Checkpoint — targeted acceptance: complete preprocessing tests passed **279
+tests, 2 upstream skips**, in **132.91 s**
+(`/tmp/azoic-m45-preprocessing.log`), including sklearn compatibility checks.
+Ruff, Ty, and changed-file format checks passed. Strict `just docs-build`
+passed in **4.59 s**; both guide links and their rendered anchors resolve, and
+the guide plus both API entries render the new contracts. Next: `just check`,
+final diff/reference review, then mark M45 complete only when green. No new
+workflow, tutorial, tariff, version, or dependency edits were needed.
+
+### M45 completion checkpoint — 2026-10-17
+
+Changed: both transformers validate resolved outcomes after numeric/unit
+conversion, before learning. Tree binning no longer substitutes zero or falls
+back to quantiles for supplied missing outcomes. Monotonic pooling excludes
+empty bins and retains the original upper boundaries of occupied bins; constant
+observed predictors yield one interval plus the missing category. Shared frame
+conversion rejects unmatched fitted mapping columns before transformation,
+covering both DataFrame/array switch directions. Same-representation behavior,
+intentional mapping omissions, passthrough columns, actuarial units, and target
+fallback remain covered. Docstrings and the guide describe the new errors.
+
+Acceptance:
+
+- Original runtime: **46 failures, 18 passes** in the new focused selection.
+  Fixed runtime: all **64 cases passed**; **64 parametrized cases** were added.
+- Full preprocessing: **279 passed, 2 upstream skips**, **132.91 s**
+  (`/tmp/azoic-m45-preprocessing.log`).
+- `just check`: exit **0**, Ruff/Ty green, **1119 passed, 4 upstream skips,
+  2 expected strict-target failures**, **264.63 s** (`/tmp/azoic-m45-check.log`).
+  Includes workflow, tutorial assembly, tariff, and sklearn compatibility checks.
+- Strict `just docs-build`: exit **0**, **4.59 s**
+  (`/tmp/azoic-m45-docs.log`). Changed guide and both API contracts render;
+  both authored guide links and their rendered anchors resolve.
+- Changed-file format check, final scope review, and `git diff --check` pass.
+
+M45 blockers/remaining implementation: none. Preserved the existing uncommitted
+planning documents. No new dependency, module, workflow, package version,
+generated tracked artifact, commit, push, PR, tag, or publication. Full real-data
+book rendering and installed-distribution validation were not run; M45 uses the
+existing synthetic integration checks, while release artifacts belong to M15.
+
+Exact next action: review/deliver this completed M45 working tree when requested,
+using the recorded fix-PR plan, then begin the separate M15 release review after
+delivery. Stop this session; M15 remains pending and publication remains
+separately authorized.
+
+### M45 Git delivery checkpoint — 2026-10-17
+
+User authorized staging, conventional commits, dedicated branch push, labelled
+PR, Codex bot review and fixes, merge, and branch deletion. CodeRabbit is not a
+merge gate. Branch: `fix/preprocessing-contracts`. Reviewed all runtime/test/doc
+changes and the shared helpers, workflow construction, and tariff callers.
+Fresh `just check` passed Ruff/Ty and **1119 tests, 4 skips, 2 expected
+failures**, in **227.40 s** (`/tmp/azoic-m45-delivery-check.log`). Strict docs
+passed again; all 14 local Markdown targets in the delivery documents exist.
+Added a root `evidence/` ignore rule; no evidence files are tracked.
+
+Release decision: defer the version bump and publication to the separate M15
+release PR, with candidate `0.5.0` / `v0.5.0`. GitHub still exposes `0.4.1`;
+PyPI JSON returns 404; main is 28 commits beyond that tag before M45. No other
+pending RXX prerequisite was found. User reports configuring the trusted
+publisher and authorizes the subsequent release/publication once M15 is green.
+Private publisher matching and fresh installed-artifact checks remain for M15.
+Delivery: [PR #1](https://github.com/ThomasBury/azoic/pull/1) carries `bug`,
+`documentation`, and `M45` labels. Three topical fixes each include their own
+regressions and documentation. Next: submit the final commit for Codex review,
+address findings, merge with green CI, and remove the dedicated branch. The
+PR timeline records review, CI, merge, and branch cleanup outcomes. After merge,
+the exact next implementation action is M15 in a separate session.
 
 ## Requested prerelease documentation cleanup — 2026-10-02
 
@@ -2492,10 +2628,10 @@ its distribution builds and isolated CLI checks before publication. Stop here.
 - ☑ **M14 — documentation parity and release hardening** — document temporal
   stability, remove obsolete MLflow roadmap language, and validate wheel and
   source distributions before a least-privilege publish job.
-- ☐ **M15 — first public release** — publish and verify `azoic==0.4.1` through
-  GitHub Releases and PyPI trusted publishing, after M16–M39 are green and
-  the separate review is complete. Follow **Current focus**; recording this
-  plan does not authorize publication.
+- ☐ **M15 — first PyPI release** — prepare candidate `0.5.0` / `v0.5.0` in a
+  separate release PR after M45 merges. Validate fresh distributions and publish
+  through the existing trusted-publisher workflow under the 2026-10-17
+  authorization. Follow **Current focus** and `PREPROCESSING_FIX_PLAN.md`.
 - ☑ **M16 — preserve the experiment holdout** — immutable fit/test positions
   reused by tutorial diagnostics, training calibration, and CLI distillation.
 - ☑ **M17 — reject inconsistent frequency-severity outcomes** — issue 2.

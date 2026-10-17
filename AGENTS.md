@@ -22,10 +22,12 @@ On a new session or after context compaction, read `PROGRESS.md`'s **Current
 focus**, the active milestone, and its latest checkpoint before editing. Resume
 an in-progress milestone first; otherwise use the explicit delivery order, not
 the lowest milestone number or an older handoff. The focused documentation
-revision M43–M44 is complete, following M40–M42. The separate M15 release review
-is next; Current focus is the authority for the active/next milestone.
-Its scope, the prerelease fixes, and the completed M25–M30 tutorial plan are
-mirrored in `PRD.md` section 6.
+revision M43–M44 is complete, following M40–M42. M45 preprocessing fixes are
+complete and submitted in PR #1; check its merge state before the separate
+M15 release review.
+Current focus is the authority for the active/next milestone. Read
+`PREPROCESSING_FIX_PLAN.md` for the verified bugs, regression scope, PR delivery,
+and release reconciliation. The scope is mirrored in `PRD.md` section 6.
 
 Update the milestone checklist and checkpoint after each meaningful chunk and
 before handing off: changes, checks actually run and their results, remaining
@@ -189,7 +191,10 @@ examples/_quarto.yml  # main path and optional recipes; only sources committed, 
   on main pushes with locked sync; the fixed `pages` concurrency group cancels
   superseded runs. Real-data rendering stays outside PR validation.
 - Release publication remains in `.github/workflows/release.yml`; private
-  settings, tagging, and publication require separate authorization.
+  settings, tagging, and publication require explicit authorization. The 2026-10-17
+  request authorizes M45 Git delivery and subsequent M15 release/publication once
+  its separate release PR and acceptance checks are green; do not ask again for
+  that same scope. Keep version changes in M15 and preserve existing release tags.
 
 ## PR / commits
 

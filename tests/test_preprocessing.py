@@ -177,6 +177,41 @@ def test_preprocessing_rejects_outcome_unit_conversion_overflow(cls) -> None:
         cls(cols=["x"], exposure_col="exposure", **kwargs).fit(df, y)
 
 
+@pytest.mark.parametrize("cls", [AutoBinner, AutoGrouper])
+@pytest.mark.parametrize("fit_dataframe", [True, False])
+def test_preprocessing_rejects_unmatched_transform_columns(cls, fit_dataframe) -> None:
+    frame = pd.DataFrame({"age": [10.0, 20.0, 30.0, 40.0]})
+    train, probe = (frame, frame.to_numpy()) if fit_dataframe else (frame.to_numpy(), frame)
+    column = "age" if fit_dataframe else "x0"
+    kwargs = {"max_bins": 2} if cls is AutoBinner else {"max_groups": 2}
+    transformer = cls(cols=[column], **kwargs).fit(train, [1.0, 1.0, 9.0, 9.0])
+    with (
+        pytest.warns(UserWarning, match="feature names"),
+        pytest.raises(ValueError, match=f"missing fitted mapping columns.*{column}"),
+    ):
+        transformer.transform(probe)
+
+
+@pytest.mark.parametrize("cls", [AutoBinner, AutoGrouper])
+@pytest.mark.parametrize("dataframe", [True, False])
+def test_preprocessing_same_representation_applies_mapping(cls, dataframe) -> None:
+    frame = pd.DataFrame({"age": [10.0, 20.0, 30.0, 40.0], "other": [5.0] * 4})
+    X = frame if dataframe else frame.to_numpy()
+    column = "age" if dataframe else "x0"
+    kwargs = {"max_bins": 2} if cls is AutoBinner else {"max_groups": 2}
+    transformer = cls(cols=[column], **kwargs).fit(X, [1.0, 1.0, 9.0, 9.0])
+    out = transformer.transform(X)
+    if dataframe:
+        actual = out[column].cat.codes if cls is AutoBinner else out[column]
+        pd.testing.assert_series_equal(out["other"], frame["other"])
+        assert out[column].dtype == transformer.category_dtypes_[column]
+    else:
+        actual = out[:, 0]
+        np.testing.assert_array_equal(out[:, 1], X[:, 1])
+    expected = [0, 0, 1, 1] if cls is AutoBinner else ["group_0"] * 2 + ["group_1"] * 2
+    assert list(actual) == expected
+
+
 def _df(seed: int = 0, n: int = 4000) -> pd.DataFrame:
     return make_synthetic_portfolio(n=n, seed=seed)
 

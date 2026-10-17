@@ -105,6 +105,11 @@ infinity, and entirely missing outcomes raise an error before mappings are
 learned, even when the corresponding predictor is missing. Unknown outcomes
 cannot count as zero claims.
 
+Transform input must contain every fitted mapping column. DataFrames use their
+column names; arrays use `x0`, `x1`, and so on. Switching between named DataFrames
+and arrays raises `ValueError` when those names do not match. Keep the fitted
+column names when scoring so each learned mapping is applied.
+
 Both transformers expose `mapping_` and accept `set_mapping(...)` after fitting.
 An override replaces the entire mapping; omitted columns pass through unchanged.
 Keys must name currently binned or grouped columns. Bin edges must be finite,
