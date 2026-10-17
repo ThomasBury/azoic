@@ -184,8 +184,9 @@ Each is independently shippable. Done-when = acceptance check.
   and first-model path, five focused guides, comprehensive configuration/CLI
   reference, prominent freMTPL2 bridge, and MathJax 3 using Zensical's official
   helper. The default theme and existing dependencies remain unchanged.
-  No Azoic version has been publicly released; the site documents current
-  behavior without a version-migration page.
+  The site documents current behavior without a version-migration page.
+  The 2026-10-16 release review found an existing GitHub `0.4.1` release but no
+  visible PyPI project; see the current M15 scope below.
   *Done when the documented first model and checkout YAML run,
   `just docs-build` is strict-green, generated HTML contains navigation, tables,
   highlighted code, Arithmatex wrappers, and both MathJax scripts, and project
@@ -227,13 +228,18 @@ Each is independently shippable. Done-when = acceptance check.
   publishing job. Add no second tutorial, dependency, or Python interface.
   *Done when `just check`, `just docs-build`, `uv build`, and isolated wheel and
   source-distribution CLI smoke tests pass and the Pages deployment is green.*
-- **M15 — first public release**: publish the validated `azoic==0.4.1`
-  distributions through PyPI trusted publishing from a `v0.4.1` GitHub release.
-  M16–M42 and the separate tutorial review are prerequisites; rebuild and revalidate the corrected source using M14's
-  distribution checks before publication. Recording pending milestones does
-  not authorize publishing.
+- **M15 — first PyPI release**: reconcile the existing GitHub `0.4.1` release
+  whose publication failed with `invalid-publisher`; refresh live release state,
+  correct the trusted-publisher configuration with separate authorization, and
+  prepare a new candidate. The recommended candidate is `0.5.0` / `v0.5.0`,
+  finalized in a separate release PR covering the full delta since `0.4.1`.
+  Preserve the existing tag. M16–M44 and M45 are prerequisites; rebuild and
+  revalidate the corrected source using M14's distribution checks before
+  publication. Follow [the recorded plan](PREPROCESSING_FIX_PLAN.md).
+  Recording pending milestones does not authorize publishing.
   *Done when PyPI exposes the release, a fresh isolated install reports version
-  `0.4.1` and all five CLI commands, and the release and documentation workflows
+  matching the finalized candidate and all five CLI commands, installed
+  preprocessing regressions pass, and the release and documentation workflows
   are green.*
 
 - **M16 — preserve the experiment holdout** — **completed 2026-09-05**:
@@ -587,6 +593,38 @@ non-default indices at temporal selection; run existing tutorial checks,
 changes require a fresh full-book render and isolated scoring, reporting,
 tuning, and temporal chapters. Sources only; generated artifacts stay ignored.
 Execution record: [PROGRESS.md](PROGRESS.md#focused-documentation-revision--2026-10-02).
+
+### M45 — preprocessing correctness (completed locally 2026-10-17)
+
+Review confirmed three bugs: nonfinite `target_col` outcomes bypass validation
+(and numeric-string `y` can become nonfinite after conversion), zero-weight
+empty bins crash monotonic pooling on tied/constant predictors, and switching
+between named DataFrames and arrays can silently skip fitted transformations.
+The experiment workflow separately validates portfolio outcomes.
+
+Delivery order remains **M45 → M15**, one milestone per session. Both transformers
+now reject nonfinite supplied outcomes before learning while preserving
+rate/aggregate units, optional target fallback, and missing predictors.
+Monotonic pooling uses occupied bins with original upper edge positions;
+constant predictors yield one observed-value interval. Transform input that
+cannot match fitted mapping columns raises clearly; intentional passthrough
+behavior remains. Added focused regressions and updated preprocessing contracts
+without a new dependency or framework.
+
+Acceptance: demonstrate the regressions before fixing; pass focused preprocessing
+tests, `just check` (including workflow/tutorial/tariff checks), strict docs, and
+diff/link checks. Use one focused fix PR with three topical commits; keep version
+changes, publisher configuration, and publication in M15. Full scope, acceptance,
+PR delivery, and release management are in
+[PREPROCESSING_FIX_PLAN.md](PREPROCESSING_FIX_PLAN.md); execution checkpoints
+remain in [PROGRESS.md](PROGRESS.md#preprocessing-correctness-and-release-plan--2026-10-16).
+
+Local acceptance passed on 2026-10-17: 64 new cases, full preprocessing tests,
+Ruff/Ty, **1119 tests** (4 skips, 2 expected failures), strict docs, rendered
+contracts, local references, and formatting/diff checks. M15 remains pending;
+Git delivery is submitted in [PR #1](https://github.com/ThomasBury/azoic/pull/1);
+Codex review and green CI gate its merge. Publication remains in M15 under the
+2026-10-17 authorization, after its separate release PR and acceptance checks.
 
 ## 7. Later iterations (optional, none blocking)
 

@@ -41,16 +41,24 @@ def _check_min_exposure(min_exposure, exp) -> None:
         raise ValueError("min_exposure requires exposure_col in X")
 
 
-def _to_frame(X):
+def _to_frame(X, *, required_columns=()):
     """Return (DataFrame, was_dataframe). Names: real or f'x{i}' for ndarray.
 
     ``np.asarray`` unwraps sklearn's ``_NotAnArray`` and ``list`` payloads.
     """
-    if isinstance(X, pd.DataFrame):
-        return X, True
-    arr = np.asarray(X)
-    n = arr.shape[1]
-    return pd.DataFrame(arr, columns=pd.Index([f"x{i}" for i in range(n)])), False
+    was_df = isinstance(X, pd.DataFrame)
+    if was_df:
+        frame = X
+    else:
+        arr = np.asarray(X)
+        frame = pd.DataFrame(arr, columns=pd.Index([f"x{i}" for i in range(arr.shape[1])]))
+    missing = [col for col in required_columns if col not in frame.columns]
+    if missing:
+        raise ValueError(
+            f"transform input is missing fitted mapping columns: {missing}; "
+            "use the same column names as during fit (arrays use x0, x1, ...)"
+        )
+    return frame, was_df
 
 
 def _column_array(X, name, *, required=False, minimum=0):
@@ -112,6 +120,8 @@ class AutoBinner(TransformerMixin, BaseEstimator):
     integer bin codes (ndarray input). Non-target columns pass through
     unchanged. Finite bin edges are lower-inclusive and upper-exclusive.
     NaN is assigned to a reserved ``"Missing"`` category.
+    Transform input must contain every fitted mapping column; arrays use
+    ``x0``, ``x1``, etc. Unmatched column names raise ``ValueError``.
 
     Parameters
     ----------
@@ -134,7 +144,8 @@ class AutoBinner(TransformerMixin, BaseEstimator):
         with day-count tolerance), and claim counts must be non-negative.
         Without ``exposure_col``, binning is unweighted. For tree binning, the target is
         ``target_col / exposure_col`` (pure premium) when both are set, else
-        ``target_col``, else ``y``.
+        ``target_col``, else ``y``. Supplied outcomes must be finite after
+        numeric and unit conversion; missing outcomes are never treated as zero.
     monotonic : False | True | "increasing" | "decreasing"
         When set, bin means are smoothed to be monotonic in the target via
         ``isotonic_regression`` and adjacent bins with the same smoothed mean
@@ -203,6 +214,8 @@ class AutoBinner(TransformerMixin, BaseEstimator):
         if self.min_claims is not None and cc is None:
             raise ValueError("min_claims requires claim_count_col in X")
         target = _resolve_target(X_df, y, self.target_col, exp)
+        if target is not None:
+            target = check_array(target, dtype=float, ensure_2d=False, input_name="target")
         self.mapping_ = {}
         for col in cols:
             edges = self._edges(X_df[col].to_numpy(dtype=float), target, exp, cc)
@@ -232,12 +245,7 @@ class AutoBinner(TransformerMixin, BaseEstimator):
             return np.array([])
         w = exp[mask] if exp is not None else None
         if self.strategy == "tree" and target is not None:
-            ym = target[mask] if target is not None else None
-            if ym is not None and not np.all(np.isnan(ym)):
-                ym = np.nan_to_num(ym, nan=0.0)
-                edges = self._tree_edges(v, ym, w)
-            else:
-                edges = self._quantile_edges(v, w)
+            edges = self._tree_edges(v, target[mask], w)
         else:
             edges = self._quantile_edges(v, w)
         if target is not None and self._mono_direction() is not None:
@@ -271,12 +279,13 @@ class AutoBinner(TransformerMixin, BaseEstimator):
         w = weights if weights is not None else np.ones_like(values)
         tgt_sum = np.bincount(codes, weights=target * w, minlength=n_bins)
         w_sum = np.bincount(codes, weights=w, minlength=n_bins)
-        with np.errstate(divide="ignore", invalid="ignore"):
-            bin_means = np.where(w_sum > 0, tgt_sum / w_sum, 0.0)
-        sw = w_sum if np.any(w_sum > 0) else None
+        occupied = np.flatnonzero(w_sum > 0)
+        bin_means = tgt_sum[occupied] / w_sum[occupied]
         increasing = self._mono_direction()
-        smoothed = isotonic_regression(bin_means, increasing=increasing, sample_weight=sw)
-        keep = np.where(smoothed[:-1] != smoothed[1:])[0]
+        smoothed = isotonic_regression(
+            bin_means, increasing=increasing, sample_weight=w_sum[occupied]
+        )
+        keep = occupied[:-1][smoothed[:-1] != smoothed[1:]]
         return edges[keep]
 
     def _quantile_edges(self, v, w):
@@ -297,14 +306,12 @@ class AutoBinner(TransformerMixin, BaseEstimator):
 
     def transform(self, X):
         validate_data(self, X, reset=False, dtype=None, ensure_all_finite=False)
-        X_df, was_df = _to_frame(X)
+        X_df, was_df = _to_frame(X, required_columns=self.mapping_)
         feature_names = getattr(self, "feature_names_in_", None)
         if feature_names is not None and all(c in X_df.columns for c in feature_names):
             X_df = X_df[feature_names]
         out = X_df.copy()
         for col, edges in self.mapping_.items():
-            if col not in out.columns:
-                continue
             codes = self._codes(out[col].to_numpy(dtype=float), edges)
             if was_df:
                 out[col] = pd.Categorical.from_codes(codes, dtype=self.category_dtypes_[col])
@@ -392,13 +399,17 @@ class AutoGrouper(TransformerMixin, BaseEstimator):
                   claims / exposure, recomputed after each merge; ties go left.
 
     ``mapping_`` is ``{col: {original_level: group_label}}``. Unknown levels at
-    transform time map to ``other_label``.
+    transform time map to ``other_label``. Transform input must contain every
+    fitted mapping column; arrays use ``x0``, ``x1``, etc. Unmatched column names
+    raise ``ValueError``.
 
     Configured exposure and claim-count columns must exist at fit and contain
     finite values; exposures must be at least one day (1/366, with day-count
     tolerance), and claim counts must be non-negative. Without ``exposure_col``,
     grouping uses unit row weights. ``target_col`` contains aggregate claims;
     when absent, ``y`` supplies rates, multiplied by exposure before pooling.
+    Supplied outcomes must be finite after numeric and unit conversion;
+    missing outcomes are never treated as zero.
 
     Attributes
     ----------
@@ -451,6 +462,8 @@ class AutoGrouper(TransformerMixin, BaseEstimator):
             target = np.asarray(y, dtype=float)
             if exp is not None:
                 target = target * exp
+        if target is not None:
+            target = check_array(target, dtype=float, ensure_2d=False, input_name="target")
         if self.strategy == "similarity" and target is None:
             raise ValueError(
                 "similarity grouping requires a target (target_col in X or y); "
@@ -592,15 +605,13 @@ class AutoGrouper(TransformerMixin, BaseEstimator):
 
     def transform(self, X):
         validate_data(self, X, reset=False, dtype=None, ensure_all_finite=False)
-        X_df, was_df = _to_frame(X)
+        X_df, was_df = _to_frame(X, required_columns=self.mapping_)
         feature_names = getattr(self, "feature_names_in_", None)
         if feature_names is not None and all(c in X_df.columns for c in feature_names):
             X_df = X_df[feature_names]
         out = X_df.copy()
         unseen = {}
         for col, mp in self.mapping_.items():
-            if col not in out.columns:
-                continue
             unknown = out[col].notna() & ~out[col].isin(mp)
             if unknown.any():
                 unseen[col] = out.loc[unknown, col].drop_duplicates().tolist()

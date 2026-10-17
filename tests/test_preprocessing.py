@@ -125,6 +125,93 @@ def test_preprocessing_preserves_target_fallback_and_exposure_units(cls) -> None
     cls(cols=["x"], **kwargs).fit(df[["x"]], rates).transform(df[["x"]])
 
 
+@pytest.mark.parametrize("cls", [AutoBinner, AutoGrouper])
+@pytest.mark.parametrize("source", ["y", "target_col"])
+@pytest.mark.parametrize(
+    "outcomes",
+    [
+        [np.nan, 0.0, 10.0, 10.0],
+        [np.nan, np.nan, 10.0, 10.0],
+        [np.nan] * 4,
+        [np.inf, 0.0, 10.0, 10.0],
+        [-np.inf, 0.0, 10.0, 10.0],
+        ["nan", "0", "10", "10"],
+        ["inf", "0", "10", "10"],
+        ["-inf", "0", "10", "10"],
+        pd.Series([pd.NA, 0.0, 10.0, 10.0], dtype="Float64"),
+        pd.Series([pd.NA] * 4, dtype="Float64"),
+    ],
+)
+def test_preprocessing_rejects_nonfinite_outcomes(cls, source, outcomes) -> None:
+    df = pd.DataFrame({"x": [0, 0, 1, 1], "exposure": [1.0, 3.0, 1.0, 3.0]})
+    kwargs = {"strategy": "tree", "max_bins": 2} if cls is AutoBinner else {}
+    if source == "target_col":
+        df["amount"] = outcomes
+        kwargs["target_col"] = "amount"
+        y = [1.0, 2.0, 3.0, 4.0]
+    else:
+        y = outcomes
+    with pytest.raises(ValueError, match="NaN|infinity"):
+        cls(cols=["x"], exposure_col="exposure", **kwargs).fit(df, y)
+
+
+@pytest.mark.parametrize("cls", [AutoBinner, AutoGrouper])
+def test_preprocessing_validates_outcomes_before_masking_predictors(cls) -> None:
+    df = pd.DataFrame({"x": [np.nan, 1.0, 2.0], "amount": [np.nan, 0.0, 10.0]})
+    kwargs = {"strategy": "tree", "max_bins": 2} if cls is AutoBinner else {}
+    with pytest.raises(ValueError, match="NaN"):
+        cls(cols=["x"], target_col="amount", **kwargs).fit(df)
+
+
+@pytest.mark.parametrize("cls", [AutoBinner, AutoGrouper])
+def test_preprocessing_rejects_outcome_unit_conversion_overflow(cls) -> None:
+    df = pd.DataFrame({"x": [0, 1, 2], "exposure": [2.0] * 3})
+    kwargs = {}
+    y = [1e308, 1.0, 2.0]
+    if cls is AutoBinner:
+        df["exposure"] = 0.5
+        df["amount"] = y
+        kwargs["target_col"] = "amount"
+        y = None
+    with np.errstate(over="ignore"), pytest.raises(ValueError, match="infinity"):
+        cls(cols=["x"], exposure_col="exposure", **kwargs).fit(df, y)
+
+
+@pytest.mark.parametrize("cls", [AutoBinner, AutoGrouper])
+@pytest.mark.parametrize("fit_dataframe", [True, False])
+def test_preprocessing_rejects_unmatched_transform_columns(cls, fit_dataframe) -> None:
+    frame = pd.DataFrame({"age": [10.0, 20.0, 30.0, 40.0]})
+    train, probe = (frame, frame.to_numpy()) if fit_dataframe else (frame.to_numpy(), frame)
+    column = "age" if fit_dataframe else "x0"
+    kwargs = {"max_bins": 2} if cls is AutoBinner else {"max_groups": 2}
+    transformer = cls(cols=[column], **kwargs).fit(train, [1.0, 1.0, 9.0, 9.0])
+    with (
+        pytest.warns(UserWarning, match="feature names"),
+        pytest.raises(ValueError, match=f"missing fitted mapping columns.*{column}"),
+    ):
+        transformer.transform(probe)
+
+
+@pytest.mark.parametrize("cls", [AutoBinner, AutoGrouper])
+@pytest.mark.parametrize("dataframe", [True, False])
+def test_preprocessing_same_representation_applies_mapping(cls, dataframe) -> None:
+    frame = pd.DataFrame({"age": [10.0, 20.0, 30.0, 40.0], "other": [5.0] * 4})
+    X = frame if dataframe else frame.to_numpy()
+    column = "age" if dataframe else "x0"
+    kwargs = {"max_bins": 2} if cls is AutoBinner else {"max_groups": 2}
+    transformer = cls(cols=[column], **kwargs).fit(X, [1.0, 1.0, 9.0, 9.0])
+    out = transformer.transform(X)
+    if dataframe:
+        actual = out[column].cat.codes if cls is AutoBinner else out[column]
+        pd.testing.assert_series_equal(out["other"], frame["other"])
+        assert out[column].dtype == transformer.category_dtypes_[column]
+    else:
+        actual = out[:, 0]
+        np.testing.assert_array_equal(out[:, 1], X[:, 1])
+    expected = [0, 0, 1, 1] if cls is AutoBinner else ["group_0"] * 2 + ["group_1"] * 2
+    assert list(actual) == expected
+
+
 def _df(seed: int = 0, n: int = 4000) -> pd.DataFrame:
     return make_synthetic_portfolio(n=n, seed=seed)
 
@@ -315,6 +402,44 @@ def _weighted_bin_means(df: pd.DataFrame, col: str, edges: np.ndarray) -> np.nda
     means = np.where(w_sum > 0, tgt_sum / np.maximum(w_sum, 1e-12), 0.0)
     means[w_sum == 0] = 0.0
     return means
+
+
+@pytest.mark.parametrize("direction", ["increasing", "decreasing"])
+@pytest.mark.parametrize("weighted", [False, True])
+@pytest.mark.parametrize("values", [[5.0] * 4, [1.0, 1.0, 2.0, 2.0]])
+def test_autobinner_monotonic_handles_constant_and_tied_values(direction, weighted, values) -> None:
+    df = pd.DataFrame({"x": [*values, np.nan], "exposure": [1.0, 3.0, 1.0, 3.0, 2.0]})
+    y = [1.0, 1.0, 4.0, 4.0]
+    if direction == "decreasing":
+        y.reverse()
+    binner = AutoBinner(
+        cols=["x"],
+        max_bins=4,
+        monotonic=direction,
+        exposure_col="exposure" if weighted else None,
+    ).fit(df, [*y, 100.0])
+    expected = [] if len(set(values)) == 1 else [2.0 if weighted else 1.5]
+    np.testing.assert_array_equal(binner.mapping_["x"], expected)
+    out = binner.transform(df)["x"]
+    assert out.cat.codes.tolist() == ([0] * 4 if not expected else [0, 0, 1, 1]) + [
+        len(expected) + 1
+    ]
+    assert out.iloc[-1] == "Missing"
+
+
+@pytest.mark.parametrize("direction", ["increasing", "decreasing"])
+@pytest.mark.parametrize("pool", [False, True])
+def test_autobinner_monotonic_preserves_edges_across_empty_bins(direction, pool) -> None:
+    values = np.array([0.5, 0.5, 2.5, 2.5, 5.5, 5.5])
+    target = np.array([3, 3, 1, 1, 5, 5] if pool else [1, 1, 3, 3, 5, 5], dtype=float)
+    if direction == "decreasing":
+        target = 6.0 - target
+    edges = AutoBinner(monotonic=direction)._enforce_monotonic(
+        np.arange(6.0), values, np.array([1.0, 2.0] * 3), target
+    )
+    np.testing.assert_array_equal(edges, [3.0] if pool else [1.0, 3.0])
+    codes = np.searchsorted(edges, values, side="right")
+    assert codes.tolist() == ([0, 0, 0, 0, 1, 1] if pool else [0, 0, 1, 1, 2, 2])
 
 
 def test_autobinner_monotonic_increasing_merges_non_monotonic_bins() -> None:

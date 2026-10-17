@@ -44,3 +44,6 @@ examples/_freeze/
 examples/_artifacts/
 examples/*.html
 examples/synthetic.parquet
+
+# Local review evidence
+/evidence/

@@ -39,6 +39,8 @@ finite lower edge and exclude their upper edge: with edges 30 and 60, the bins
 are `(-inf, 30.0)`, `[30.0, 60.0)`, and `[60.0, inf)`. A value of exactly 30
 belongs to the second bin; exactly 60 belongs to the third. With no edges, all
 observed values belong to `(-inf, inf)`; missing values still use `Missing`.
+Monotonic pooling uses only occupied bins. With monotonic pooling enabled,
+constant predictors produce a single observed-value interval.
 
 `AutoGrouper` handles categorical features. The `rare` strategy collapses
 thin levels; `similarity` stably sorts nominal levels by aggregate pure premium
@@ -98,6 +100,15 @@ with a 0.1% day-count tolerance); claim counts must be non-negative. Omitting
 `exposure_col` explicitly selects unweighted binning or unit row weights for
 grouping. A missing `target_col` falls back to `y`: rates stay rates for tree
 binning and are multiplied by exposure before similarity grouping pools them.
+Supplied outcomes must remain finite after numeric and unit conversion. NaN,
+infinity, and entirely missing outcomes raise an error before mappings are
+learned, even when the corresponding predictor is missing. Unknown outcomes
+cannot count as zero claims.
+
+Transform input must contain every fitted mapping column. DataFrames use their
+column names; arrays use `x0`, `x1`, and so on. Switching between named DataFrames
+and arrays raises `ValueError` when those names do not match. Keep the fitted
+column names when scoring so each learned mapping is applied.
 
 Both transformers expose `mapping_` and accept `set_mapping(...)` after fitting.
 An override replaces the entire mapping; omitted columns pass through unchanged.
