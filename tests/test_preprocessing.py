@@ -369,6 +369,44 @@ def _weighted_bin_means(df: pd.DataFrame, col: str, edges: np.ndarray) -> np.nda
     return means
 
 
+@pytest.mark.parametrize("direction", ["increasing", "decreasing"])
+@pytest.mark.parametrize("weighted", [False, True])
+@pytest.mark.parametrize("values", [[5.0] * 4, [1.0, 1.0, 2.0, 2.0]])
+def test_autobinner_monotonic_handles_constant_and_tied_values(direction, weighted, values) -> None:
+    df = pd.DataFrame({"x": [*values, np.nan], "exposure": [1.0, 3.0, 1.0, 3.0, 2.0]})
+    y = [1.0, 1.0, 4.0, 4.0]
+    if direction == "decreasing":
+        y.reverse()
+    binner = AutoBinner(
+        cols=["x"],
+        max_bins=4,
+        monotonic=direction,
+        exposure_col="exposure" if weighted else None,
+    ).fit(df, [*y, 100.0])
+    expected = [] if len(set(values)) == 1 else [2.0 if weighted else 1.5]
+    np.testing.assert_array_equal(binner.mapping_["x"], expected)
+    out = binner.transform(df)["x"]
+    assert out.cat.codes.tolist() == ([0] * 4 if not expected else [0, 0, 1, 1]) + [
+        len(expected) + 1
+    ]
+    assert out.iloc[-1] == "Missing"
+
+
+@pytest.mark.parametrize("direction", ["increasing", "decreasing"])
+@pytest.mark.parametrize("pool", [False, True])
+def test_autobinner_monotonic_preserves_edges_across_empty_bins(direction, pool) -> None:
+    values = np.array([0.5, 0.5, 2.5, 2.5, 5.5, 5.5])
+    target = np.array([3, 3, 1, 1, 5, 5] if pool else [1, 1, 3, 3, 5, 5], dtype=float)
+    if direction == "decreasing":
+        target = 6.0 - target
+    edges = AutoBinner(monotonic=direction)._enforce_monotonic(
+        np.arange(6.0), values, np.array([1.0, 2.0] * 3), target
+    )
+    np.testing.assert_array_equal(edges, [3.0] if pool else [1.0, 3.0])
+    codes = np.searchsorted(edges, values, side="right")
+    assert codes.tolist() == ([0, 0, 0, 0, 1, 1] if pool else [0, 0, 1, 1, 2, 2])
+
+
 def test_autobinner_monotonic_increasing_merges_non_monotonic_bins() -> None:
     df = _df()
     binner = AutoBinner(

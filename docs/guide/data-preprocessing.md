@@ -39,6 +39,8 @@ finite lower edge and exclude their upper edge: with edges 30 and 60, the bins
 are `(-inf, 30.0)`, `[30.0, 60.0)`, and `[60.0, inf)`. A value of exactly 30
 belongs to the second bin; exactly 60 belongs to the third. With no edges, all
 observed values belong to `(-inf, inf)`; missing values still use `Missing`.
+Monotonic pooling uses only occupied bins. With monotonic pooling enabled,
+constant predictors produce a single observed-value interval.
 
 `AutoGrouper` handles categorical features. The `rare` strategy collapses
 thin levels; `similarity` stably sorts nominal levels by aggregate pure premium

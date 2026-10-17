@@ -269,12 +269,13 @@ class AutoBinner(TransformerMixin, BaseEstimator):
         w = weights if weights is not None else np.ones_like(values)
         tgt_sum = np.bincount(codes, weights=target * w, minlength=n_bins)
         w_sum = np.bincount(codes, weights=w, minlength=n_bins)
-        with np.errstate(divide="ignore", invalid="ignore"):
-            bin_means = np.where(w_sum > 0, tgt_sum / w_sum, 0.0)
-        sw = w_sum if np.any(w_sum > 0) else None
+        occupied = np.flatnonzero(w_sum > 0)
+        bin_means = tgt_sum[occupied] / w_sum[occupied]
         increasing = self._mono_direction()
-        smoothed = isotonic_regression(bin_means, increasing=increasing, sample_weight=sw)
-        keep = np.where(smoothed[:-1] != smoothed[1:])[0]
+        smoothed = isotonic_regression(
+            bin_means, increasing=increasing, sample_weight=w_sum[occupied]
+        )
+        keep = occupied[:-1][smoothed[:-1] != smoothed[1:]]
         return edges[keep]
 
     def _quantile_edges(self, v, w):
