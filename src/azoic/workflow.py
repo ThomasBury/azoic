@@ -138,12 +138,7 @@ class PreprocessingSpec(BaseModel):
             "claim_count_col": spec.claim_count,
             "target_col": spec.target,
         }
-        fit_columns = [spec.target]
-        if spec.claim_count is not None:
-            fit_columns.append(spec.claim_count)
-        steps = [
-            ("fit_columns", FunctionTransformer(_ensure_columns, kw_args={"columns": fit_columns}))
-        ]
+        steps: list[tuple[str, Any]] = []
         if self.binner is not None:
             steps.append(("binner", AutoBinner(**{**self.binner, **special})))
         if self.grouper is not None:
@@ -494,11 +489,6 @@ def _validate_portfolio(config: ExperimentConfig, df: pd.DataFrame) -> None:
         raise ValueError("claim_count must contain only non-negative finite values")
     if np.any((claim_count == 0) != (target == 0)):
         raise ValueError("claim_count and target rows must be zero or positive together")
-
-
-def _ensure_columns(X: pd.DataFrame, *, columns: list[str]) -> pd.DataFrame:
-    missing = {column: 0.0 for column in columns if column not in X.columns}
-    return X.assign(**missing)
 
 
 def _drop_columns(X: pd.DataFrame, *, columns: list[str]) -> pd.DataFrame:

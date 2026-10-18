@@ -671,7 +671,7 @@ def test_autogrouper_unknown_level_to_other() -> None:
     assert out["region"].dtype == grouper.category_dtypes_["region"]
 
 
-def test_autogrouper_aggregates_unseen_warnings_and_silently_groups_missing() -> None:
+def test_autogrouper_aggregates_unseen_warnings_and_includes_missing() -> None:
     train = pd.DataFrame({"first": ["A", "B"], "second": ["X", "Y"]})
     grouper = AutoGrouper(cols=["first", "second"], strategy="rare", min_exposure=None).fit(train)
 
@@ -680,11 +680,14 @@ def test_autogrouper_aggregates_unseen_warnings_and_silently_groups_missing() ->
 
     assert len(caught) == 1
     message = str(caught[0].message)
-    assert "first=['new-a']" in message
-    assert "second=['new-b']" in message
-    assert "None" not in message
+    assert "first=['new-a', nan]" in message
+    assert "second=['new-b', nan]" in message
     assert (out.iloc[1] == "Other").all()
     assert all(out[col].cat.categories[-1] == "Other" for col in out)
+
+    with pytest.warns(UserWarning, match=r"first=\[nan\]"):
+        na_out = grouper.transform(pd.DataFrame({"first": ["A", None], "second": ["X", "Y"]}))
+    assert na_out["first"].tolist() == ["A", "Other"]
 
 
 def test_autogrouper_ordered_similarity_merges_only_adjacent_levels() -> None:
@@ -1028,3 +1031,150 @@ def test_autobinner_rejects_inf_in_fit_and_transform_and_roundtrips_mapping(
 
     with pytest.raises(ValueError, match="infinite"):
         binner.transform(dirty)
+
+
+def test_autobinner_default_cols_exclude_boolean_dtypes() -> None:
+    df = pd.DataFrame(
+        {
+            "num": [1.0, 2.0, 3.0, 4.0],
+            "flag_bool": [True, False, True, False],
+            "flag_nullable": pd.Series([True, False, pd.NA, True], dtype="boolean"),
+        }
+    )
+    binner = AutoBinner(max_bins=2).fit(df)
+    assert binner.bin_cols_ == ["num"]
+    assert list(binner.mapping_) == ["num"]
+    out = binner.transform(df)
+    pd.testing.assert_series_equal(out["flag_bool"], df["flag_bool"])
+    pd.testing.assert_series_equal(out["flag_nullable"], df["flag_nullable"])
+
+
+@pytest.mark.parametrize("cls", [AutoBinner, AutoGrouper])
+def test_preprocessing_transform_tolerates_absent_special_columns(cls) -> None:
+    df = _df(n=400)
+    cols = ["driver_age", "vehicle_age"] if cls is AutoBinner else ["region", "vehicle_brand"]
+    kwargs = {"strategy": "tree", "max_bins": 4} if cls is AutoBinner else {"max_groups": 3}
+    transformer = cls(
+        cols=cols,
+        exposure_col="exposure",
+        claim_count_col="claim_count",
+        target_col="claim_amount",
+        **kwargs,
+    ).fit(df)
+
+    full = transformer.transform(df)
+    without_outcomes = transformer.transform(df.drop(columns=["claim_amount", "claim_count"]))
+    features_only = transformer.transform(
+        df.drop(columns=["exposure", "claim_amount", "claim_count"])
+    )
+
+    feature_cols = ["driver_age", "vehicle_age", "region", "vehicle_brand"]
+    pd.testing.assert_frame_equal(without_outcomes[feature_cols], full[feature_cols])
+    pd.testing.assert_frame_equal(features_only, full[feature_cols])
+
+    with pytest.raises(ValueError, match="Transform predictors must match fit names and order"):
+        transformer.transform(df[["vehicle_age", "driver_age", "region", "vehicle_brand"]])
+    with pytest.raises(ValueError, match="Transform predictors must match fit names and order"):
+        transformer.transform(df[["driver_age", "region", "vehicle_brand"]])
+
+
+def test_autogrouper_merge_loop_matches_reference_and_1000_levels_under_one_second() -> None:
+    import time
+
+    rng = np.random.default_rng(42)
+    n_rows = 2_000
+    levels = np.array([f"lvl_{i:03d}" for i in range(120)])
+    df = pd.DataFrame(
+        {
+            "cat": rng.choice(levels, size=n_rows),
+            "exposure": rng.uniform(0.1, 2.0, size=n_rows),
+            "claim_count": rng.poisson(0.2, size=n_rows).astype(float),
+        }
+    )
+    df["claim_amount"] = df["claim_count"] * rng.gamma(2.0, 100.0, size=n_rows)
+
+    grouper = AutoGrouper(
+        cols=["cat"],
+        strategy="similarity",
+        max_groups=8,
+        min_exposure=15.0,
+        min_claims=3.0,
+        exposure_col="exposure",
+        claim_count_col="claim_count",
+        target_col="claim_amount",
+    ).fit(df)
+
+    stats = grouper._level_stats(
+        df["cat"],
+        df["exposure"].to_numpy(),
+        df["claim_count"].to_numpy(),
+        df["claim_amount"].to_numpy(),
+    ).sort_values("pp", kind="stable")
+    groups = [[level] for level in stats.index]
+
+    def total(group, column):
+        return float(stats.loc[group, column].sum())
+
+    def risk(group):
+        exposure = total(group, "exp")
+        return total(group, "tgt") / exposure if exposure > 0 else 0.0
+
+    while len(groups) > 1:
+        index = next(
+            (
+                i
+                for i, group in enumerate(groups)
+                if total(group, "exp") < 15.0 or total(group, "cc") < 3.0
+            ),
+            None,
+        )
+        if index is None:
+            break
+        if index == 0:
+            merge_left = False
+        elif index == len(groups) - 1:
+            merge_left = True
+        else:
+            merge_left = abs(risk(groups[index]) - risk(groups[index - 1])) <= abs(
+                risk(groups[index]) - risk(groups[index + 1])
+            )
+        if merge_left:
+            groups[index - 1].extend(groups.pop(index))
+        else:
+            groups[index].extend(groups.pop(index + 1))
+
+    while len(groups) > 8:
+        differences = [abs(risk(groups[i]) - risk(groups[i + 1])) for i in range(len(groups) - 1)]
+        index = min(range(len(differences)), key=differences.__getitem__)
+        groups[index].extend(groups.pop(index + 1))
+
+    expected = {}
+    for i, group in enumerate(groups):
+        label = group[0] if len(group) == 1 else f"group_{i}"
+        for level in group:
+            expected[level] = label
+    assert grouper.mapping_["cat"] == expected
+
+    big_levels = [f"k_{i:04d}" for i in range(1_000)]
+    big_df = pd.DataFrame(
+        {
+            "cat": big_levels,
+            "exposure": rng.uniform(0.5, 5.0, size=1_000),
+            "claim_count": rng.poisson(1.0, size=1_000).astype(float),
+            "claim_amount": rng.gamma(2.0, 50.0, size=1_000),
+        }
+    )
+    start = time.perf_counter()
+    big_grouper = AutoGrouper(
+        cols=["cat"],
+        strategy="similarity",
+        max_groups=10,
+        min_exposure=5.0,
+        min_claims=2.0,
+        exposure_col="exposure",
+        claim_count_col="claim_count",
+        target_col="claim_amount",
+    ).fit(big_df)
+    elapsed = time.perf_counter() - start
+    assert elapsed < 1.0
+    assert len(set(big_grouper.mapping_["cat"].values())) == 10

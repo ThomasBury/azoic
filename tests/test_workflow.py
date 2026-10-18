@@ -660,13 +660,81 @@ models:
     outcome_columns = ["claim_amount", "claim_count"]
     labeled = pd.read_parquet(data)[[*run.feature_names, "exposure", *outcome_columns]]
     unlabeled = labeled.drop(columns=outcome_columns)
+    features_only = labeled[run.feature_names]
     for estimator in estimators.values():
         expected = estimator.predict(labeled)
         actual = estimator.predict(unlabeled)
+        actual_features_only = estimator.predict(features_only)
         np.testing.assert_allclose(actual, expected)
+        np.testing.assert_allclose(actual_features_only, expected)
         assert len(actual) == len(unlabeled)
         assert np.isfinite(actual).all()
         assert (actual >= 0).all()
+
+
+def test_workflow_preprocessing_refit_on_xy_and_predict_parity(tmp_path: Path) -> None:
+    from sklearn.base import clone
+
+    data = _write_portfolio(tmp_path, n=1200)
+    df = pd.read_parquet(data)
+    cfg = ExperimentConfig(
+        name="refit-parity",
+        data_path=str(data),
+        spec={"target": "claim_amount", "exposure": "exposure", "claim_count": "claim_count"},
+        features=["driver_age", "vehicle_age", "region", "vehicle_brand"],
+        preprocessing={
+            "binner": {
+                "cols": ["driver_age", "vehicle_age"],
+                "strategy": "tree",
+                "max_bins": 4,
+                "min_claims": 5,
+            },
+            "grouper": {
+                "cols": ["region", "vehicle_brand"],
+                "strategy": "similarity",
+                "max_groups": 3,
+                "min_claims": 5,
+            },
+        },
+        models={
+            "glm": ModelSpec(
+                kind="glm",
+                params={"family": "tweedie", "link": "log", "tweedie_power": 1.5},
+            ),
+            "gbm": ModelSpec(
+                kind="gbm",
+                params={"objective": "tweedie", "n_estimators": 15, "random_state": 42},
+            ),
+        },
+    )
+    run, estimators = run_experiment(cfg, return_estimators=True)
+    _, bare_estimators = run_experiment(
+        cfg.model_copy(update={"preprocessing": None}), return_estimators=True
+    )
+
+    train_df = df.iloc[list(run.train_indices)]
+    test_df = df.iloc[list(run.test_indices)]
+    X_train_xy = train_df[[*run.feature_names, "exposure", "claim_count"]]
+    y_train = (train_df["claim_amount"] / train_df["exposure"]).to_numpy(dtype=float)
+
+    for name, pipeline in estimators.items():
+        assert "fit_columns" not in pipeline.named_steps
+        refit = clone(pipeline).fit(X_train_xy, y_train)
+        for col, edges in pipeline.named_steps["binner"].mapping_.items():
+            assert len(edges) > 0
+            np.testing.assert_array_equal(refit.named_steps["binner"].mapping_[col], edges)
+        assert refit.named_steps["grouper"].mapping_ == pipeline.named_steps["grouper"].mapping_
+
+        X_test_features = test_df[run.feature_names]
+        X_test_with_exp = test_df[[*run.feature_names, "exposure"]]
+        pred_features = pipeline.predict(X_test_features)
+        pred_with_exp = pipeline.predict(X_test_with_exp)
+        np.testing.assert_allclose(pred_features, pred_with_exp)
+        np.testing.assert_allclose(refit.predict(X_test_features), pred_features)
+        np.testing.assert_allclose(
+            bare_estimators[name].predict(X_test_features),
+            bare_estimators[name].predict(X_test_with_exp),
+        )
 
 
 def test_protected_audits_use_outer_test_and_never_fit_columns(tmp_path: Path) -> None:
