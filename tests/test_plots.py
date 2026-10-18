@@ -569,6 +569,12 @@ def test_plot_lorenz_oracle_renders_with_zero_weight_row(tmp_path) -> None:
     np.testing.assert_allclose(oracle_pos.get_xdata(), expected_pos.exposure_pct)
     np.testing.assert_allclose(oracle_pos.get_ydata(), expected_pos.claims_pct)
 
+    large_claims = np.array([1e16, 1e16])
+    large_exposure = np.array([1.0, 0.0])
+    ax_large = plot_lorenz(large_claims, np.array([1.0, 2.0]), large_exposure, show_oracle=True)
+    oracle_large = ax_large.get_lines()[1]
+    assert oracle_large.get_label() == "oracle (Gini 0.500)"
+
 
 def test_exposure_bars_realistic_scale_and_wide_numeric_axis(tmp_path) -> None:
     lift_table = pd.DataFrame(

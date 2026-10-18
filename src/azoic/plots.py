@@ -228,11 +228,19 @@ def plot_lorenz(
                     out=np.zeros_like(y_arr),
                     where=pos_w,
                 )
-                pos_claim_zero_w = ~pos_w & (y_arr > 0) & np.isfinite(y_arr)
-                if np.any(pos_claim_zero_w):
-                    finite_pos = observed_rate[pos_w & np.isfinite(observed_rate)]
-                    top = float(finite_pos.max()) + 1.0 if finite_pos.size else 1.0
-                    observed_rate[pos_claim_zero_w] = top
+                if (
+                    y_arr.shape == w.shape
+                    and np.isfinite(observed_rate).all()
+                    and np.isfinite(y_arr).all()
+                    and np.isfinite(w).all()
+                ):
+                    pos_claim_zero_w = ~pos_w & (y_arr > 0)
+                    if np.any(pos_claim_zero_w):
+                        _, inv = np.unique(observed_rate[~pos_claim_zero_w], return_inverse=True)
+                        ranks = np.empty_like(observed_rate)
+                        ranks[~pos_claim_zero_w] = inv
+                        ranks[pos_claim_zero_w] = float(inv.max() + 1) if inv.size else 1.0
+                        observed_rate = ranks
             oracle = lorenz(y_true, observed_rate, sample_weight)
             ax.plot(
                 oracle.exposure_pct,
