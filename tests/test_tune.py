@@ -437,3 +437,45 @@ def test_tuning_completes_with_claim_free_inner_and_outer_holdouts(tmp_path, ret
     assert np.isfinite(metrics["deviance_test"])
     assert metrics["op_ratio_test"] == 0.0
     assert bool(result.estimators) == return_estimators
+
+
+def test_tuning_trial_with_nonpositive_predictions_returns_inf_without_crashing(
+    tmp_path: Path,
+) -> None:
+    df = pd.DataFrame(
+        {
+            "driver_age": [0.0, 5.0, 10.0, 15.0, 20.0, 25.0, -50.0, -60.0, -70.0, -80.0],
+            "period": np.arange(10),
+            "exposure": np.ones(10),
+            "claim_count": [0, 1, 1, 2, 2, 3, 0, 1, 0, 1],
+            "claim_amount": [0.0, 10.0, 20.0, 30.0, 40.0, 50.0, 0.0, 10.0, 0.0, 10.0],
+        }
+    )
+    p = tmp_path / "nonpos.parquet"
+    df.to_parquet(p)
+    cfg = ExperimentConfig(
+        data_path=str(p),
+        spec={
+            "target": "claim_amount",
+            "exposure": "exposure",
+            "claim_count": "claim_count",
+            "time_col": "period",
+        },
+        features=["driver_age"],
+        split="temporal",
+        test_size=0.2,
+        models={
+            "glm-normal": ModelSpec(
+                kind="glm",
+                params={"family": "normal", "link": "identity", "exposure_col": "exposure"},
+            )
+        },
+        tuning={
+            "n_trials": 1,
+            "search_space": {"glm-normal": {"alpha": {"type": "categorical", "choices": [0.0]}}},
+        },
+    )
+    with pytest.warns(UserWarning, match="non-positive predictions"):
+        result = tune_experiment(cfg, n_trials=1)
+    assert result.best_values["glm-normal"] == float("inf")
+    assert result.run.models["glm-normal"].metrics["deviance_test"] == float("inf")

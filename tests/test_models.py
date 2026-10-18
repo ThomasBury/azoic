@@ -799,6 +799,10 @@ def test_freq_sev_predict_warns_when_clipping_negative_components() -> None:
     with pytest.warns(UserWarning, match="clipped .* negative component"):
         pred = model.predict(df)
     assert (pred == 0.0).all()  # -1 clipped to 0, x 2
+    y_rate = (df["claim_amount"] / df["exposure"]).to_numpy()
+    with pytest.warns(UserWarning, match="non-positive predictions"):
+        score = model.score(df, y_rate)
+    assert np.isnan(score)
 
 
 @pytest.mark.parametrize("kind", ["glm", "gbm", "frequency-severity", "frequency-severity-gbm"])
