@@ -218,7 +218,7 @@ class AutoBinner(TransformerMixin, BaseEstimator):
             target = check_array(target, dtype=float, ensure_2d=False, input_name="target")
         self.mapping_ = {}
         for col in cols:
-            edges = self._edges(X_df[col].to_numpy(dtype=float), target, exp, cc)
+            edges = self._edges(self._column_values(X_df, col), target, exp, cc)
             self.mapping_[col] = edges
         self.category_dtypes_ = {
             col: self._category_dtype(edges) for col, edges in self.mapping_.items()
@@ -290,8 +290,10 @@ class AutoBinner(TransformerMixin, BaseEstimator):
 
     def _quantile_edges(self, v, w):
         if w is None:
-            return np.unique(np.quantile(v, np.linspace(0, 1, self.max_bins + 1)[1:-1]))
-        return _weighted_quantile_edges(v, w, n_quantiles=self.max_bins)
+            edges = np.unique(np.quantile(v, np.linspace(0, 1, self.max_bins + 1)[1:-1]))
+        else:
+            edges = _weighted_quantile_edges(v, w, n_quantiles=self.max_bins)
+        return edges[(edges > v.min()) & (edges < v.max())]
 
     def _tree_edges(self, v, y, w):
         tree = DecisionTreeRegressor(
@@ -312,12 +314,21 @@ class AutoBinner(TransformerMixin, BaseEstimator):
             X_df = X_df[feature_names]
         out = X_df.copy()
         for col, edges in self.mapping_.items():
-            codes = self._codes(out[col].to_numpy(dtype=float), edges)
+            codes = self._codes(self._column_values(out, col), edges)
             if was_df:
                 out[col] = pd.Categorical.from_codes(codes, dtype=self.category_dtypes_[col])
             else:
                 out[col] = codes.astype(float)
         return out if was_df else out.to_numpy()
+
+    @staticmethod
+    def _column_values(X: pd.DataFrame, col: str) -> np.ndarray:
+        values = X[col].to_numpy(dtype=float)
+        if np.isinf(values).any():
+            raise ValueError(
+                f"column {col!r} contains infinite values; binned columns must be finite or NaN"
+            )
+        return values
 
     @staticmethod
     def _codes(values, edges):
