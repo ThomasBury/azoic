@@ -685,9 +685,19 @@ class FrequencySeverityModel(RegressorMixin, BaseEstimator):
             raise TypeError("FrequencySeverityModel.score requires a pandas DataFrame X.")
         _, w = _pop_weight(X, self.exposure_col, sample_weight, require_exposure=True)
         y = _validate_target(X, y)
+        y_pred = self.predict(X)
+        if np.any(y_pred <= 0):
+            warnings.warn(
+                "FrequencySeverityModel.score received non-positive predictions "
+                "(y_pred <= 0 is undefined for Tweedie deviance with power=1.5); "
+                "returning NaN",
+                UserWarning,
+                stacklevel=2,
+            )
+            return float("nan")
         return d2_tweedie_score(
             y,
-            self.predict(X),
+            y_pred,
             power=1.5,
             sample_weight=w,
         )

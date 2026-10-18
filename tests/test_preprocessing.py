@@ -964,3 +964,67 @@ def test_autogrouper_rejects_max_groups_below_one(max_groups) -> None:
         AutoGrouper(max_groups=max_groups, exposure_col="exposure", target_col="claim_amount").fit(
             _df()
         )
+
+
+@pytest.mark.parametrize("weighted", [False, True])
+def test_autobinner_quantile_point_mass_at_min_has_no_empty_first_bin_and_observed_tariff_ref(
+    weighted: bool,
+) -> None:
+    from azoic.tariff import extract_tariff
+
+    values = np.r_[np.zeros(40), np.arange(1.0, 61.0)]
+    df = pd.DataFrame({"x": values, "exposure": np.ones(len(values))})
+    y = 1.0 + 0.05 * values
+    binner = AutoBinner(
+        cols=["x"],
+        strategy="quantile",
+        max_bins=5,
+        exposure_col="exposure" if weighted else None,
+    ).fit(df)
+    edges = binner.mapping_["x"]
+    assert np.all(edges > values.min())
+    transformed = binner.transform(df)
+    first_cat = transformed["x"].cat.categories[0]
+    assert (transformed["x"] == first_cat).sum() > 0
+
+    glm = RiskGLM(family="poisson", link="log", exposure_col="exposure").fit(transformed, y)
+    tariff = extract_tariff(glm)
+    ref = tariff["reference"]["x"]
+    assert (transformed["x"] == ref).any()
+
+    top_heavy = pd.DataFrame({"x": [0.0, 1.0, 1.0, 1.0], "exposure": np.ones(4)})
+    top_binner = AutoBinner(
+        cols=["x"],
+        strategy="quantile",
+        max_bins=2,
+        exposure_col="exposure" if weighted else None,
+    ).fit(top_heavy)
+    np.testing.assert_array_equal(top_binner.mapping_["x"], [1.0])
+    top_codes = top_binner.transform(top_heavy)["x"].cat.codes.tolist()
+    assert top_codes == [0, 1, 1, 1]
+
+
+@pytest.mark.parametrize("inf_val", [np.inf, -np.inf])
+@pytest.mark.parametrize("as_dataframe", [True, False])
+def test_autobinner_rejects_inf_in_fit_and_transform_and_roundtrips_mapping(
+    inf_val: float, as_dataframe: bool
+) -> None:
+    clean_df = pd.DataFrame({"x": [0.0, 1.0, 2.0, np.nan]})
+    dirty_df = pd.DataFrame({"x": [0.0, 1.0, inf_val, np.nan]})
+    clean = clean_df if as_dataframe else clean_df.to_numpy()
+    dirty = dirty_df if as_dataframe else dirty_df.to_numpy()
+
+    with pytest.raises(ValueError, match="infinite"):
+        AutoBinner(max_bins=2).fit(dirty)
+
+    binner = AutoBinner(max_bins=2).fit(clean)
+    expected = binner.transform(clean)
+    binner.set_mapping(binner.mapping_)
+    actual = binner.transform(clean)
+    if as_dataframe:
+        pd.testing.assert_frame_equal(actual, expected)
+    else:
+        np.testing.assert_array_equal(actual, expected)
+
+    with pytest.raises(ValueError, match="infinite"):
+        binner.transform(dirty)

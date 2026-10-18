@@ -1291,3 +1291,50 @@ def test_modelspec_freq_sev_rejects_reserved_component_keys() -> None:
     spec = DatasetSpec(target="claim_amount", exposure="exposure", claim_count="claim_count")
     with pytest.raises(ValueError, match="reserved"):
         _fsm_spec(freq=RiskGLM()).build(spec)
+
+
+def test_run_experiment_handles_clipped_zero_predictions_and_ordered_protected_cols(
+    tmp_path: Path,
+) -> None:
+    months = ["Jan", "Feb", "Mar", "Apr"]
+    dtype = pd.CategoricalDtype(months, ordered=True)
+    df = pd.DataFrame(
+        {
+            "x": [-10.0, -5.0, 0.0, 5.0, 10.0, 20.0, -20.0, 15.0],
+            "month": pd.Series(
+                ["Jan", "Jan", "Feb", "Feb", "Mar", "Mar", "Apr", "Apr"], dtype=dtype
+            ),
+            "band": pd.Series(["Apr", "Jan", "Mar", "Feb"] * 2, dtype=dtype),
+            "exposure": np.ones(8),
+            "claim_count": [0, 0, 0, 1, 1, 2, 0, 1],
+            "claim_amount": [0.0, 0.0, 0.0, 10.0, 20.0, 40.0, 0.0, 30.0],
+        }
+    )
+    path = tmp_path / "clipped.parquet"
+    df.to_parquet(path)
+    with pytest.warns(UserWarning, match="negative support"):
+        fsm = ModelSpec(
+            kind="frequency_severity",
+            frequency=ModelSpec(kind="glm", params={"family": "normal", "link": "identity"}),
+            severity=ModelSpec(kind="glm", params={"family": "gamma", "link": "log"}),
+        )
+    cfg = ExperimentConfig(
+        data_path=str(path),
+        spec={
+            "target": "claim_amount",
+            "exposure": "exposure",
+            "claim_count": "claim_count",
+            "time_col": "month",
+            "protected_cols": ["band"],
+        },
+        features=["x"],
+        split="temporal",
+        test_size=0.25,
+        models={"fsm": fsm},
+    )
+    with pytest.warns(UserWarning, match="non-positive predictions"):
+        run = run_experiment(cfg)
+    metrics = run.models["fsm"].metrics
+    assert metrics["deviance_test"] == float("inf")
+    assert np.isnan(metrics["d2_test"])
+    assert run.models["fsm"].protected_calibration["band"]["group"].tolist() == ["Feb", "Mar"]

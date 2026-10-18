@@ -560,33 +560,44 @@ def _evaluate_split(
         pred_train = np.asarray(estimator.predict(X_train), dtype=float)
         pred_test = np.asarray(estimator.predict(X_test), dtype=float)
 
+        obs_test_rate = obs_test_agg / exp_test
+        if np.any(pred_test <= 0):
+            warnings.warn(
+                f"model {name!r} emitted non-positive predictions on test "
+                "(y_pred <= 0 is undefined for Tweedie deviance with power=1.5); "
+                "setting deviance_test=inf and d2_test=nan",
+                UserWarning,
+                stacklevel=2,
+            )
+            deviance_test = float("inf")
+            d2_test = float("nan")
+        else:
+            deviance_test = _deviance_test(
+                obs_rate=obs_test_rate,
+                pred_rate=pred_test,
+                exposure=exp_test,
+            )
+            null_dev = 0.0
+            if obs_test_agg.sum() > 0:
+                null_pred = np.full_like(obs_test_agg, obs_test_agg.sum() / exp_test.sum())
+                null_dev = mean_tweedie_deviance(
+                    obs_test_rate, null_pred, sample_weight=exp_test, power=1.5
+                )
+            d2_test = 1.0 - deviance_test / null_dev if null_dev > 0 else float("nan")
         metrics = {
             "gini_train": float(gini(obs_train_agg, pred_train, sample_weight=exp_train)),
             "gini_test": float(gini(obs_test_agg, pred_test, sample_weight=exp_test)),
             "op_ratio_test": float(op_ratio(obs_test_agg, pred_test, sample_weight=exp_test)),
-            "deviance_test": _deviance_test(
-                obs_rate=obs_test_agg / exp_test,
-                pred_rate=pred_test,
-                exposure=exp_test,
-            ),
+            "deviance_test": deviance_test,
+            "d2_test": d2_test,
         }
-        obs_test_rate = obs_test_agg / exp_test
-        null_dev = 0.0
-        if obs_test_agg.sum() > 0:
-            null_pred = np.full_like(obs_test_agg, obs_test_agg.sum() / exp_test.sum())
-            null_dev = mean_tweedie_deviance(
-                obs_test_rate, null_pred, sample_weight=exp_test, power=1.5
-            )
-        metrics["d2_test"] = (
-            1.0 - metrics["deviance_test"] / null_dev if null_dev > 0 else float("nan")
-        )
         cal = calibration_table(obs_test_agg, pred_test, exp_test, n_bins=10)
         protected_calibration = {
             column: calibration_table(
                 obs_test_agg,
                 pred_test,
                 exp_test,
-                groups=test_df[column].to_numpy(),
+                groups=test_df[column],
             )
             for column in config.spec.protected_cols
         }

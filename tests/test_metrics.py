@@ -695,3 +695,32 @@ def test_constant_calibration_has_real_group_and_preserves_totals(weighted, n_bi
     assert table.exposure.item() == (6 if weighted else 3)
     assert table.claim_amount.item() == 60
     assert table.predicted_claim_amount.item() == prediction * table.exposure.item()
+
+
+@pytest.mark.parametrize("as_series", [False, True])
+def test_stability_and_calibration_tables_preserve_ordered_categorical_order(as_series) -> None:
+    months = ["Jan", "Feb", "Mar", "Apr"]
+    cat = pd.Categorical(["Apr", "Jan", "Mar", "Feb"], categories=months, ordered=True)
+    labels = pd.Series(cat, index=[100, 200, 300, 400]) if as_series else cat
+    claims = np.array([40.0, 10.0, 30.0, 20.0])
+    preds = np.array([4.0, 1.0, 3.0, 2.0])
+    exposure = np.ones(4)
+
+    stab = stability_table(claims, preds, exposure, periods=labels)
+    cal = calibration_table(claims, preds, exposure, groups=labels)
+
+    assert stab["period"].tolist() == months
+    assert cal["group"].tolist() == months
+    np.testing.assert_allclose(stab["claim_amount"], [10.0, 20.0, 30.0, 40.0])
+    np.testing.assert_allclose(cal["claim_amount"], [10.0, 20.0, 30.0, 40.0])
+
+    unord = pd.Categorical([2024, 2023, 2024, 2023], categories=[2024, 2023], ordered=False)
+    unord_labels = pd.Series(unord, index=[100, 200, 300, 400]) if as_series else unord
+    assert stability_table(claims, preds, exposure, periods=unord_labels)["period"].tolist() == [
+        2023,
+        2024,
+    ]
+    assert calibration_table(claims, preds, exposure, groups=unord_labels)["group"].tolist() == [
+        2023,
+        2024,
+    ]
