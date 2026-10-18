@@ -683,6 +683,23 @@ def test_double_lift_keeps_zero_weight_rows_in_valid_segments() -> None:
     assert table.predicted_claim_amount_b.sum() == 6
 
 
+def test_double_lift_table_mean_ratio_is_exposure_weighted() -> None:
+    y_true = np.array([10.0, 60.0, 30.0, 240.0])
+    pred_a = np.array([10.0, 20.0, 30.0, 60.0])
+    pred_b = np.array([10.0, 10.0, 10.0, 10.0])
+    exposure = np.array([1.0, 3.0, 1.0, 4.0])
+
+    table = double_lift_table(y_true, pred_a, pred_b, exposure, n_bins=2)
+
+    assert len(table) == 2
+    expected_mean_ratio = [
+        (1.0 * 1.0 + 2.0 * 3.0) / (1.0 + 3.0),
+        (3.0 * 1.0 + 6.0 * 4.0) / (1.0 + 4.0),
+    ]
+    np.testing.assert_allclose(table["mean_ratio"], expected_mean_ratio)
+    np.testing.assert_allclose(table["exposure"], [4.0, 5.0])
+
+
 @pytest.mark.parametrize("weighted", [False, True])
 @pytest.mark.parametrize("n_bins", [1, 10])
 @pytest.mark.parametrize("prediction", [0.0, 1.5])

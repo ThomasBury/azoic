@@ -120,7 +120,7 @@ def _bar_width(x: np.ndarray) -> float:
     diffs = diffs[diffs > 0]
     if len(diffs) == 0:
         return 0.8
-    return float(min(np.median(diffs) * 0.9, 0.8))
+    return float(np.min(diffs) * 0.8)
 
 
 def _exposure_share(table: pd.DataFrame) -> np.ndarray:
@@ -129,8 +129,9 @@ def _exposure_share(table: pd.DataFrame) -> np.ndarray:
     return e / total if total > 0 else e
 
 
-def _background_exposure(ax: plt.Axes, x: np.ndarray, share: np.ndarray) -> None:
-    ax.bar(
+def _background_exposure(ax: plt.Axes, x: np.ndarray, share: np.ndarray) -> plt.Axes:
+    twin = ax.twinx()
+    twin.bar(
         x,
         share,
         width=_bar_width(x),
@@ -139,6 +140,12 @@ def _background_exposure(ax: plt.Axes, x: np.ndarray, share: np.ndarray) -> None
         edgecolor="none",
         zorder=0,
     )
+    twin.set_ylim(0, float(share.max()) * 1.2 if len(share) and share.max() > 0 else 1.0)
+    twin.set_ylabel("Exposure share")
+    twin.grid(False)
+    ax.set_zorder(twin.get_zorder() + 1)
+    ax.patch.set_visible(False)
+    return twin
 
 
 def _standalone_with_panel(
@@ -210,9 +217,30 @@ def plot_lorenz(
             label="random (diagonal)",
         )
         if show_oracle:
-            observed_rate = np.asarray(y_true, dtype=float)
+            y_arr = np.asarray(y_true, dtype=float)
+            observed_rate = y_arr
             if sample_weight is not None:
-                observed_rate = observed_rate / np.asarray(sample_weight, dtype=float)
+                w = np.asarray(sample_weight, dtype=float)
+                pos_w = w > 0
+                observed_rate = np.divide(
+                    y_arr,
+                    w,
+                    out=np.zeros_like(y_arr),
+                    where=pos_w,
+                )
+                if (
+                    y_arr.shape == w.shape
+                    and np.isfinite(observed_rate).all()
+                    and np.isfinite(y_arr).all()
+                    and np.isfinite(w).all()
+                ):
+                    pos_claim_zero_w = ~pos_w & (y_arr > 0)
+                    if np.any(pos_claim_zero_w):
+                        _, inv = np.unique(observed_rate[~pos_claim_zero_w], return_inverse=True)
+                        ranks = np.empty_like(observed_rate)
+                        ranks[~pos_claim_zero_w] = inv
+                        ranks[pos_claim_zero_w] = float(inv.max() + 1) if inv.size else 1.0
+                        observed_rate = ranks
             oracle = lorenz(y_true, observed_rate, sample_weight)
             ax.plot(
                 oracle.exposure_pct,

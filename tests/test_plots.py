@@ -154,7 +154,9 @@ def test_plot_lift_lines_observed_and_predicted(tmp_path) -> None:
     np.testing.assert_allclose(observed.get_ydata(), tbl["observed_pure_premium"].to_numpy())
     np.testing.assert_allclose(predicted.get_ydata(), tbl["predicted_pure_premium"].to_numpy())
     assert np.allclose(observed.get_xdata(), np.arange(1, 11))
-    assert any(getattr(p, "get_zorder", lambda: 1)() == 0 for p in ax.patches)
+    assert list(ax.patches) == []
+    twin_ax = ax.get_figure().axes[1]
+    assert any(getattr(p, "get_zorder", lambda: 1)() == 0 for p in twin_ax.patches)
 
 
 def test_plot_lift_background_exposure_optional() -> None:
@@ -229,10 +231,11 @@ def test_plot_one_way_embedded_background_exposure() -> None:
     fig, ax = plt.subplots()
     returned = plot_one_way(tbl, ax=ax, exposure="background", color="#0072B2")
     assert returned is ax
-    assert len(fig.axes) == 1
+    assert len(fig.axes) == 2
     assert len(ax.get_lines()) == 2
     assert ax.get_lines()[1].get_color() == "#0072B2"
-    assert any(getattr(p, "get_zorder", lambda: 1)() == 0 for p in ax.patches)
+    assert list(ax.patches) == []
+    assert any(getattr(p, "get_zorder", lambda: 1)() == 0 for p in fig.axes[1].patches)
 
 
 @pytest.mark.parametrize("embedded", [False, True])
@@ -252,11 +255,10 @@ def test_plot_one_way_displays_missing_points_labels_and_exposure(embedded, all_
     if embedded:
         fig, ax = plt.subplots()
         plot_one_way(table, ax=ax, exposure="background")
-        exposure_ax = ax
     else:
         ax = plot_one_way(table)
         fig = ax.get_figure()
-        exposure_ax = fig.axes[1]
+    exposure_ax = fig.axes[1]
     try:
         fig.canvas.draw()
         x = np.arange(len(table))
@@ -537,3 +539,99 @@ def test_residual_scale_keeps_signed_density_visible(weighted, embedded, logx, l
     assert residual_ax.get_yscale() == ("symlog" if logy else "linear")
     if logy:
         assert residual_ax.yaxis.get_transform().linthresh == 2
+
+
+def test_plot_lorenz_oracle_renders_with_zero_weight_row(tmp_path) -> None:
+    claims = np.array([0.0, 50.0, 100.0, 200.0])
+    preds = np.array([0.0, 80.0, 110.0, 190.0])
+    exposure = np.array([0.0, 1.0, 1.0, 0.5])
+    out = tmp_path / "lorenz_zero_weight.png"
+    ax = plot_lorenz(claims, preds, exposure, show_oracle=True, path=out)
+    assert out.exists() and out.stat().st_size > 500
+    oracle_line = ax.get_lines()[1]
+    expected_rate = np.array([0.0, 50.0, 100.0, 400.0])
+    expected = lorenz(claims, expected_rate, exposure)
+    np.testing.assert_allclose(oracle_line.get_xdata(), expected.exposure_pct)
+    np.testing.assert_allclose(oracle_line.get_ydata(), expected.claims_pct)
+    assert oracle_line.get_label() == f"oracle (Gini {expected.gini:.3f})"
+
+    pos_zero_claims = np.array([100.0, 50.0, 200.0])
+    pos_zero_exposure = np.array([0.0, 1.0, 1.0])
+    ax_pos = plot_lorenz(
+        pos_zero_claims,
+        np.array([300.0, 50.0, 200.0]),
+        pos_zero_exposure,
+        show_oracle=True,
+    )
+    oracle_pos = ax_pos.get_lines()[1]
+    expected_pos = lorenz(pos_zero_claims, np.array([201.0, 50.0, 200.0]), pos_zero_exposure)
+    assert expected_pos.gini > 0.0
+    np.testing.assert_allclose(oracle_pos.get_xdata(), expected_pos.exposure_pct)
+    np.testing.assert_allclose(oracle_pos.get_ydata(), expected_pos.claims_pct)
+
+    large_claims = np.array([1e16, 1e16])
+    large_exposure = np.array([1.0, 0.0])
+    ax_large = plot_lorenz(large_claims, np.array([1.0, 2.0]), large_exposure, show_oracle=True)
+    oracle_large = ax_large.get_lines()[1]
+    assert oracle_large.get_label() == "oracle (Gini 0.500)"
+
+
+def test_exposure_bars_realistic_scale_and_wide_numeric_axis(tmp_path) -> None:
+    lift_table = pd.DataFrame(
+        {
+            "group": [0, 1, 2, 3],
+            "observed_pure_premium": [80.0, 140.0, 230.0, 410.0],
+            "predicted_pure_premium": [85.0, 135.0, 225.0, 400.0],
+            "exposure": [100.0, 200.0, 300.0, 400.0],
+        }
+    )
+    lift_png = tmp_path / "lift_realistic.png"
+    ax_lift = plot_lift(lift_table, path=lift_png)
+    assert lift_png.exists() and lift_png.stat().st_size > 500
+    fig_lift = ax_lift.get_figure()
+    assert len(fig_lift.axes) == 2
+    twin_lift = fig_lift.axes[1]
+    fig_lift.canvas.draw()
+
+    assert list(ax_lift.patches) == []
+    assert ax_lift.get_ylim()[0] > 50.0
+    assert twin_lift.get_ylim() == pytest.approx((0.0, 0.4 * 1.2))
+    lift_bars = twin_lift.patches
+    assert len(lift_bars) == 4
+    np.testing.assert_allclose([b.get_width() for b in lift_bars], 0.8)
+    np.testing.assert_allclose([b.get_height() for b in lift_bars], [0.1, 0.2, 0.3, 0.4])
+    px_heights = np.array([b.get_window_extent().height for b in lift_bars])
+    np.testing.assert_allclose(px_heights / px_heights[0], [1.0, 2.0, 3.0, 4.0])
+    assert px_heights[-1] / ax_lift.bbox.height == pytest.approx(1.0 / 1.2)
+
+    wide_table = pd.DataFrame(
+        {
+            "level": [0, 1, 2, 3],
+            "level_label": ["[0, 200]", "[200, 400]", "[400, 600]", "[600, 1000]"],
+            "level_center": [100.0, 300.0, 500.0, 900.0],
+            "observed_pure_premium": [90.0, 160.0, 240.0, 380.0],
+            "predicted_pure_premium": [95.0, 155.0, 245.0, 370.0],
+            "exposure": [150.0, 300.0, 450.0, 600.0],
+        }
+    )
+    panel_png = tmp_path / "oneway_wide_panel.png"
+    ax_panel = plot_one_way(wide_table, path=panel_png)
+    assert panel_png.exists() and panel_png.stat().st_size > 500
+    expo_panel = ax_panel.get_figure().axes[1]
+    np.testing.assert_allclose([b.get_width() for b in expo_panel.patches], 200.0 * 0.8)
+
+    bg_png = tmp_path / "oneway_wide_bg.png"
+    ax_bg = plot_one_way(wide_table, exposure="background", path=bg_png)
+    assert bg_png.exists() and bg_png.stat().st_size > 500
+    fig_bg = ax_bg.get_figure()
+    twin_bg = fig_bg.axes[1]
+    fig_bg.canvas.draw()
+    bg_bars = twin_bg.patches
+    np.testing.assert_allclose([b.get_width() for b in bg_bars], 200.0 * 0.8)
+    bg_px_heights = np.array([b.get_window_extent().height for b in bg_bars])
+    np.testing.assert_allclose(bg_px_heights / bg_px_heights[0], [1.0, 2.0, 3.0, 4.0])
+
+    uneven_table = wide_table.assign(level_center=[0.0, 10.0, 500.0, 1000.0])
+    ax_uneven = plot_one_way(uneven_table)
+    uneven_bars = ax_uneven.get_figure().axes[1].patches
+    np.testing.assert_allclose([b.get_width() for b in uneven_bars], 10.0 * 0.8)

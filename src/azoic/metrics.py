@@ -471,8 +471,8 @@ def double_lift_table(
 
     Policies are bucketed into exposure-weighted deciles of the ratio (high
     ratio = A predicts a higher rate relative to B), and per decile the table reports
-    mean ratio, exposure, observed pure premium, and predicted pure premium
-    for both A and B. Compare each predicted rate with observations within
+    exposure-weighted mean ratio, exposure, observed pure premium, and predicted
+    pure premium for both A and B. Compare each predicted rate with observations within
     each ratio group; rising observations alone cannot select a model. Extreme
     ratio groups contain the largest relative disagreements, whose credibility
     depends on exposure and claims. Rates are absolute, not normalized by
@@ -519,11 +519,12 @@ def double_lift_table(
     df = df.loc[df["group"] >= 0]
     if df.empty:
         raise ValueError("no rows with finite ratio strata")
+    df["weighted_ratio"] = df["ratio"] * df["exposure"]
     df["predicted_claim_amount_a"] = df["pred_a"] * df["exposure"]
     df["predicted_claim_amount_b"] = df["pred_b"] * df["exposure"]
     grouped = df.groupby("group", observed=True)
     out = grouped.agg(
-        mean_ratio=("ratio", "mean"),
+        mean_ratio=("weighted_ratio", "sum"),
         exposure=("exposure", "sum"),
         claim_amount=("y_true", "sum"),
         predicted_claim_amount_a=("predicted_claim_amount_a", "sum"),
@@ -535,6 +536,7 @@ def double_lift_table(
             "double_lift_table: segment exposure must sum to at least 1/366 "
             f"(one day); degenerate segments: {bad}"
         )
+    out["mean_ratio"] = out["mean_ratio"] / out["exposure"]
     out["observed_pure_premium"] = out["claim_amount"] / out["exposure"]
     out[rate_columns[0]] = out["predicted_claim_amount_a"] / out["exposure"]
     out[rate_columns[1]] = out["predicted_claim_amount_b"] / out["exposure"]
