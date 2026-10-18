@@ -120,7 +120,7 @@ def _bar_width(x: np.ndarray) -> float:
     diffs = diffs[diffs > 0]
     if len(diffs) == 0:
         return 0.8
-    return float(np.median(diffs) * 0.8)
+    return float(np.min(diffs) * 0.8)
 
 
 def _exposure_share(table: pd.DataFrame) -> np.ndarray:
@@ -217,15 +217,22 @@ def plot_lorenz(
             label="random (diagonal)",
         )
         if show_oracle:
-            observed_rate = np.asarray(y_true, dtype=float)
+            y_arr = np.asarray(y_true, dtype=float)
+            observed_rate = y_arr
             if sample_weight is not None:
                 w = np.asarray(sample_weight, dtype=float)
+                pos_w = w > 0
                 observed_rate = np.divide(
-                    observed_rate,
+                    y_arr,
                     w,
-                    out=np.zeros_like(observed_rate),
-                    where=w > 0,
+                    out=np.zeros_like(y_arr),
+                    where=pos_w,
                 )
+                pos_claim_zero_w = ~pos_w & (y_arr > 0) & np.isfinite(y_arr)
+                if np.any(pos_claim_zero_w):
+                    finite_pos = observed_rate[pos_w & np.isfinite(observed_rate)]
+                    top = float(finite_pos.max()) + 1.0 if finite_pos.size else 1.0
+                    observed_rate[pos_claim_zero_w] = top
             oracle = lorenz(y_true, observed_rate, sample_weight)
             ax.plot(
                 oracle.exposure_pct,

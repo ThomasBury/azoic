@@ -555,6 +555,20 @@ def test_plot_lorenz_oracle_renders_with_zero_weight_row(tmp_path) -> None:
     np.testing.assert_allclose(oracle_line.get_ydata(), expected.claims_pct)
     assert oracle_line.get_label() == f"oracle (Gini {expected.gini:.3f})"
 
+    pos_zero_claims = np.array([100.0, 50.0, 200.0])
+    pos_zero_exposure = np.array([0.0, 1.0, 1.0])
+    ax_pos = plot_lorenz(
+        pos_zero_claims,
+        np.array([300.0, 50.0, 200.0]),
+        pos_zero_exposure,
+        show_oracle=True,
+    )
+    oracle_pos = ax_pos.get_lines()[1]
+    expected_pos = lorenz(pos_zero_claims, np.array([201.0, 50.0, 200.0]), pos_zero_exposure)
+    assert expected_pos.gini > 0.0
+    np.testing.assert_allclose(oracle_pos.get_xdata(), expected_pos.exposure_pct)
+    np.testing.assert_allclose(oracle_pos.get_ydata(), expected_pos.claims_pct)
+
 
 def test_exposure_bars_realistic_scale_and_wide_numeric_axis(tmp_path) -> None:
     lift_table = pd.DataFrame(
@@ -610,3 +624,8 @@ def test_exposure_bars_realistic_scale_and_wide_numeric_axis(tmp_path) -> None:
     np.testing.assert_allclose([b.get_width() for b in bg_bars], 200.0 * 0.8)
     bg_px_heights = np.array([b.get_window_extent().height for b in bg_bars])
     np.testing.assert_allclose(bg_px_heights / bg_px_heights[0], [1.0, 2.0, 3.0, 4.0])
+
+    uneven_table = wide_table.assign(level_center=[0.0, 10.0, 500.0, 1000.0])
+    ax_uneven = plot_one_way(uneven_table)
+    uneven_bars = ax_uneven.get_figure().axes[1].patches
+    np.testing.assert_allclose([b.get_width() for b in uneven_bars], 10.0 * 0.8)
