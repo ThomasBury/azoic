@@ -418,7 +418,7 @@ def test_autobinner_monotonic_handles_constant_and_tied_values(direction, weight
         monotonic=direction,
         exposure_col="exposure" if weighted else None,
     ).fit(df, [*y, 100.0])
-    expected = [] if len(set(values)) == 1 or weighted else [1.5]
+    expected = [] if len(set(values)) == 1 else [2.0 if weighted else 1.5]
     np.testing.assert_array_equal(binner.mapping_["x"], expected)
     out = binner.transform(df)["x"]
     assert out.cat.codes.tolist() == ([0] * 4 if not expected else [0, 0, 1, 1]) + [
@@ -982,7 +982,7 @@ def test_autobinner_quantile_point_mass_at_min_has_no_empty_first_bin_and_observ
         exposure_col="exposure" if weighted else None,
     ).fit(df)
     edges = binner.mapping_["x"]
-    assert np.all((edges > values.min()) & (edges < values.max()))
+    assert np.all(edges > values.min())
     transformed = binner.transform(df)
     first_cat = transformed["x"].cat.categories[0]
     assert (transformed["x"] == first_cat).sum() > 0
@@ -991,6 +991,17 @@ def test_autobinner_quantile_point_mass_at_min_has_no_empty_first_bin_and_observ
     tariff = extract_tariff(glm)
     ref = tariff["reference"]["x"]
     assert (transformed["x"] == ref).any()
+
+    top_heavy = pd.DataFrame({"x": [0.0, 1.0, 1.0, 1.0], "exposure": np.ones(4)})
+    top_binner = AutoBinner(
+        cols=["x"],
+        strategy="quantile",
+        max_bins=2,
+        exposure_col="exposure" if weighted else None,
+    ).fit(top_heavy)
+    np.testing.assert_array_equal(top_binner.mapping_["x"], [1.0])
+    top_codes = top_binner.transform(top_heavy)["x"].cat.codes.tolist()
+    assert top_codes == [0, 1, 1, 1]
 
 
 @pytest.mark.parametrize("inf_val", [np.inf, -np.inf])

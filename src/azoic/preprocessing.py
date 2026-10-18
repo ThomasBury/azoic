@@ -293,7 +293,7 @@ class AutoBinner(TransformerMixin, BaseEstimator):
             edges = np.unique(np.quantile(v, np.linspace(0, 1, self.max_bins + 1)[1:-1]))
         else:
             edges = _weighted_quantile_edges(v, w, n_quantiles=self.max_bins)
-        return edges[(edges > v.min()) & (edges < v.max())]
+        return edges[edges > v.min()]
 
     def _tree_edges(self, v, y, w):
         tree = DecisionTreeRegressor(
