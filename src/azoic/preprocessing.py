@@ -61,6 +61,22 @@ def _to_frame(X, *, required_columns=()):
     return frame, was_df
 
 
+def _validate_transform_input(estimator, X):
+    check_is_fitted(estimator, "mapping_")
+    names = getattr(estimator, "feature_names_in_", None)
+    specials = {
+        c for c in (estimator.exposure_col, estimator.claim_count_col, estimator.target_col) if c
+    }
+    if isinstance(X, pd.DataFrame) and names is not None:
+        expected = [name for name in names if name not in specials or name in X.columns]
+        if len(expected) != len(names):
+            if list(X.columns) != expected:
+                raise ValueError(f"Transform predictors must match fit names and order: {expected}")
+            check_array(X, dtype=None, ensure_all_finite=False)
+            return
+    validate_data(estimator, X, reset=False, dtype=None, ensure_all_finite=False)
+
+
 def _column_array(X, name, *, required=False, minimum=0):
     if name and name in X.columns:
         values = X[name].to_numpy(dtype=float)
@@ -236,7 +252,13 @@ class AutoBinner(TransformerMixin, BaseEstimator):
             if missing:
                 raise ValueError(f"cols not found in X: {missing}")
             return list(self.cols)
-        return [c for c in X.columns if c not in specials and pd.api.types.is_numeric_dtype(X[c])]
+        return [
+            c
+            for c in X.columns
+            if c not in specials
+            and pd.api.types.is_numeric_dtype(X[c])
+            and not pd.api.types.is_bool_dtype(X[c])
+        ]
 
     def _edges(self, values, target, exp, cc):
         mask = ~np.isnan(values)
@@ -307,11 +329,8 @@ class AutoBinner(TransformerMixin, BaseEstimator):
         return edges
 
     def transform(self, X):
-        validate_data(self, X, reset=False, dtype=None, ensure_all_finite=False)
+        _validate_transform_input(self, X)
         X_df, was_df = _to_frame(X, required_columns=self.mapping_)
-        feature_names = getattr(self, "feature_names_in_", None)
-        if feature_names is not None and all(c in X_df.columns for c in feature_names):
-            X_df = X_df[feature_names]
         out = X_df.copy()
         for col, edges in self.mapping_.items():
             codes = self._codes(self._column_values(out, col), edges)
@@ -550,24 +569,24 @@ class AutoGrouper(TransformerMixin, BaseEstimator):
 
     def _adjacent_similarity_mapping(self, stats):
         groups = [[level] for level in stats.index]
+        exp = [float(x) for x in stats["exp"]]
+        cc = [float(x) for x in stats["cc"]] if "cc" in stats else [0.0] * len(groups)
+        tgt = [float(x) for x in stats["tgt"]] if "tgt" in stats else [0.0] * len(groups)
         floor_exp = self.min_exposure or 0.0
         floor_cc = self.min_claims or 0.0
 
-        def total(group, column):
-            return float(stats.loc[group, column].sum())
+        def risk(i):
+            return tgt[i] / exp[i] if exp[i] > 0 else 0.0
 
-        def risk(group):
-            exposure = total(group, "exp")
-            return total(group, "tgt") / exposure if "tgt" in stats and exposure > 0 else 0.0
+        def merge(i):
+            groups[i].extend(groups.pop(i + 1))
+            exp[i] += exp.pop(i + 1)
+            cc[i] += cc.pop(i + 1)
+            tgt[i] += tgt.pop(i + 1)
 
         while len(groups) > 1:
             index = next(
-                (
-                    i
-                    for i, group in enumerate(groups)
-                    if total(group, "exp") < floor_exp
-                    or ("cc" in stats and total(group, "cc") < floor_cc)
-                ),
+                (i for i in range(len(groups)) if exp[i] < floor_exp or cc[i] < floor_cc),
                 None,
             )
             if index is None:
@@ -577,20 +596,15 @@ class AutoGrouper(TransformerMixin, BaseEstimator):
             elif index == len(groups) - 1:
                 merge_left = True
             else:
-                merge_left = abs(risk(groups[index]) - risk(groups[index - 1])) <= abs(
-                    risk(groups[index]) - risk(groups[index + 1])
+                merge_left = abs(risk(index) - risk(index - 1)) <= abs(
+                    risk(index) - risk(index + 1)
                 )
-            if merge_left:
-                groups[index - 1].extend(groups.pop(index))
-            else:
-                groups[index].extend(groups.pop(index + 1))
+            merge(index - 1 if merge_left else index)
 
         while len(groups) > self.max_groups:
-            differences = [
-                abs(risk(groups[i]) - risk(groups[i + 1])) for i in range(len(groups) - 1)
-            ]
+            differences = [abs(risk(i) - risk(i + 1)) for i in range(len(groups) - 1)]
             index = min(range(len(differences)), key=differences.__getitem__)
-            groups[index].extend(groups.pop(index + 1))
+            merge(index)
 
         mp = {}
         taken = set(stats.index) | {self.other_label}
@@ -615,15 +629,12 @@ class AutoGrouper(TransformerMixin, BaseEstimator):
         return pd.CategoricalDtype([*categories, self.other_label], ordered=ordered)
 
     def transform(self, X):
-        validate_data(self, X, reset=False, dtype=None, ensure_all_finite=False)
+        _validate_transform_input(self, X)
         X_df, was_df = _to_frame(X, required_columns=self.mapping_)
-        feature_names = getattr(self, "feature_names_in_", None)
-        if feature_names is not None and all(c in X_df.columns for c in feature_names):
-            X_df = X_df[feature_names]
         out = X_df.copy()
         unseen = {}
         for col, mp in self.mapping_.items():
-            unknown = out[col].notna() & ~out[col].isin(mp)
+            unknown = ~out[col].isin(mp)
             if unknown.any():
                 unseen[col] = out.loc[unknown, col].drop_duplicates().tolist()
             out[col] = (

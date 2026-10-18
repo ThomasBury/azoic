@@ -225,11 +225,11 @@ Here `test` is your scoring DataFrame and `policy_id` is its identifier column;
 substitute your identifier name. Merely dropping outcomes can leave unused
 columns that the fitted estimator rejects.
 
-When the config declares preprocessing, a `fit_columns` placeholder step adds
-zero-valued outcome columns so the fitted binner and grouper see their training
-schema, and a `drop_specials` step removes them before the final estimator, so
-targets never leak into prediction inputs. Frequency-severity pipelines strip
-the same columns inside the meta-estimator instead.
+When the config declares preprocessing, the fitted binner and grouper accept
+outcome-free or feature-only frames at prediction time, and a `drop_specials`
+step removes any present outcome columns before the final estimator so targets
+never leak into prediction inputs. Frequency-severity pipelines strip the same
+columns inside the meta-estimator instead.
 
 ## Operational checklist
 
