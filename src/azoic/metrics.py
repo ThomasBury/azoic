@@ -181,8 +181,9 @@ def stability_table(y_true, y_pred, sample_weight, *, periods) -> pd.DataFrame:
     y_true = np.asarray(y_true, dtype=float)
     y_pred = np.asarray(y_pred, dtype=float)
     sample_weight = np.asarray(sample_weight, dtype=float)
-    if isinstance(getattr(periods, "dtype", None), pd.CategoricalDtype):
-        periods = pd.Categorical(periods, dtype=periods.dtype)
+    periods_dtype = getattr(periods, "dtype", None)
+    if isinstance(periods_dtype, pd.CategoricalDtype) and periods_dtype.ordered:
+        periods = pd.Categorical(periods, dtype=periods_dtype)
     else:
         periods = np.asarray(periods)
 
@@ -299,10 +300,12 @@ def calibration_table(
     y_true, y_pred, w = _as_arrays(y_true, y_pred, sample_weight)
     if groups is None:
         groups = make_strata(y_pred, w if weighted else None, n_strata=n_bins)
-    elif isinstance(getattr(groups, "dtype", None), pd.CategoricalDtype):
-        groups = pd.Categorical(groups, dtype=groups.dtype)
     else:
-        groups = np.asarray(groups)
+        groups_dtype = getattr(groups, "dtype", None)
+        if isinstance(groups_dtype, pd.CategoricalDtype) and groups_dtype.ordered:
+            groups = pd.Categorical(groups, dtype=groups_dtype)
+        else:
+            groups = np.asarray(groups)
     df = pd.DataFrame({"y_true": y_true, "y_pred": y_pred, "exposure": w, "group": groups})
     df["predicted_claim_amount"] = df["y_pred"] * df["exposure"]
     grouped = df.groupby("group", observed=True, dropna=False)

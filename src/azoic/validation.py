@@ -103,9 +103,14 @@ def temporal_split(
         raise ValueError("pass exactly one of `test_size` or `cutoff`")
     if time_col not in df.columns:
         raise ValueError(f"`time_col` {time_col!r} not in df.columns")
-    values = pd.Series(df[time_col])
-    if values.isna().any():
+    col = df[time_col]
+    if pd.isna(col).any():
         raise ValueError(f"`time_col` {time_col!r} contains missing values")
+    values = (
+        pd.Series(col.to_numpy())
+        if isinstance(col.dtype, pd.CategoricalDtype) and not col.dtype.ordered
+        else pd.Series(col)
+    )
     order = values.argsort(kind="stable").to_numpy()
     times = values.iloc[order]
 

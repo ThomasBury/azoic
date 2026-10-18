@@ -283,3 +283,13 @@ def test_temporal_split_ordered_categorical_months_sort_chronologically() -> Non
             "month",
             test_size=1,
         )
+
+    unordered = pd.DataFrame(
+        {"year": pd.Categorical([2024, 2023, 2024, 2023], categories=[2024, 2023], ordered=False)}
+    )
+    tr_unord, te_unord = temporal_split(unordered, "year", test_size=2)
+    assert unordered.iloc[tr_unord]["year"].tolist() == [2023, 2023]
+    assert unordered.iloc[te_unord]["year"].tolist() == [2024, 2024]
+    tr_cut, te_cut = temporal_split(unordered, "year", cutoff=2023)
+    assert unordered.iloc[tr_cut]["year"].tolist() == [2023, 2023]
+    assert unordered.iloc[te_cut]["year"].tolist() == [2024, 2024]

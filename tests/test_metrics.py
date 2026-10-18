@@ -713,3 +713,14 @@ def test_stability_and_calibration_tables_preserve_ordered_categorical_order(as_
     assert cal["group"].tolist() == months
     np.testing.assert_allclose(stab["claim_amount"], [10.0, 20.0, 30.0, 40.0])
     np.testing.assert_allclose(cal["claim_amount"], [10.0, 20.0, 30.0, 40.0])
+
+    unord = pd.Categorical([2024, 2023, 2024, 2023], categories=[2024, 2023], ordered=False)
+    unord_labels = pd.Series(unord, index=[100, 200, 300, 400]) if as_series else unord
+    assert stability_table(claims, preds, exposure, periods=unord_labels)["period"].tolist() == [
+        2023,
+        2024,
+    ]
+    assert calibration_table(claims, preds, exposure, groups=unord_labels)["group"].tolist() == [
+        2023,
+        2024,
+    ]
