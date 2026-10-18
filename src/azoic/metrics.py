@@ -181,7 +181,10 @@ def stability_table(y_true, y_pred, sample_weight, *, periods) -> pd.DataFrame:
     y_true = np.asarray(y_true, dtype=float)
     y_pred = np.asarray(y_pred, dtype=float)
     sample_weight = np.asarray(sample_weight, dtype=float)
-    periods = np.asarray(periods)
+    if isinstance(getattr(periods, "dtype", None), pd.CategoricalDtype):
+        periods = pd.Categorical(periods, dtype=periods.dtype)
+    else:
+        periods = np.asarray(periods)
 
     if any(values.ndim != 1 for values in (y_true, y_pred, sample_weight, periods)):
         raise ValueError("stability_table inputs must be one-dimensional")
@@ -191,7 +194,8 @@ def stability_table(y_true, y_pred, sample_weight, *, periods) -> pd.DataFrame:
         raise ValueError("stability_table inputs must have the same length")
     if pd.isna(periods).any():
         raise ValueError("periods must not contain missing values")
-    if pd.api.types.is_numeric_dtype(periods) and not np.isfinite(periods).all():
+    periods_arr = np.asarray(periods)
+    if pd.api.types.is_numeric_dtype(periods_arr) and not np.isfinite(periods_arr).all():
         raise ValueError("numeric periods must contain only finite values")
     if not np.isfinite(y_true).all() or np.any(y_true < 0):
         raise ValueError("y_true must contain only non-negative finite claim amounts")
@@ -295,9 +299,11 @@ def calibration_table(
     y_true, y_pred, w = _as_arrays(y_true, y_pred, sample_weight)
     if groups is None:
         groups = make_strata(y_pred, w if weighted else None, n_strata=n_bins)
-    df = pd.DataFrame(
-        {"y_true": y_true, "y_pred": y_pred, "exposure": w, "group": np.asarray(groups)}
-    )
+    elif isinstance(getattr(groups, "dtype", None), pd.CategoricalDtype):
+        groups = pd.Categorical(groups, dtype=groups.dtype)
+    else:
+        groups = np.asarray(groups)
+    df = pd.DataFrame({"y_true": y_true, "y_pred": y_pred, "exposure": w, "group": groups})
     df["predicted_claim_amount"] = df["y_pred"] * df["exposure"]
     grouped = df.groupby("group", observed=True, dropna=False)
     out = grouped.agg(

@@ -103,14 +103,14 @@ def temporal_split(
         raise ValueError("pass exactly one of `test_size` or `cutoff`")
     if time_col not in df.columns:
         raise ValueError(f"`time_col` {time_col!r} not in df.columns")
-    values = df[time_col].to_numpy()
-    if pd.isna(values).any():
+    values = pd.Series(df[time_col])
+    if values.isna().any():
         raise ValueError(f"`time_col` {time_col!r} contains missing values")
-    order = np.argsort(values, kind="stable")
-    times = values[order]
+    order = values.argsort(kind="stable").to_numpy()
+    times = values.iloc[order]
 
     if cutoff is not None:
-        cut_pos = int(np.searchsorted(times, cutoff, side="right"))
+        cut_pos = int(times.searchsorted(cutoff, side="right"))
     else:
         if test_size is None:
             raise ValueError("pass exactly one of `test_size` or `cutoff`")
@@ -123,8 +123,8 @@ def temporal_split(
             n_test = int(test_size)
         if not 0 < n_test < n:
             raise ValueError(f"`test_size` resolves to {n_test} rows; must be 1..{n - 1}")
-        boundary = times[n - n_test]
-        cut_pos = int(np.searchsorted(times, boundary, side="left"))
+        boundary = times.iloc[n - n_test]
+        cut_pos = int(times.searchsorted(boundary, side="left"))
 
     train, test = order[:cut_pos], order[cut_pos:]
     if len(train) == 0 or len(test) == 0:

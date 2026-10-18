@@ -260,3 +260,26 @@ def test_temporal_split_rejects_missing_times_and_empty_cutoff_partitions() -> N
         temporal_split(df, "time", cutoff=0)
     with pytest.raises(ValueError, match="empty"):
         temporal_split(df, "time", cutoff=3)
+
+
+def test_temporal_split_ordered_categorical_months_sort_chronologically() -> None:
+    months = ["Jan", "Feb", "Mar", "Apr"]
+    dtype = pd.CategoricalDtype(months, ordered=True)
+    df = pd.DataFrame(
+        {"month": pd.Categorical(["Apr", "Jan", "Mar", "Feb", "Mar"], dtype=dtype)},
+        index=[10, 20, 30, 40, 50],
+    )
+    train, test = temporal_split(df, "month", test_size=2)
+    assert df.iloc[train]["month"].tolist() == ["Jan", "Feb"]
+    assert df.iloc[test]["month"].tolist() == ["Mar", "Mar", "Apr"]
+
+    train_cut, test_cut = temporal_split(df, "month", cutoff="Feb")
+    assert df.iloc[train_cut]["month"].tolist() == ["Jan", "Feb"]
+    assert df.iloc[test_cut]["month"].tolist() == ["Mar", "Mar", "Apr"]
+
+    with pytest.raises(ValueError, match="missing"):
+        temporal_split(
+            pd.DataFrame({"month": pd.Series(["Jan", None, "Feb"], dtype=dtype)}),
+            "month",
+            test_size=1,
+        )
