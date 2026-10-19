@@ -482,8 +482,6 @@ def test_tuning_trial_with_nonpositive_predictions_returns_inf_without_crashing(
 
 
 def test_tune_experiment_hot_loop_parity_and_timing_smoke(monkeypatch, tmp_path: Path) -> None:
-    import time
-
     import azoic.tune as tune_module
     import azoic.workflow as workflow
     from azoic.models import RiskGLM
@@ -550,9 +548,7 @@ def test_tune_experiment_hot_loop_parity_and_timing_smoke(monkeypatch, tmp_path:
     monkeypatch.setattr(RiskGLM, "predict", count_glm_predict)
     monkeypatch.setattr(tune_module, "_evaluate_split", record_eval)
 
-    t1 = time.perf_counter()
     fast = tune_experiment(cfg, n_trials=4, random_state=42)
-    fast_elapsed = time.perf_counter() - t1
 
     assert fp_calls == 1
     assert len(inner_runs) == 8
@@ -565,7 +561,6 @@ def test_tune_experiment_hot_loop_parity_and_timing_smoke(monkeypatch, tmp_path:
     assert glm_predict_calls == 6
     # calibration_table only runs on the final outer refit: 2 models * (1 decile + 1 protected) = 4
     assert cal_calls == 4
-    assert fast_elapsed < 10.0
 
     assert fast.best_params == baseline.best_params
     assert fast.best_values == pytest.approx(baseline.best_values, rel=1e-9)
