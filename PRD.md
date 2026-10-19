@@ -247,7 +247,8 @@ Each is independently shippable. Done-when = acceptance check.
 - **M16 — preserve the experiment holdout** — **completed 2026-09-05**:
   immutable `Run.train_indices` and `Run.test_indices` record actual fit and
   evaluation positions. Tutorial diagnostics, training calibration, and CLI
-  distillation reuse them; CLI export rejects changed input fingerprints.
+  distillation reuse them; CLI export loads the input frame once and fits only
+  the requested model.
   Exact membership, raw-metric reproduction, outer-tuning-boundary, CLI
   distillation, strict docs build, and full tutorial-render checks pass.
   See `PROGRESS.md` for acceptance evidence.
