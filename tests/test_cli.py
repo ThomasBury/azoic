@@ -300,34 +300,65 @@ def test_cli_export_tariff_gbm_model_rejected(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize("distill", [False, True])
-@pytest.mark.parametrize("changed_data", [False, True])
-def test_cli_export_tariff_uses_stored_split_and_rejects_changed_data(
-    monkeypatch, tmp_path: Path, changed_data: bool, distill: bool
+def test_cli_export_tariff_uses_stored_split_and_fits_only_requested_model(
+    monkeypatch, tmp_path: Path, distill: bool
 ) -> None:
     import azoic.cli as cli
+    import azoic.workflow as workflow
+    from azoic.models import RiskGBM, RiskGLM
 
     actual_run = cli.run_experiment
+    actual_load = cli.load_data
+    actual_fp = workflow._data_fingerprint
     actual_distill = cli._distill_gbm
+    actual_glm_fit = RiskGLM.fit
+    actual_gbm_fit = RiskGBM.fit
     runs = []
     partitions = []
+    load_calls = 0
+    fp_calls = 0
+    glm_fits = 0
+    gbm_fits = 0
+
+    def record_load(*args, **kwargs):
+        nonlocal load_calls
+        load_calls += 1
+        return actual_load(*args, **kwargs)
+
+    def record_fp(df):
+        nonlocal fp_calls
+        fp_calls += 1
+        return actual_fp(df)
+
+    def record_glm_fit(self, X, y):
+        nonlocal glm_fits
+        glm_fits += 1
+        return actual_glm_fit(self, X, y)
+
+    def record_gbm_fit(self, X, y):
+        nonlocal gbm_fits
+        gbm_fits += 1
+        return actual_gbm_fit(self, X, y)
 
     def record_run(config, **kwargs):
         run, estimators = actual_run(config.model_copy(update={"random_state": 7}), **kwargs)
         runs.append(run)
-        if changed_data:
-            frame = pd.read_parquet(config.data_path)
-            frame.iloc[::-1].to_parquet(config.data_path)
         return run, estimators
 
     def record_distill(teacher, X_fit, X_valid):
         partitions.append((X_fit.copy(), X_valid.copy()))
         return actual_distill(teacher, X_fit, X_valid)
 
+    monkeypatch.setattr(cli, "load_data", record_load)
+    monkeypatch.setattr(workflow, "_data_fingerprint", record_fp)
+    monkeypatch.setattr(RiskGLM, "fit", record_glm_fit)
+    monkeypatch.setattr(RiskGBM, "fit", record_gbm_fit)
     monkeypatch.setattr(cli, "run_experiment", record_run)
     monkeypatch.setattr(cli, "_distill_gbm", record_distill)
     data = _write_portfolio(tmp_path, n=2000)
     cfg = _write_yaml(tmp_path, _yaml(str(data)))
     out = tmp_path / "distilled.xlsx"
+    target_model = "gbm-tweedie" if distill else "glm-tweedie"
     result = runner.invoke(
         app,
         [
@@ -335,7 +366,7 @@ def test_cli_export_tariff_uses_stored_split_and_rejects_changed_data(
             "--config",
             str(cfg),
             "--model",
-            "gbm-tweedie" if distill else "glm-tweedie",
+            target_model,
             *(["--distill"] if distill else []),
             "--no-recalibrate",
             "--out",
@@ -343,20 +374,20 @@ def test_cli_export_tariff_uses_stored_split_and_rejects_changed_data(
         ],
     )
 
-    if changed_data:
-        assert result.exit_code != 0
-        assert "changed since fitting" in result.output
-        assert not partitions
-        assert not out.exists()
-        return
-
     assert result.exit_code == 0, result.output
+    assert load_calls == 1
+    assert fp_calls == 1
+    run = runs[0]
+    assert list(run.models) == [target_model]
     if not distill:
+        assert glm_fits == 1
+        assert gbm_fits == 0
         assert not partitions
         assert out.exists()
         return
+    assert gbm_fits == 1
+    assert glm_fits == 1  # student GLM only; config's glm-tweedie was not fitted
     assert "Distillation fidelity" in result.output
-    run = runs[0]
     frame = pd.read_parquet(data)
     assert len(partitions) == 1
     fit, valid = partitions[0]

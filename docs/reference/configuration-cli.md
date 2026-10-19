@@ -407,8 +407,8 @@ Convert tuples to a list or integer array: pandas interprets a bare tuple as
 row/column indexing. CLI `export-tariff` recalibrates direct GLMs and distilled
 students on the returned run's training positions only. Student fits use those
 same positions; diagnostic and distillation-fidelity frames use test positions.
-The CLI preserves the fitted estimator and holdout and rejects a reloaded
-dataset whose fingerprint changed after fitting. `--no-recalibrate` preserves
+The CLI loads the dataset once, fits only the requested model, and reuses the
+fitted estimator and holdout. `--no-recalibrate` preserves
 the structural tariff. Library callers choose their calibration frame and must
 keep distillation fit/validation observations disjoint; distinct frame objects
 alone do not establish independence (see
