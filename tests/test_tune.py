@@ -479,3 +479,101 @@ def test_tuning_trial_with_nonpositive_predictions_returns_inf_without_crashing(
         result = tune_experiment(cfg, n_trials=1)
     assert result.best_values["glm-normal"] == float("inf")
     assert result.run.models["glm-normal"].metrics["deviance_test"] == float("inf")
+
+
+def test_tune_experiment_hot_loop_parity_and_timing_smoke(monkeypatch, tmp_path: Path) -> None:
+    import azoic.tune as tune_module
+    import azoic.workflow as workflow
+    from azoic.models import RiskGLM
+
+    cfg = _config(
+        tmp_path,
+        models={"glm-tweedie": _glm(), "gbm-tweedie": _gbm()},
+    )
+    cfg = cfg.model_copy(
+        update={
+            "features": ["driver_age", "vehicle_age", "vehicle_brand"],
+            "spec": cfg.spec.model_copy(update={"protected_cols": ["region"]}),
+        }
+    )
+
+    actual_eval = workflow._evaluate_split
+    actual_fp = workflow._data_fingerprint
+    actual_cal = workflow.calibration_table
+    actual_glm_predict = RiskGLM.predict
+
+    def slow_eval(config, df, train_idx, test_idx, *, return_estimators=False, **_kwargs):
+        return actual_eval(
+            config,
+            df,
+            train_idx,
+            test_idx,
+            return_estimators=return_estimators,
+            data_fingerprint=None,
+            diagnostics=True,
+        )
+
+    monkeypatch.setattr(tune_module, "_evaluate_split", slow_eval)
+    baseline = tune_experiment(cfg, n_trials=4, random_state=42)
+
+    fp_calls = 0
+    cal_calls = 0
+    glm_predict_calls = 0
+    inner_runs = []
+
+    def count_fp(df):
+        nonlocal fp_calls
+        fp_calls += 1
+        return actual_fp(df)
+
+    def count_cal(*args, **kwargs):
+        nonlocal cal_calls
+        cal_calls += 1
+        return actual_cal(*args, **kwargs)
+
+    def count_glm_predict(self, X):
+        nonlocal glm_predict_calls
+        glm_predict_calls += 1
+        return actual_glm_predict(self, X)
+
+    def record_eval(config, df, train_idx, test_idx, **kwargs):
+        out = actual_eval(config, df, train_idx, test_idx, **kwargs)
+        if not kwargs.get("diagnostics", True):
+            inner_runs.append(out)
+        return out
+
+    monkeypatch.setattr(workflow, "_data_fingerprint", count_fp)
+    monkeypatch.setattr(tune_module, "_data_fingerprint", count_fp)
+    monkeypatch.setattr(workflow, "calibration_table", count_cal)
+    monkeypatch.setattr(RiskGLM, "predict", count_glm_predict)
+    monkeypatch.setattr(tune_module, "_evaluate_split", record_eval)
+
+    fast = tune_experiment(cfg, n_trials=4, random_state=42)
+
+    assert fp_calls == 1
+    assert len(inner_runs) == 8
+    for inner_run in inner_runs:
+        (res,) = inner_run.models.values()
+        assert "gini_train" not in res.metrics
+        assert res.calibration_table.empty
+        assert res.protected_calibration == {}
+    # 4 inner GLM trials (test predict only) + 1 outer GLM refit (train + test predict) = 6
+    assert glm_predict_calls == 6
+    # calibration_table only runs on the final outer refit: 2 models * (1 decile + 1 protected) = 4
+    assert cal_calls == 4
+
+    assert fast.best_params == baseline.best_params
+    assert fast.best_values == pytest.approx(baseline.best_values, rel=1e-9)
+    assert fast.run.data_fingerprint == baseline.run.data_fingerprint
+    for name in cfg.models:
+        assert fast.run.models[name].metrics == pytest.approx(
+            baseline.run.models[name].metrics, rel=1e-9
+        )
+        pd.testing.assert_frame_equal(
+            fast.run.models[name].calibration_table,
+            baseline.run.models[name].calibration_table,
+        )
+        pd.testing.assert_frame_equal(
+            fast.run.models[name].protected_calibration["region"],
+            baseline.run.models[name].protected_calibration["region"],
+        )

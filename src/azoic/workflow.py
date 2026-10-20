@@ -502,6 +502,8 @@ def _evaluate_split(
     test_idx: np.ndarray,
     *,
     return_estimators: bool = False,
+    data_fingerprint: str | None = None,
+    diagnostics: bool = True,
 ):
     """Fit and score one explicit train/test partition."""
     feature_names = config.feature_columns(df)
@@ -515,10 +517,11 @@ def _evaluate_split(
         raise ValueError(f"spec.target {target!r} not in data columns")
 
     y_train = (train_df[target] / train_df[exposure_col]).to_numpy(dtype=float)
-    obs_train_agg = train_df[target].to_numpy(dtype=float)
     obs_test_agg = test_df[target].to_numpy(dtype=float)
-    exp_train = train_df[exposure_col].to_numpy(dtype=float)
     exp_test = test_df[exposure_col].to_numpy(dtype=float)
+    if diagnostics:
+        obs_train_agg = train_df[target].to_numpy(dtype=float)
+        exp_train = train_df[exposure_col].to_numpy(dtype=float)
 
     results: dict[str, ModelResult] = {}
     estimators: dict[str, Any] = {}
@@ -547,7 +550,6 @@ def _evaluate_split(
                 )
             estimator = Pipeline([*steps, ("model", estimator)])
         estimator.fit(X_train, y_train)
-        pred_train = np.asarray(estimator.predict(X_train), dtype=float)
         pred_test = np.asarray(estimator.predict(X_test), dtype=float)
 
         obs_test_rate = obs_test_agg / exp_test
@@ -575,22 +577,30 @@ def _evaluate_split(
                 )
             d2_test = 1.0 - deviance_test / null_dev if null_dev > 0 else float("nan")
         metrics = {
-            "gini_train": float(gini(obs_train_agg, pred_train, sample_weight=exp_train)),
             "gini_test": float(gini(obs_test_agg, pred_test, sample_weight=exp_test)),
             "op_ratio_test": float(op_ratio(obs_test_agg, pred_test, sample_weight=exp_test)),
             "deviance_test": deviance_test,
             "d2_test": d2_test,
         }
-        cal = calibration_table(obs_test_agg, pred_test, exp_test, n_bins=10)
-        protected_calibration = {
-            column: calibration_table(
-                obs_test_agg,
-                pred_test,
-                exp_test,
-                groups=test_df[column],
-            )
-            for column in config.spec.protected_cols
-        }
+        if diagnostics:
+            pred_train = np.asarray(estimator.predict(X_train), dtype=float)
+            metrics = {
+                "gini_train": float(gini(obs_train_agg, pred_train, sample_weight=exp_train)),
+                **metrics,
+            }
+            cal = calibration_table(obs_test_agg, pred_test, exp_test, n_bins=10)
+            protected_calibration = {
+                column: calibration_table(
+                    obs_test_agg,
+                    pred_test,
+                    exp_test,
+                    groups=test_df[column],
+                )
+                for column in config.spec.protected_cols
+            }
+        else:
+            cal = pd.DataFrame()
+            protected_calibration = {}
         results[name] = ModelResult(
             kind=spec.kind,
             params=deepcopy(spec.effective_params(config.spec)),
@@ -602,7 +612,7 @@ def _evaluate_split(
 
     run = Run(
         config=config.model_copy(deep=True),
-        data_fingerprint=_data_fingerprint(df),
+        data_fingerprint=_data_fingerprint(df) if data_fingerprint is None else data_fingerprint,
         n_rows=int(len(df)),
         n_train=int(len(train_df)),
         n_test=int(len(test_df)),
@@ -616,9 +626,15 @@ def _evaluate_split(
     return run
 
 
-def run_experiment(config: ExperimentConfig, *, return_estimators: bool = False):
+def run_experiment(
+    config: ExperimentConfig,
+    *,
+    return_estimators: bool = False,
+    df: pd.DataFrame | None = None,
+):
     """Load, validate, split, fit, and score an experiment."""
-    df = load_data(config.data_path, spec=config.spec)
+    if df is None:
+        df = load_data(config.data_path, spec=config.spec)
     if len(df) == 0:
         raise ValueError("loaded dataset is empty")
     _validate_portfolio(config, df)

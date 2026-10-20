@@ -28,7 +28,7 @@ from azoic.profile import profile_features, screen_features
 from azoic.reporting import comparison_table, model_card
 from azoic.tariff import distill_gbm as _distill_gbm
 from azoic.tariff import export_tariff as _export_tariff
-from azoic.workflow import ExperimentConfig, _data_fingerprint, run_experiment
+from azoic.workflow import ExperimentConfig, run_experiment
 
 app = typer.Typer(
     no_args_is_help=True,
@@ -127,11 +127,14 @@ def export_tariff(
     from azoic.models import RiskGBM, RiskGLM
 
     cfg = ExperimentConfig.from_yaml(config)
-    run, ests = run_experiment(cfg, return_estimators=True)
-    if model not in ests:
+    if model not in cfg.models:
         raise typer.BadParameter(
-            f"model {model!r} not in config models {list(ests)}; check the YAML `models:` keys."
+            f"model {model!r} not in config models {list(cfg.models)}; "
+            "check the YAML `models:` keys."
         )
+    cfg = cfg.model_copy(update={"models": {model: cfg.models[model]}})
+    df = load_data(cfg.data_path, spec=cfg.spec)
+    run, ests = run_experiment(cfg, return_estimators=True, df=df)
     est = ests[model]
     final_est = est.steps[-1][1] if hasattr(est, "steps") else est
     if isinstance(final_est, RiskGBM) and not distill:
@@ -145,9 +148,6 @@ def export_tariff(
             f"model {model!r} ends in {type(final_est).__name__}; export-tariff requires a RiskGLM."
         )
 
-    df = load_data(cfg.data_path, spec=cfg.spec)
-    if _data_fingerprint(df) != run.data_fingerprint:
-        raise typer.BadParameter("dataset changed since fitting; rerun with an unchanged input")
     X = df[list(est.feature_names_in_)]
     y = df[cfg.spec.target]
     train_indices = list(run.train_indices)
