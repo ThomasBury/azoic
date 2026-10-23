@@ -13,12 +13,10 @@ and training O/P adjusted rates, following the
 #| code-fold: true
 #| code-summary: "Refit this chapter's candidates"
 portfolio = load_portfolio()
-glm_config, gbm_config = make_experiment_configs(str(PORTFOLIO_PATH))
-glm_run, glm_estimators = run_experiment(glm_config, return_estimators=True)
-gbm_run, gbm_estimators = run_experiment(gbm_config, return_estimators=True)
-estimators = {**glm_estimators, **gbm_estimators}
-train_frame = portfolio.iloc[list(glm_run.train_indices)].copy()
-test_frame = portfolio.iloc[list(glm_run.test_indices)].copy()
+experiment_config = make_experiment_config(str(PORTFOLIO_PATH))
+main_run, estimators = run_experiment(experiment_config, df=portfolio, return_estimators=True)
+train_frame = portfolio.iloc[list(main_run.train_indices)].copy()
+test_frame = portfolio.iloc[list(main_run.test_indices)].copy()
 y_train = train_frame["claim_amount"].to_numpy()
 w_train = train_frame["exposure"].to_numpy()
 y_test = test_frame["claim_amount"].to_numpy()
@@ -74,7 +72,7 @@ is **not** embedded in the workbook:
 ```{python}
 direct_tariff_path = ARTIFACT_DIR / "direct_tweedie_tariff.xlsx"
 export_tariff(
-    glm_estimators["direct-tweedie-glm"], direct_tariff_path,
+    estimators["direct-tweedie-glm"], direct_tariff_path,
     X=train_frame[special_predict_columns], recalibrate=False,
 )
 direct_sheets = pd.read_excel(direct_tariff_path, sheet_name=None)
@@ -120,7 +118,7 @@ def tariff_from_sheets(workbook_sheets):
 ```{python}
 worked_policy = test_frame[["policy_id", *raw_predict_columns]].nsmallest(1, "policy_id")
 worked_inputs = worked_policy[raw_predict_columns]
-direct_pipeline = glm_estimators["direct-tweedie-glm"]
+direct_pipeline = estimators["direct-tweedie-glm"]
 worked_levels = direct_pipeline[:-1].transform(worked_inputs)
 direct_tariff = tariff_from_sheets(direct_sheets)
 
@@ -223,9 +221,13 @@ new fit, with the same training rows and learned rating structure as the GLM;
 it does not change either main-path model.
 
 ```{python}
-teacher_config = glm_config.model_copy(update={
+teacher_config = experiment_config.model_copy(update={
     "name": "fremtpl2-structured-teacher",
-    "models": {"tweedie-lightgbm-tariff": gbm_config.models["tweedie-lightgbm"].model_copy(deep=True)},
+    "models": {
+        "tweedie-lightgbm-tariff": experiment_config.models["tweedie-lightgbm"].model_copy(
+            update={"preprocess": True}, deep=True,
+        ),
+    },
 })
 teacher_run, teacher_estimators = run_experiment(teacher_config, return_estimators=True)
 teacher_pipeline = teacher_estimators["tweedie-lightgbm-tariff"]
@@ -234,9 +236,9 @@ teacher_pipeline = teacher_estimators["tweedie-lightgbm-tariff"]
 ```{python}
 #| code-fold: true
 #| code-summary: "Verify the teacher shares the main-path data and split"
-assert teacher_run.data_fingerprint == glm_run.data_fingerprint
-assert teacher_run.train_indices == glm_run.train_indices
-assert teacher_run.test_indices == glm_run.test_indices
+assert teacher_run.data_fingerprint == main_run.data_fingerprint
+assert teacher_run.train_indices == main_run.train_indices
+assert teacher_run.test_indices == main_run.test_indices
 teacher_train_rate = teacher_pipeline.predict(train_frame[raw_predict_columns])
 teacher_factor = op_ratio(y_train, teacher_train_rate, w_train)
 assert np.isfinite(teacher_factor) and teacher_factor > 0
@@ -272,8 +274,8 @@ sheets = pd.read_excel(tariff_path, sheet_name=None)
 ```{python}
 #| code-fold: true
 #| code-summary: "Verify workbook metadata and inspect its sheets"
-pd.testing.assert_frame_equal(fit_X, tariff_X.iloc[list(glm_run.train_indices)])
-pd.testing.assert_frame_equal(validation_X, tariff_X.iloc[list(glm_run.test_indices)])
+pd.testing.assert_frame_equal(fit_X, tariff_X.iloc[list(main_run.train_indices)])
+pd.testing.assert_frame_equal(validation_X, tariff_X.iloc[list(main_run.test_indices)])
 assert list(sheets) == ["base_rate", "factors", "mappings"]
 assert sheets["base_rate"].iloc[0]["distilled_from"] == "RiskGBM"
 assert not sheets["base_rate"].iloc[0]["recalibrated"]
@@ -464,7 +466,7 @@ Read the sparse tails alongside exposure before interpreting a jagged line.
 #|   - "Four predictions versus observed rates at each raw age, before and after training adjustment; exposure panels show weak support at sparse ages."
 #|   - "The same four predictions inside shared training age bins; grouping averages within-bin differences without changing any policy prediction."
 #| code-fold: true
-glm_pipeline = glm_estimators["direct-tweedie-glm"]
+glm_pipeline = estimators["direct-tweedie-glm"]
 fitted_preprocessing = glm_pipeline[:-1]
 test_grouped = fitted_preprocessing.transform(test_frame[special_predict_columns])
 with azoic_style():

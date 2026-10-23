@@ -85,6 +85,72 @@ def _write_yaml(tmp_path: Path, body: str, name: str = "cfg.yaml") -> Path:
     return p
 
 
+def test_in_memory_mixed_preprocessing(tmp_path, monkeypatch):
+    from sklearn.pipeline import Pipeline
+
+    from azoic.workflow import PreprocessingSpec
+
+    df = make_synthetic_portfolio(n=500)
+    original = df.copy(deep=True)
+    cfg = ExperimentConfig(
+        data_path=str(tmp_path / "missing.parquet"),
+        spec=DatasetSpec(target="claim_amount", exposure="exposure", claim_count="claim_count"),
+        features=["driver_age", "region"],
+        preprocessing=PreprocessingSpec(
+            binner={"cols": ["driver_age"], "max_bins": 3},
+            grouper={"cols": ["region"], "max_groups": 2},
+        ),
+        models={
+            "glm": ModelSpec(params={"family": "tweedie", "link": "log"}),
+            "gbm": ModelSpec(kind="gbm", preprocess=False, params={"n_estimators": 5}),
+        },
+    )
+
+    def reject_load(*args, **kwargs):
+        raise AssertionError("in-memory runs must not load a file")
+
+    monkeypatch.setattr("azoic.workflow.load_data", reject_load)
+    run, estimators = run_experiment(cfg, df=df, return_estimators=True)
+    assert isinstance(estimators["glm"], Pipeline)
+    assert not isinstance(estimators["gbm"], Pipeline)
+    assert set(estimators["gbm"].feature_names_in_) == {"driver_age", "region", "exposure"}
+    transformed = estimators["glm"][:-1].transform(df[list(estimators["glm"].feature_names_in_)])
+    assert isinstance(transformed["driver_age"].dtype, pd.CategoricalDtype)
+    assert pd.api.types.is_numeric_dtype(df["driver_age"])
+    assert run.data_fingerprint == _data_fingerprint(df)
+    assert run.config.models["gbm"].preprocess is False
+    pd.testing.assert_frame_equal(df, original)
+
+
+@pytest.mark.parametrize("runner", ["run", "tune"])
+@pytest.mark.parametrize("invalid", ["empty", "missing", "exposure", "target"])
+def test_in_memory_portfolio_validation(runner, invalid):
+    run = run_experiment
+    if runner == "tune":
+        pytest.importorskip("optuna")
+        from azoic.tune import tune_experiment
+
+        run = tune_experiment
+    df = make_synthetic_portfolio(n=100)
+    cfg = ExperimentConfig(
+        data_path="unused.parquet",
+        spec=DatasetSpec(target="claim_amount", exposure="exposure"),
+        models={"glm": ModelSpec(params={"family": "tweedie", "link": "log"})},
+    )
+    if invalid == "empty":
+        df = df.iloc[:0]
+        message = "empty"
+    elif invalid == "missing":
+        df = df.drop(columns="exposure")
+        message = "required columns"
+    else:
+        column = "exposure" if invalid == "exposure" else "claim_amount"
+        df.loc[0, column] = np.nan
+        message = invalid
+    with pytest.raises(ValueError, match=message):
+        run(cfg, df=df)
+
+
 # ---------------------------------------------------------------------------
 # ExperimentConfig / ModelSpec
 # ---------------------------------------------------------------------------
@@ -1098,8 +1164,7 @@ def test_tutorial_freezes_all_training_factors_and_labels_holdout_metrics(monkey
         "portfolio": portfolio,
         "features": features,
         "estimators": estimators,
-        "glm_run": run,
-        "gbm_run": run,
+        "main_run": run,
         "runs": [run],
         "train_idx": np.array(run.train_indices),
         "test_idx": np.array(run.test_indices),

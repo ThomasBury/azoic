@@ -9,6 +9,81 @@ Legend: ☐ pending · ◐ in progress · ☑ done
 
 ## Current focus
 
+- **WP5 ☑ — ergonomics** completed locally 2026-10-23; PR delivery pending.
+- **Branch:** `feat/wp5-ergonomics`. Scope: in-memory experiment/tuning frames,
+  predictor-only CLI profiling, per-model preprocessing, and four small polish fixes.
+- **Next:** commit/push the dedicated branch and open one focused WP5 PR.
+  No next implementation milestone or release is selected.
+- Earlier WP findings and any patch release are outside this milestone.
+
+## WP5 — ergonomics ☑ — 2026-10-23
+
+### WP5 kickoff
+
+Clean main checkout; traced workflow/tuning, CLI, preprocessing label consumers,
+reporting, MLflow, package exports, and tutorial callers. `run_experiment(df=)`
+and CLI export frame reuse already exist; retain them and add regression coverage.
+Remaining implementation and acceptance are pending. Historical release focus follows.
+
+### WP5 checkpoint — implementation
+
+New focused regressions on the original runtime: **9 failed, 1 passed** in
+16.62 s. Implemented tuning frame reuse, the shared per-model preprocessing
+switch, predictor-only CLI profiling, preprocessing/per-model MLflow parameters,
+integer-preserving report previews, concise bin labels (full precision if display
+rounding collides), and lazy discoverable package exports. Tutorial main-path
+models now share a configuration/run; optional teachers explicitly enable preprocessing.
+First post-fix selection: 8 passed; corrected two test assertions (pipeline schema
+and floating-point tolerance). Docs, expanded integration and full gates pending.
+Next: finish documentation and tutorial callers, run focused tests, then acceptance.
+
+### WP5 checkpoint — focused acceptance
+
+All **23 focused cases passed** in **84.26 s**, including the existing six
+fresh-process synthetic chapter checks (02–07), with one main experiment/run,
+raw GBM, structured teachers, scoring/tariff agreement, and MLflow artifacts.
+Additional regressions cover in-memory validation, mixed-model tuning, complete
+package exports, close-edge label collisions, and both CLI loading routes.
+Locked all-extras/groups sync passed without dependency changes. Strict
+`just docs-build` passed in **3.29 s**. Full `just check` is running with Ruff
+and Ty green; its result and final source/doc review remain pending.
+
+### WP5 checkpoint — full-gate corrections
+
+First full gate: Ruff/Ty passed; **1150 passed, 2 failed, 4 skipped,
+2 expected failures** in **179.27 s**. Corrected the remaining cosmetic
+`25.0` label fixture and a workflow test's injected tutorial namespace after
+the `main_run` rename. Both failed cases then passed in **3.52 s**. Final
+`just check` rerun is active. Both documented first-model snippets passed in a
+temporary directory without creating a Parquet file. All changed Quarto Python
+cells parse; **50 local Markdown targets** exist. Full real-data book rendering
+and installed-distribution builds are outside WP5 acceptance and have not run.
+
+### WP5 completion checkpoint
+
+All requested WP5 behavior and its callers, regressions, documentation, and
+tutorial setup are complete. `run_experiment(df=)` and CLI single-load export
+were already present after WP4; retained, documented, and strengthened their
+regression coverage. Added **15 regression cases** and updated existing
+CLI, interval-label, and tutorial assertions. No dependency/version changes.
+
+Final acceptance:
+
+- `just check`: Ruff/Ty green; **1152 passed, 4 upstream skips, 2 expected
+  strict-target failures**, **167.64 s**.
+- Strict `just docs-build`: green on final source, **0.70 s**.
+- Six fresh-process synthetic tutorial chapters pass in the suite; both
+  documented first-model snippets run without Parquet, outside the checkout.
+- Changed Quarto cells parse, **50 local Markdown targets** exist, source/test
+  formatting and `git diff --check` pass. No generated artifacts are tracked.
+
+Remaining implementation/blockers: none. Delivery: commit/push this dedicated
+branch and open a WP5 PR against main after WP4 PR #7. Stop after handoff;
+do not merge, start another WP, or publish a patch release automatically.
+Full real-data Quarto rendering and installed-distribution builds were not run.
+
+## Historical release focus — 2026-10-17
+
 - **Goal:** first PyPI release completed: **Azoic 0.5.0**.
 - **Active milestone:** none. M15 ☑ completed 2026-10-17; M45 ☑ merged in PR #1.
 - **State:** [release PR #2](https://github.com/ThomasBury/azoic/pull/2) merged at

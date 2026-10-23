@@ -37,12 +37,14 @@ Both use the same rating features, preprocessing settings, seed, and outer
 train/test partition. Freeze the baseline and search before either evaluation:
 
 ```{python}
-glm_config, gbm_config = make_experiment_configs(str(subset_path))
-baseline_config = glm_config.model_copy(update={
+experiment_config = make_experiment_config(str(subset_path))
+baseline_config = experiment_config.model_copy(update={
     "name": "fremtpl2-tuning-baseline",
     "models": {
-        **glm_config.models,
-        "tweedie-lightgbm-tariff": gbm_config.models["tweedie-lightgbm"].model_copy(deep=True),
+        "direct-tweedie-glm": experiment_config.models["direct-tweedie-glm"],
+        "tweedie-lightgbm-tariff": experiment_config.models["tweedie-lightgbm"].model_copy(
+            update={"preprocess": True}, deep=True,
+        ),
     },
     "tuning": None,
 })

@@ -114,6 +114,29 @@ print(f"wrote {chart_path.resolve()}")
     requested boundary falls inside a period, every row with that equal
     timestamp stays on the same side. Missing time values are rejected.
 
+## Reuse an in-memory portfolio in an experiment
+
+The same `portfolio` can feed the configuration workflow without first writing
+Parquet. `data_path` stays required metadata; passing `df` bypasses loading it.
+The run fingerprints the actual frame and records the split positions.
+
+```python
+from azoic import DatasetSpec, ExperimentConfig, ModelSpec, run_experiment
+
+config = ExperimentConfig(
+    data_path="portfolio.parquet",
+    spec=DatasetSpec(target="claim_amount", exposure="exposure", time_col="period"),
+    features=["driver_age", "vehicle_age", "region"],
+    split="temporal",
+    models={"glm": ModelSpec(params={"family": "tweedie", "link": "log"})},
+)
+run = run_experiment(config, df=portfolio)
+```
+
+`tune_experiment(config, df=portfolio)` uses the same frame input with the
+optional `tune` extra. Public names are also available directly from `azoic`;
+`import azoic` and tab completion load no modelling backends until a name is accessed.
+
 ## Read the result
 
 Gini answers whether the model ranks policies from lower to higher risk; it

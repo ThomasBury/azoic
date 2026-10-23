@@ -201,10 +201,10 @@ def load_portfolio():
 
 ```{python}
 #| include: false
-def make_experiment_configs(data_path, random_state=RANDOM_STATE):
+def make_experiment_config(data_path, random_state=RANDOM_STATE):
     """Main-path models: direct Tweedie GLM and raw GBM on the same partition."""
-    glm_config = ExperimentConfig(
-        name="fremtpl2-tariff-structured",
+    return ExperimentConfig(
+        name="fremtpl2-comparison",
         data_path=str(data_path),
         spec=DatasetSpec(
             target="claim_amount",
@@ -242,19 +242,9 @@ def make_experiment_configs(data_path, random_state=RANDOM_STATE):
                     "alpha": 0.001,
                 },
             ),
-        },
-    )
-    gbm_config = ExperimentConfig(
-        name="fremtpl2-raw-feature",
-        data_path=str(data_path),
-        spec=glm_config.spec.model_copy(),
-        features=FEATURES,
-        split="random",
-        test_size=0.2,
-        random_state=random_state,
-        models={
             "tweedie-lightgbm": ModelSpec(
                 kind="gbm",
+                preprocess=False,
                 params={
                     "objective": "tweedie",
                     "tweedie_variance_power": 1.5,
@@ -266,7 +256,6 @@ def make_experiment_configs(data_path, random_state=RANDOM_STATE):
             ),
         },
     )
-    return glm_config, gbm_config
 ```
 
 ```{python}

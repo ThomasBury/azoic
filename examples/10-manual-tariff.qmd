@@ -18,19 +18,19 @@ reasons for each change.
 from azoic.tariff import extract_tariff, recalibrate_for_total
 
 portfolio = load_portfolio()
-glm_config, _ = make_experiment_configs(str(PORTFOLIO_PATH))
-glm_config = glm_config.model_copy(
-    update={"models": {"direct-tweedie-glm": glm_config.models["direct-tweedie-glm"]}}
+experiment_config = make_experiment_config(str(PORTFOLIO_PATH))
+experiment_config = experiment_config.model_copy(
+    update={"models": {"direct-tweedie-glm": experiment_config.models["direct-tweedie-glm"]}}
 )
-glm_run, glm_estimators = run_experiment(glm_config, return_estimators=True)
-train_frame = portfolio.iloc[list(glm_run.train_indices)].copy()
-test_frame = portfolio.iloc[list(glm_run.test_indices)].copy()
+main_run, estimators = run_experiment(experiment_config, return_estimators=True)
+train_frame = portfolio.iloc[list(main_run.train_indices)].copy()
+test_frame = portfolio.iloc[list(main_run.test_indices)].copy()
 y_train = train_frame["claim_amount"].to_numpy()
 w_train = train_frame["exposure"].to_numpy()
 y_test = test_frame["claim_amount"].to_numpy()
 w_test = test_frame["exposure"].to_numpy()
 
-glm_pipeline = glm_estimators["direct-tweedie-glm"]
+glm_pipeline = estimators["direct-tweedie-glm"]
 fitted_preprocessing = glm_pipeline[:-1]
 fitted_glm = glm_pipeline[-1]
 special_predict_columns = [*FEATURES, "exposure", "claim_amount", "claim_count"]

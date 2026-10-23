@@ -121,8 +121,10 @@ print(run_id)
 ```
 
 Install `azoic[mlops]` first. `log_run` records the data fingerprint,
-experiment fields, model parameters, finite metrics, and the requested files or
-directories. The run name defaults to the experiment config name. Artifacts
+flattened `experiment.preprocessing.binner.*` / `grouper.*` settings, each
+model's `preprocess` flag, experiment fields, model parameters, finite metrics,
+and the requested files or directories. The run name defaults to the experiment
+config name. Artifacts
 upload under `artifact_path="artifacts"` by default; a directory's contents
 nest under `artifacts/<dir_name>` so the directory name is preserved, and a
 missing artifact path raises `FileNotFoundError`. NaN and infinite metrics are

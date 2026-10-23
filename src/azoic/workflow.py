@@ -182,11 +182,14 @@ class ModelSpec(BaseModel):
     ``kind`` selects the wrapper class; ``params`` are forwarded verbatim to its
     constructor (``family``/``link``/``exposure_col`` for GLM,
     ``objective``/``tweedie_variance_power``/``n_estimators`` for GBM, ...).
+    ``preprocess=False`` skips experiment binning/grouping for this top-level
+    model. Frequency-severity components share their parent's feature space.
     """
 
     model_config = ConfigDict(extra="forbid")
 
     kind: Literal["glm", "gbm", "frequency_severity"] = "glm"
+    preprocess: bool = True
     params: dict[str, Any] = Field(default_factory=dict)
     frequency: ModelSpec | None = None
     severity: ModelSpec | None = None
@@ -474,6 +477,9 @@ def _deviance_test(
 
 
 def _validate_portfolio(config: ExperimentConfig, df: pd.DataFrame) -> None:
+    missing = [column for column in config.spec.required_columns() if column not in df.columns]
+    if missing:
+        raise ValueError(f"dataset is missing required columns: {missing}")
     exposure = df[config.spec.exposure].to_numpy(dtype=float)
     target = df[config.spec.target].to_numpy(dtype=float)
     if not np.isfinite(exposure).all() or np.any(exposure <= 0):
@@ -526,8 +532,9 @@ def _evaluate_split(
     results: dict[str, ModelResult] = {}
     estimators: dict[str, Any] = {}
     for name, spec in config.models.items():
+        preprocessing = config.preprocessing if spec.preprocess else None
         columns = [*feature_names, exposure_col]
-        if config.preprocessing is not None or spec.kind == "frequency_severity":
+        if preprocessing is not None or spec.kind == "frequency_severity":
             columns.append(target)
             if config.spec.claim_count is not None:
                 columns.append(config.spec.claim_count)
@@ -536,8 +543,8 @@ def _evaluate_split(
         X_test = test_df[columns]
 
         estimator = spec.build(config.spec)
-        if config.preprocessing is not None:
-            steps = config.preprocessing.build_steps(config.spec)
+        if preprocessing is not None:
+            steps = preprocessing.build_steps(config.spec)
             if spec.kind != "frequency_severity":
                 specials = [target]
                 if config.spec.claim_count is not None:
@@ -632,7 +639,12 @@ def run_experiment(
     return_estimators: bool = False,
     df: pd.DataFrame | None = None,
 ):
-    """Load, validate, split, fit, and score an experiment."""
+    """Validate, split, fit, and score an experiment.
+
+    ``df`` supplies an in-memory portfolio without reading ``config.data_path``.
+    When omitted, load that Parquet path. Both routes validate and fingerprint
+    the input frame and record its positional split; the frame is not mutated.
+    """
     if df is None:
         df = load_data(config.data_path, spec=config.spec)
     if len(df) == 0:

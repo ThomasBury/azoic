@@ -65,6 +65,9 @@ without `exposure_col` use unweighted binning or unit row weights for grouping.
 
 `min_claims` requires `spec.claim_count`. Missing numeric values get a stable
 `Missing` category.
+Interval labels use six significant digits for readability, falling back to
+full precision when rounding would make boundaries indistinguishable. Stored
+numeric edges and bin membership retain their original precision.
 
 ### Grouper
 
@@ -88,7 +91,12 @@ categoricals only merge adjacent levels.
 | `gbm` | optional `params` | `RiskGBM` |
 | `frequency_severity` | `frequency` and `severity` sub-specs | `FrequencySeverityModel` |
 
-`ModelSpec.kind` defaults to `glm` and `params` defaults to an empty mapping.
+`ModelSpec.kind` defaults to `glm`, `params` to an empty mapping, and
+`preprocess` to `true`. Set `preprocess: false` beside `kind` to skip the
+experiment's binner/grouper for that model only. This supports a binned/grouped
+GLM and a raw-feature GBM in one run on one split. It also applies to tuning
+trials and the final refit. For frequency-severity, set it on the top-level
+model; its two components share that feature space.
 For direct GLM and GBM models, the workflow derives `exposure_col` from
 `DatasetSpec.exposure` (`spec.exposure` in YAML). Omit it from model `params`:
 an omitted or null value uses the spec, a matching non-null value is accepted,
@@ -362,6 +370,24 @@ models:
 | `azoic export-tariff` | `--config`, `--model`, `--out` | `--distill`, `--recalibrate/--no-recalibrate` | Three-sheet xlsx tariff |
 
 Run `azoic COMMAND --help` for Typer's current option spellings.
+
+`profile` excludes the declared target, exposure, claim count, and time column
+before screening, so recommendations concern predictors only. Declare optional
+special columns with their CLI flags to exclude them.
+
+`export-tariff` loads the portfolio once and passes the same frame into the
+experiment fit and training-row export.
+
+## In-memory Python input
+
+`run_experiment(config, *, df=None, return_estimators=False)` and
+`tune_experiment(config, *, df=None, ...)` accept a pandas DataFrame. A supplied
+frame bypasses file loading; `None` loads `config.data_path` with `config.spec`.
+`data_path` remains required metadata even for an in-memory run. Both routes
+validate the named special columns, actuarial outcomes, and resolved features,
+then fingerprint the actual input and record positional train/test indices.
+Neither route mutates the caller's frame. Tuning keeps its inner/outer split
+rules with either input route.
 
 ## Workflow outputs
 

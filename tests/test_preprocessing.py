@@ -322,18 +322,18 @@ def test_autobinner_set_mapping_roundtrip() -> None:
     assert np.allclose(binner.mapping_["driver_age"], custom["driver_age"])
     out = binner.transform(df)
     assert out["driver_age"].nunique() <= 4
-    assert "(-inf, 25.0)" in out["driver_age"].cat.categories
+    assert "(-inf, 25)" in out["driver_age"].cat.categories
 
 
 @pytest.mark.parametrize(
     ("training", "edges", "labels"),
     [
         ([np.nan, np.nan], [], ["(-inf, inf)"]),
-        ([0.0, 60.0], [30.0], ["(-inf, 30.0)", "[30.0, inf)"]),
+        ([0.0, 60.0], [30.0], ["(-inf, 30)", "[30, inf)"]),
         (
             [0.0, 30.0, 60.0, 90.0],
             [30.0, 60.0],
-            ["(-inf, 30.0)", "[30.0, 60.0)", "[60.0, inf)"],
+            ["(-inf, 30)", "[30, 60)", "[60, inf)"],
         ),
     ],
 )
@@ -356,6 +356,15 @@ def test_autobinner_interval_boundaries_and_mapping_roundtrip(training, edges, l
         assert out.cat.categories.tolist() == [*labels, "Missing"]
         assert out.cat.ordered
         binner.set_mapping({"x": edges})
+
+
+def test_autobinner_concise_labels_and_close_edges():
+    labels = AutoBinner._labels(np.arange(4), np.array([31.66100000001, 45.32200000001]))
+    assert labels.tolist() == ["(-inf, 31.661)", "[31.661, 45.322)", "[45.322, inf)", "Missing"]
+    edges = np.array([1.0000001, 1.0000002, 1.0000003, 1.0000004])
+    dtype = AutoBinner._category_dtype(edges)
+    assert dtype.categories.is_unique
+    assert "[1.0000001, 1.0000002)" in dtype.categories
 
 
 def test_autobinner_reserves_ordered_interval_vocabulary() -> None:

@@ -358,7 +358,10 @@ class AutoBinner(TransformerMixin, BaseEstimator):
     @staticmethod
     def _labels(codes, edges):
         n = len(edges)
-        edge_labels = [repr(float(edge)) for edge in edges]
+        edge_labels = [f"{edge:g}" for edge in edges]
+        # Keep distinct fitted boundaries distinguishable when display rounding collides.
+        if len(set(edge_labels)) < n:
+            edge_labels = [repr(float(edge)) for edge in edges]
         labels = np.empty(len(codes), dtype=object)
         for i, c in enumerate(codes):
             if c > n:

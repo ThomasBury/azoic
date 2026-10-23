@@ -1,13 +1,13 @@
 # Reporting, MLflow, and the CLI
 
-Each experiment gets a Markdown model card. A shared standalone HTML comparison
-dashboard and cross-config comparison table collect the two main fitted models
-from both experiments. Reports and MLflow use **raw run predictions**, as in the
+One experiment fits both main models and gets a Markdown model card. A standalone
+HTML comparison dashboard and comparison table collect their diagnostics.
+Reports and MLflow use **raw run predictions**, as in the
 [prediction-scale convention](03-diagnostics.qmd#prediction-scales-used-in-this-book).
 
 This optional operations recipe refits its own candidates. It creates every
 report it logs; no workbook or fitted model from another chapter is required.
-For a brief handoff, generate the cards and comparison below and stop there.
+For a brief handoff, generate the card and comparison below and stop there.
 
 {{< include _shared.qmd >}}
 
@@ -17,20 +17,17 @@ import yaml
 from azoic.mlops import log_run
 
 portfolio = load_portfolio()
-glm_config, gbm_config = make_experiment_configs(str(PORTFOLIO_PATH))
-glm_run = run_experiment(glm_config)
-gbm_run = run_experiment(gbm_config)
-runs = [glm_run, gbm_run]
+experiment_config = make_experiment_config(str(PORTFOLIO_PATH))
+main_run = run_experiment(experiment_config, df=portfolio)
+runs = [main_run]
 metrics = comparison_table(runs)
 ```
 
 ```{python}
-glm_card_path = ARTIFACT_DIR / "model_card_tariff_structured.md"
-gbm_card_path = ARTIFACT_DIR / "model_card_raw_feature.md"
+card_path = ARTIFACT_DIR / "model_card.md"
 dashboard_path = ARTIFACT_DIR / "comparison_dashboard.html"
 
-glm_card_path.write_text(model_card(glm_run), encoding="utf-8")
-gbm_card_path.write_text(model_card(gbm_run), encoding="utf-8")
+card_path.write_text(model_card(main_run), encoding="utf-8")
 dashboard_path.write_text(comparison_dashboard(runs), encoding="utf-8")
 ```
 
@@ -38,8 +35,7 @@ dashboard_path.write_text(comparison_dashboard(runs), encoding="utf-8")
 #| code-fold: true
 #| code-summary: "Verify report artifacts and display raw metrics"
 assert metrics["model"].nunique() == 2
-assert glm_card_path.stat().st_size > 0
-assert gbm_card_path.stat().st_size > 0
+assert card_path.stat().st_size > 0
 assert dashboard_path.stat().st_size > 0
 print("Held-out comparison — raw rates")
 display(metrics[["config", "model", "gini_test", "op_ratio_test", "deviance_test"]])
@@ -60,7 +56,7 @@ import mlflow
 tracking_uri, experiment_name = setup_mlflow_tracking()
 tracking_database = (ARTIFACT_DIR / "mlflow.db").resolve()
 
-artifacts = [glm_card_path, gbm_card_path, dashboard_path]
+artifacts = [card_path, dashboard_path]
 mlflow_run_ids = [
     log_run(
         run,
@@ -78,9 +74,8 @@ mlflow_run_ids = [
 client = mlflow.MlflowClient(tracking_uri=tracking_uri)
 logged = [client.get_run(run_id) for run_id in mlflow_run_ids]
 
-assert glm_run.data_fingerprint == gbm_run.data_fingerprint
 assert all(
-    entry.data.params["experiment.data_fingerprint"] == glm_run.data_fingerprint
+    entry.data.params["experiment.data_fingerprint"] == main_run.data_fingerprint
     for entry in logged
 )
 assert all(
@@ -112,21 +107,17 @@ uv run mlflow ui \
 
 ## Drive the same workflow from the CLI
 
-Save the two experiment configurations as YAML, then run these commands from
+Save the experiment configuration as YAML, then run these commands from
 the repository root. They write into the tutorial artifacts directory. The
 render executes each command; only its result is shown below the command.
 
 ```{python}
-glm_yaml = ARTIFACT_DIR / "glm_config.yaml"
-gbm_yaml = ARTIFACT_DIR / "gbm_config.yaml"
-glm_yaml.write_text(
-    yaml.safe_dump(glm_config.model_dump(exclude_none=True)), encoding="utf-8"
+config_yaml = ARTIFACT_DIR / "experiment_config.yaml"
+config_yaml.write_text(
+    yaml.safe_dump(experiment_config.model_dump(exclude_none=True)), encoding="utf-8"
 )
-gbm_yaml.write_text(
-    yaml.safe_dump(gbm_config.model_dump(exclude_none=True)), encoding="utf-8"
-)
-assert glm_yaml.stat().st_size > 0 and gbm_yaml.stat().st_size > 0
-print("Wrote glm_config.yaml and gbm_config.yaml")
+assert config_yaml.stat().st_size > 0
+print("Wrote experiment_config.yaml")
 ```
 
 ```bash
@@ -159,7 +150,7 @@ print(pd.read_csv(screening_csv).to_string(index=False))
 ```
 
 ```bash
-uv run azoic fit --config examples/_artifacts/fremtpl2/glm_config.yaml \
+uv run azoic fit --config examples/_artifacts/fremtpl2/experiment_config.yaml \
   --out examples/_artifacts/fremtpl2/cli_model_card.md --quiet
 ```
 
@@ -169,7 +160,7 @@ cli_card = ARTIFACT_DIR / "cli_model_card.md"
 subprocess.run(
     [
         "uv", "run", "azoic", "fit",
-        "--config", str(glm_yaml),
+        "--config", str(config_yaml),
         "--out", str(cli_card),
         "--quiet",
     ],
@@ -183,8 +174,7 @@ print(cli_card.read_text()[:600])
 ```
 
 ```bash
-uv run azoic compare examples/_artifacts/fremtpl2/glm_config.yaml \
-  examples/_artifacts/fremtpl2/gbm_config.yaml \
+uv run azoic compare examples/_artifacts/fremtpl2/experiment_config.yaml \
   --out examples/_artifacts/fremtpl2/cli_comparison.csv
 ```
 
@@ -194,7 +184,7 @@ cli_comparison = ARTIFACT_DIR / "cli_comparison.csv"
 subprocess.run(
     [
         "uv", "run", "azoic", "compare",
-        str(glm_yaml), str(gbm_yaml),
+        str(config_yaml),
         "--out", str(cli_comparison),
     ],
     cwd=ROOT,
@@ -214,7 +204,7 @@ keeping holdout claims out of the base. The earlier raw metrics still describe
 the unadjusted estimator; evaluate the adjusted workbook separately on the holdout.
 
 ```bash
-uv run azoic export-tariff --config examples/_artifacts/fremtpl2/glm_config.yaml \
+uv run azoic export-tariff --config examples/_artifacts/fremtpl2/experiment_config.yaml \
   --model direct-tweedie-glm --no-recalibrate \
   --out examples/_artifacts/fremtpl2/cli_glm_tariff.xlsx
 ```
@@ -225,7 +215,7 @@ cli_glm_tariff = ARTIFACT_DIR / "cli_glm_tariff.xlsx"
 subprocess.run(
     [
         "uv", "run", "azoic", "export-tariff",
-        "--config", str(glm_yaml),
+        "--config", str(config_yaml),
         "--model", "direct-tweedie-glm",
         "--no-recalibrate",
         "--out", str(cli_glm_tariff),
@@ -249,9 +239,13 @@ The CLI fits this teacher and its student on training rows, reserving the test
 rows for fidelity evaluation.
 
 ```{python}
-teacher_config = glm_config.model_copy(update={
+teacher_config = experiment_config.model_copy(update={
     "name": "fremtpl2-structured-teacher",
-    "models": {"tweedie-lightgbm-tariff": gbm_config.models["tweedie-lightgbm"].model_copy(deep=True)},
+    "models": {
+        "tweedie-lightgbm-tariff": experiment_config.models["tweedie-lightgbm"].model_copy(
+            update={"preprocess": True}, deep=True,
+        ),
+    },
 })
 teacher_yaml = ARTIFACT_DIR / "teacher_config.yaml"
 teacher_yaml.write_text(

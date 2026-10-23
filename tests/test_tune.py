@@ -26,6 +26,7 @@ from azoic.tune import (  # noqa: E402
 from azoic.workflow import (  # noqa: E402
     ExperimentConfig,
     ModelSpec,
+    PreprocessingSpec,
     TuningSpec,
     _split_indices,
     run_experiment,
@@ -79,6 +80,36 @@ def _gbm() -> ModelSpec:
             "random_state": 42,
         },
     )
+
+
+def test_tune_in_memory_matches_file_without_loading(tmp_path, monkeypatch):
+    from sklearn.pipeline import Pipeline
+
+    cfg = _config(
+        tmp_path, models={"glm": _glm(), "gbm": _gbm().model_copy(update={"preprocess": False})}
+    )
+    cfg.preprocessing = PreprocessingSpec(
+        binner={"cols": ["driver_age"], "max_bins": 3},
+        grouper={"cols": ["region"], "max_groups": 2},
+    )
+    expected = tune_experiment(cfg, n_trials=1)
+    df = pd.read_parquet(cfg.data_path)
+    original = df.copy(deep=True)
+
+    def reject_load(*args, **kwargs):
+        raise AssertionError("in-memory tuning must not load a file")
+
+    monkeypatch.setattr("azoic.tune.load_data", reject_load)
+    actual = tune_experiment(cfg, df=df, n_trials=1, return_estimators=True)
+    assert actual.best_params == expected.best_params
+    assert actual.run.data_fingerprint == expected.run.data_fingerprint
+    assert actual.run.train_indices == expected.run.train_indices
+    assert actual.run.test_indices == expected.run.test_indices
+    assert actual.run.models["glm"].metrics == pytest.approx(expected.run.models["glm"].metrics)
+    assert isinstance(actual.estimators["glm"], Pipeline)
+    assert not isinstance(actual.estimators["gbm"], Pipeline)
+    assert actual.run.models["gbm"].metrics == pytest.approx(expected.run.models["gbm"].metrics)
+    pd.testing.assert_frame_equal(df, original)
 
 
 # ---------------------------------------------------------------------------

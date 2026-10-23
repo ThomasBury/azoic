@@ -7,11 +7,17 @@ import warnings
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import pytest
 
-from azoic.reporting import comparison_dashboard, comparison_table, model_card
+from azoic.reporting import _df_preview_md, comparison_dashboard, comparison_table, model_card
 from azoic.workflow import ExperimentConfig, ModelSpec, run_experiment
 from tests.conftest import make_synthetic_portfolio
+
+
+def test_preview_preserves_integer_deciles():
+    table = pd.DataFrame({"group": [0, 1], "observed": [1.25, 2.5]})
+    assert _df_preview_md(table).splitlines()[2:] == ["| 0 | 1.2500 |", "| 1 | 2.5000 |"]
 
 
 def _run(tmp_path: Path, *, test_rate: float | None = None):

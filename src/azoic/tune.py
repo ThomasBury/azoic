@@ -25,6 +25,7 @@ from __future__ import annotations
 from math import isfinite
 from typing import Any
 
+import pandas as pd
 from pydantic import BaseModel, ConfigDict
 
 from azoic.data import load_data
@@ -157,6 +158,7 @@ def tune_experiment(
     calibration_penalty: float | None = None,
     random_state: int = 42,
     return_estimators: bool = False,
+    df: pd.DataFrame | None = None,
 ) -> TuneResult:
     """Run an optuna study per named model; return a ``TuneResult`` whose
     ``run`` refits every selected model on outer training data and scores outer test.
@@ -171,6 +173,8 @@ def tune_experiment(
     ``config.tuning``; omitted values use YAML, then 20 and 1.0.
     ``return_estimators=True`` also populates ``TuneResult.estimators`` with
     ``{name: fitted_estimator}`` from the final ``run_experiment``.
+    Supply ``df`` to tune an in-memory portfolio; otherwise load
+    ``config.data_path``. Both routes validate and fingerprint the same way.
     """
     if n_trials is None:
         n_trials = config.tuning.n_trials if config.tuning is not None else 20
@@ -198,7 +202,8 @@ def tune_experiment(
         ) from e
     optuna.logging.set_verbosity(optuna.logging.WARNING)
 
-    df = load_data(config.data_path, spec=config.spec)
+    if df is None:
+        df = load_data(config.data_path, spec=config.spec)
     if len(df) == 0:
         raise ValueError("loaded dataset is empty")
     _validate_portfolio(config, df)

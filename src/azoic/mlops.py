@@ -42,8 +42,10 @@ def log_run(
 
     ``run_name`` defaults to the experiment config name. Records:
       * Top-level params: config name, split, test_size, random_state,
-        n_rows / n_train / n_test (prefixed ``experiment.*``).
-      * Per-model: ``<model>.kind`` + one ``<model>.params.<k>`` per param,
+        n_rows / n_train / n_test and flattened preprocessing settings
+        (prefixed ``experiment.*``).
+      * Per-model: ``<model>.kind``, ``<model>.preprocess``, and
+        one ``<model>.params.<k>`` per param,
         plus one ``<model>.<metric>`` metric per metric (NaN and infinite
         metrics are skipped -- mlflow rejects non-finite values since 3.x).
       * Artifacts: every path in ``artifacts`` (file or directory). A missing
@@ -81,9 +83,15 @@ def log_run(
             }
         )
 
+        if run.config.preprocessing is not None:
+            for step, params in run.config.preprocessing.model_dump(exclude_none=True).items():
+                mlflow.log_params(_flatten_params(f"experiment.preprocessing.{step}", params))
+
         # Per-model params + metrics.
         for name, res in run.models.items():
-            mlflow.log_params({f"{name}.kind": res.kind})
+            mlflow.log_params(
+                {f"{name}.kind": res.kind, f"{name}.preprocess": run.config.models[name].preprocess}
+            )
             mlflow.log_params(_flatten_params(f"{name}.params", res.params))
             metrics_out: dict = {}
             for k, v in res.metrics.items():
