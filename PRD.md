@@ -84,7 +84,8 @@ for recorded split positions without mutating the caller's data.
 `ModelSpec.preprocess: bool = True` applies the experiment's configured binner
 and grouper. Set `preprocess=False` on a top-level model to use raw features on
 the same input/split, including during tuning. A frequency-severity model's
-components share its top-level preprocessing decision.
+components share its top-level preprocessing decision. Explicit component flags
+are rejected and omitted from serialized configs and effective component params.
 
 ### Special columns travel inside X (not as fit kwargs)
 sklearn's `GridSearchCV`/`cross_val_score` will not forward

@@ -9,6 +9,7 @@ metrics, and an artifact file.
 
 from __future__ import annotations
 
+import ast
 from pathlib import Path
 
 import numpy as np
@@ -119,6 +120,27 @@ def test_log_run_records_preprocessing_params(tmp_path):
     assert params["experiment.preprocessing.binner.max_bins"] == "3"
     assert params["experiment.preprocessing.binner.cols"] == "['driver_age']"
     assert params["experiment.preprocessing.grouper.max_groups"] == "2"
+
+
+@pytest.mark.parametrize("preprocess", [False, True])
+def test_log_run_records_only_parent_preprocessing_for_freq_sev(tmp_path, preprocess):
+    _, run = _run(
+        tmp_path,
+        models={
+            "fsm": ModelSpec(
+                kind="frequency_severity",
+                preprocess=preprocess,
+                frequency={"kind": "glm", "params": {"family": "poisson"}},
+                severity={"kind": "glm", "params": {"family": "gamma"}},
+            )
+        },
+        preprocessing=PreprocessingSpec(binner={"cols": ["driver_age"], "max_bins": 3}),
+    )
+    run_id = log_run(run, tracking_uri=_tracking_uri(tmp_path), experiment_name="azoic-tests")
+    params = _data(run_id).params
+    assert params["fsm.preprocess"] == str(preprocess)
+    for role in ("frequency", "severity"):
+        assert "preprocess" not in ast.literal_eval(params[f"fsm.params.{role}"])
 
 
 def test_log_run_records_per_model_params_and_metrics(tmp_path: Path) -> None:

@@ -14,6 +14,9 @@ Legend: ☐ pending · ◐ in progress · ☑ done
   predictor-only CLI profiling, per-model preprocessing, and four small polish fixes.
 - **Next:** review PR #8 and its CI results. No next implementation milestone
   or release is selected; merge requires a separate request.
+
+- **Review follow-up:** both component-flag findings are fixed and locally green;
+  request Codex re-review and wait for PR CI before declaring the PR ready.
 - Earlier WP findings and any patch release are outside this milestone.
 
 ## WP5 — ergonomics ☑ — 2026-10-23
@@ -90,6 +93,24 @@ its description links this milestone record and includes acceptance/limitations.
 The initial [PR CI run](https://github.com/ThomasBury/azoic/actions/runs/39909974711)
 was in progress at handoff. This documentation-only follow-up records delivery;
 the tested implementation is unchanged. No merge or publication performed.
+
+### WP5 review follow-up — 2026-10-23
+
+Codex identified ignored explicit component flags; CodeRabbit identified default
+component flags misleading effective parameter/MLflow snapshots. Confirmed with
+**12 failing regressions** in **11.45 s**. Reject explicit flags on either
+frequency-severity component (both Boolean values); serialize only the parent's
+decision and omit component flags from effective parameters. Preserve native
+Pydantic serialization options and Python/JSON/YAML round-trips. Focused and full
+checks are pending; then push, reply to both threads, and request Codex re-review.
+
+Review-fix acceptance: all **12 reproducing cases pass** in **11.40 s**;
+`just check` passed Ruff/Ty and **1164 tests, 4 upstream skips, 2 expected
+strict-target failures**, in **228.74 s**. Strict `just docs-build` passed in
+**3.55 s**. Formatting and diff checks pass. Config exports preserve the parent's
+flag and omit both component flags, including JSON/YAML round-trips; effective
+params and real MLflow runs agree. Next: push this fix, respond to both findings,
+and wait for Codex re-review plus the new CI run. No merge is authorized.
 
 ## Historical release focus — 2026-10-17
 

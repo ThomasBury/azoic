@@ -96,7 +96,10 @@ categoricals only merge adjacent levels.
 experiment's binner/grouper for that model only. This supports a binned/grouped
 GLM and a raw-feature GBM in one run on one split. It also applies to tuning
 trials and the final refit. For frequency-severity, set it on the top-level
-model; its two components share that feature space.
+model; its two components share that feature space. Explicit `preprocess` fields
+on `frequency` or `severity` are rejected, even when set to `true`. Exported
+configs and effective component parameters omit those fields; MLflow records
+the parent's switch as `<model>.preprocess`.
 For direct GLM and GBM models, the workflow derives `exposure_col` from
 `DatasetSpec.exposure` (`spec.exposure` in YAML). Omit it from model `params`:
 an omitted or null value uses the spec, a matching non-null value is accepted,

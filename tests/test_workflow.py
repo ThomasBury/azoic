@@ -1393,6 +1393,39 @@ def _fsm_spec(**params):
     )
 
 
+@pytest.mark.parametrize("role", ["frequency", "severity"])
+@pytest.mark.parametrize("value", [False, True])
+@pytest.mark.parametrize("preprocess", [False, True])
+def test_freq_sev_rejects_component_preprocessing(role, value, preprocess):
+    components = {
+        "frequency": {"kind": "glm", "params": {"family": "poisson"}},
+        "severity": {"kind": "glm", "params": {"family": "gamma"}},
+    }
+    components[role]["preprocess"] = value
+    with pytest.raises(ValueError, match="preprocess.*top-level"):
+        ModelSpec(kind="frequency_severity", preprocess=preprocess, **components)
+
+
+@pytest.mark.parametrize("preprocess", [False, True])
+def test_freq_sev_preprocessing_serialization_roundtrip(tmp_path, preprocess):
+    import yaml
+
+    cfg = ExperimentConfig(
+        data_path=str(tmp_path / "portfolio.parquet"),
+        spec=DatasetSpec(target="amount", exposure="exposure", claim_count="count"),
+        models={"fsm": _fsm_spec().model_copy(update={"preprocess": preprocess})},
+    )
+    dumped = cfg.model_dump(exclude_none=True)
+    assert dumped["models"]["fsm"]["preprocess"] is preprocess
+    params = cfg.models["fsm"].effective_params(cfg.spec)
+    for role in ("frequency", "severity"):
+        assert "preprocess" not in dumped["models"]["fsm"][role]
+        assert "preprocess" not in params[role]
+    assert ExperimentConfig.model_validate(dumped) == cfg
+    assert ExperimentConfig.model_validate_json(cfg.model_dump_json()) == cfg
+    assert ExperimentConfig.from_yaml(_write_yaml(tmp_path, yaml.safe_dump(dumped))) == cfg
+
+
 def test_modelspec_freq_sev_forwards_matching_params() -> None:
     """A matching special-column param is applied to the constructor and
     recorded identically -- recorded params can never name a phantom key."""
