@@ -15,9 +15,10 @@ Legend: ☐ pending · ◐ in progress · ☑ done
 - M46 and M47 passed local acceptance. Git delivery and Codex review are now
   explicitly authorized; no loader rules, interfaces, source claim counts or
   dependencies changed for M47.
-- **Next:** commit the two milestones separately, open one PR against `main`,
-  wait for Codex review, and address any findings before handing off. No merge,
-  professional endorsement, comparison or release is requested.
+- **Next:** user review of [PR #9](https://github.com/ThomasBury/azoic/pull/9).
+  Codex reviewed the implementation with no findings and all CI checks passed;
+  the delivery-only checkpoint below records the reviewed commit and evidence.
+  No merge, professional endorsement, comparison or release is requested.
 
 - **Branch:** `feat/m46-lightgbm-preprocessing`, based on the completed WP5 branch.
 - Previous delivery: WP5 [PR #8](https://github.com/ThomasBury/azoic/pull/8)
@@ -133,6 +134,31 @@ Existing local acceptance is green (1252 tests, Ruff/Ty, strict docs and isolate
 cached-source chapter rendering); source-only presentation changes were verified
 by the final render. Prepare separate milestone commits; check staged diffs and
 wait for bot review/CI after pushing. Publication and merge remain outside scope.
+
+### M46/M47 PR review checkpoint — 2026-10-23
+
+Created [PR #9](https://github.com/ThomasBury/azoic/pull/9) against `main` with
+plain-English scope, compatibility changes, validation and evidence limits.
+Milestone commits:
+
+- `227a5b6` — `feat: learn tariff bins and groups with LightGBM`
+- `28dcec5` — `docs: reconcile tutorial targets with the public source records`
+
+Staged diffs passed `git diff --cached --check`; the pushed tree was clean.
+[Codex review](https://github.com/ThomasBury/azoic/pull/9#issuecomment-6372503455)
+completed on `28dcec52d6c5ccbc4b697bcf6389dd0bb8879553` with
+`has_any_findings=false` and `has_unresolved_findings=false`. There were no review
+threads or requested changes, so no implementation follow-up was needed.
+[CI run 40007727198](https://github.com/ThomasBury/azoic/actions/runs/40007727198)
+passed every step: locked dependency sync, Ruff, Ty, tests, strict docs,
+distribution builds, installed wheel smoke and installed source-distribution smoke.
+
+This final documentation-only change records delivery evidence. No runtime,
+test, tutorial calculation or dependency changed after the clear review.
+After pushing this record, check the PR's latest Codex summary and CI again;
+the PR holds the live status for this documentation commit. Handoff remains
+user review of PR #9; no merge, release, professional endorsement, preprocessing
+comparison or next milestone is authorized automatically.
 
 ## M46 — ARFS-style LightGBM preprocessing ☑ — 2026-10-23
 
