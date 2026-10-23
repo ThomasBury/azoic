@@ -9,15 +9,94 @@ Legend: ☐ pending · ◐ in progress · ☑ done
 
 ## Current focus
 
-- **WP5 ☑ — ergonomics** completed 2026-10-23; [PR #8](https://github.com/ThomasBury/azoic/pull/8) is open.
-- **Branch:** `feat/wp5-ergonomics`. Scope: in-memory experiment/tuning frames,
-  predictor-only CLI profiling, per-model preprocessing, and four small polish fixes.
-- **Next:** user review of PR #8. Codex re-review is clear and code CI passed;
-  no next implementation milestone or release is selected. Merge requires a request.
+- **M46 ☑ — ARFS-style LightGBM preprocessing** completed 2026-10-23.
+- Scope: weighted numeric/categorical trees, credibility floors, missing routes,
+  manual overrides, tariff metadata, docs and regression coverage.
+- **Next:** review the M46 changes and choose further work separately.
+- **Branch:** `feat/m46-lightgbm-preprocessing`, based on merged WP5 PR #8.
 
-- **Review follow-up ☑:** both component-flag findings are fixed; all threads
-  resolved, Codex re-review clear, and CI green on the reviewed implementation.
-- Earlier WP findings and any patch release are outside this milestone.
+## M46 — ARFS-style LightGBM preprocessing ☑ — 2026-10-23
+
+Kickoff: clean `feat/wp5-ergonomics` checkout. Read Current focus, M45 scope,
+preprocessing and its workflow/tariff callers, tests, tutorial and distribution
+smokes. User explicitly selected this new milestone. Preserve class/strategy
+names, quantile/rare alternatives, special-column units, schema and tariff guards.
+Existing fitted preprocessors require refitting; validation improvement is unproven.
+
+Acceptance: weighted numeric/nominal partitions, ordered contiguous groups,
+constant/all-missing features, exact thresholds, stable vocabularies, unseen
+routing, both/impossible floors, one-group limits, monotonic means, transactional
+overrides, serialization, sklearn checks, pipeline/tariff agreement, exported
+routes/closures, full checks, strict docs and distribution/tutorial smokes.
+
+### M46 checkpoint — implementation and focused checks
+
+Replaced sklearn numeric trees and greedy categorical merging with one shared
+weighted LightGBM regression tree per feature. Added native leaves, sibling
+credibility pooling, observed monotonic pooling, frozen vocabularies/routes,
+transactional manual overrides with explicit missing destinations, validation,
+and tariff closure/route metadata. Updated old tests to select quantile explicitly
+when unsupervised behavior is intended; removed greedy-reference assertions.
+
+Focused run: **357 passed, 2 skipped, 1 failed**. The new replicated-exposure
+regression exposed LightGBM's Hessian-based row-count estimate blocking a valid
+low-exposure split. Disabled that row floor; Azoic's exposure/claim floors remain
+authoritative. Remaining: rerun focused tests, finish API prose, full gates,
+strict docs, installed artifacts and tutorial smokes, review final diff.
+
+### M46 checkpoint — integration acceptance
+
+Preprocessing/tariff focused checks passed **435 tests, 2 skipped**. Workbook
+checks independently reconstruct boundary premiums for tree and quantile
+closures and recorded missing destinations. All **12 synthetic tutorial checks**
+passed, including six fresh-process chapters, scoring/distillation, MLflow and
+tuning. The native exposure Hessian limit now guides credible tree growth before
+both-floor subtree pruning; this avoided collapsing the synthetic teacher to a
+constant. Strict docs passed. Wheel/sdist built successfully (uv emitted its
+existing build-tool version warning). Ruff/Ty passed before the final additional
+regressions; full-gate attempt stopped at a new test's literal-dict lint, now fixed.
+
+First full `just check` passed: **1237 passed, 4 skipped, 2 expected failures**,
+Ruff/Ty green. Installed wheel (Python 3.12) and sdist (Python 3.13), each resolved
+with pandas 3.1.0, passed model, preprocessing, import/version and all-five-CLI
+smokes outside the source import path. Final review found a manual null mapping
+key could override the explicit missing destination; fixed the shared transform
+and added a regression, with **363 preprocessing tests passed, 2 skipped**.
+
+Remaining: repeat final gates/build/artifact smokes after that last correction,
+record completion and hand off. No real-data render or predictive-comparison
+study is part of this acceptance.
+
+### M46 completion checkpoint — 2026-10-23
+
+Final review also restored declared category order for the retained `rare`
+strategy and added a regression with reversed encounter order. An intermediate
+full-gate retry was deliberately interrupted so the final run includes this fix.
+
+Acceptance complete:
+
+- Final `just check` exited **0**: Ruff/Ty passed, **1239 passed, 4 skipped,
+  2 expected failures** in 216.66 seconds. Skips are sklearn array-API checks;
+  expected failures remain the two model wrappers' strict 1D target contract.
+- All **12 synthetic tutorial checks** passed in the full suite, including six
+  isolated chapters, scoring/distillation/workbook agreement, MLflow, and tuning.
+- Final `just docs-build` exited **0**, strict, with no issues.
+- Final `uv build` exited **0**; wheel and sdist contain byte-identical current
+  preprocessing source. Both final installed-artifact smokes exited **0** outside
+  the checkout on Python 3.13 / pandas 3.1.0; earlier wheel acceptance also ran
+  on Python 3.12. Imports/version, GLM/GBM fit/score, native preprocessing and
+  all five CLI helps passed. No dependency or version change was needed.
+- `git diff --check` passed. Generated site/artifacts/data remain ignored.
+
+Logs: `/tmp/azoic-m46-final-check.log`, `/tmp/azoic-m46-final-docs.log`,
+`/tmp/azoic-m46-final-build.log`, `/tmp/azoic-m46-final-wheel.log`, and
+`/tmp/azoic-m46-final-sdist.log`.
+
+Handoff: changes are uncommitted on `feat/m46-lightgbm-preprocessing`, based on
+WP5's branch. Review the local diff, then explicitly choose commit/PR delivery.
+Do not start another milestone or release. Existing fitted preprocessors require
+refitting. No full real-data Quarto render or real-portfolio validation comparison
+was run; predictive or calibration improvements remain unproven.
 
 ## WP5 — ergonomics ☑ — 2026-10-23
 

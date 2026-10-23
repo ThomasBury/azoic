@@ -85,11 +85,20 @@ for cls in (AutoBinner, AutoGrouper):
                 transformer.transform(probe)
 for direction in ("increasing", "decreasing"):
     frame = pd.DataFrame({"x": [5.0] * 4 + [np.nan]})
-    binner = AutoBinner(cols=["x"], max_bins=4, monotonic=direction).fit(
+    binner = AutoBinner(cols=["x"], strategy="quantile", max_bins=4, monotonic=direction).fit(
         frame, [1.0, 1.0, 2.0, 2.0, 100.0]
     )
     assert binner.mapping_["x"].size == 0
     assert binner.transform(frame)["x"].cat.codes.tolist() == [0, 0, 0, 0, 1]
+for cls in (AutoBinner, AutoGrouper):
+    frame = pd.DataFrame({"x": [10.0, 20.0, 30.0, 40.0, np.nan], "e": 1.0})
+    transformer = cls(cols=["x"], exposure_col="e").fit(frame, [1.0, 1.0, 10.0, 10.0, 10.0])
+    expected = transformer.transform(frame)
+    assert expected["x"].nunique() >= 2
+    assert not expected["x"].isna().any()
+    transformer.set_mapping(transformer.mapping_)
+    pd.testing.assert_frame_equal(expected, transformer.transform(frame))
+    assert transformer.missing_["x"] is not None
 for command in ("profile", "fit", "compare", "export-tariff", "tune"):
     result = subprocess.run(
         ["azoic", command, "--help"], check=True, capture_output=True, text=True

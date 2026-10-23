@@ -248,7 +248,10 @@ for feature, summary in group_summaries.items():
 
 :::
 
-Intervals are lower-inclusive and upper-exclusive at finite boundaries. Within
+Learned tree intervals include their finite upper boundary (`<=`). Quantile
+bins and manual edge overrides include the lower boundary. Tree methods route
+missing values through the fitted tree; unseen categorical levels use that same
+route with a warning. Quantile/rare alternatives retain `Missing`/`Other`. Within
 each chapter, scoring and diagnostics reuse its training-fitted pipeline without
 refitting mappings. Other chapters recreate the same experiment in their own kernel.
 
@@ -325,7 +328,7 @@ alternatives:
 |---|---|---|
 | Increase `AutoBinner.min_exposure` or `min_claims`, or reduce `max_bins`. | Merge neighbouring age intervals so sparse tails share information with a larger group. | Smooth transitions between bins, or enough evidence for every combination of rating factors. |
 | Use the learned bins for a GBM as well as a GLM. | Prevent age distinctions inside a bin, holding other inputs fixed. | The best possible GBM: pooling can hide real differences, and other features can still split a bin into sparse leaves. |
-| Increase `AutoGrouper.min_exposure` or `min_claims`, or reduce `max_groups`. | Pool sparse categorical levels, such as vehicle brands, using the configured grouping strategy. | Similar risk after accounting for other features: similarity grouping uses unadjusted loss rates. |
+| Increase `AutoGrouper.min_exposure` or `min_claims`, or reduce `max_groups`. | Pool sparse categorical levels, such as vehicle brands, using the configured grouping strategy. | Similar risk after accounting for other features: similarity grouping fits a univariate tree on exposure-weighted rates. |
 | Increase `RiskGLM.alpha`, keeping `l1_ratio=0` for an L2 penalty. | Pull fitted coefficients towards zero and temper extreme effects. | Similar factors for adjacent ages: the penalty does not connect neighbouring bins. |
 | Reduce `RiskGBM.num_leaves`, set a smaller positive `max_depth`, increase `min_child_samples`, or increase `reg_lambda`. | Limit detailed interactions or shrink leaf estimates, making isolated fluctuations harder to fit. | A minimum exposure per leaf: `min_child_samples` controls observation support, not an exposure floor. |
 
