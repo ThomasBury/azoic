@@ -121,6 +121,128 @@ def test_portfolio_audit_reconciles_first_failures_and_cache_rebuilds(tmp_path):
         pd.testing.assert_frame_equal(pd.read_csv(namespace["AUDIT_PATH"]), audit)
         pd.testing.assert_frame_equal(pd.read_parquet(namespace["JOINED_PATH"]), cleaned)
     assert calls == [41214, 41215] * 3
+    _source_reconciler()(frequency, severity, cleaned, audit, result, 100, 1_000_000, 42)
+
+
+def _source_reconciler():
+    chapter = (Path(__file__).parents[1] / "examples" / "01-portfolio.qmd").read_text()
+    cell = next(
+        cell
+        for cell in re.findall(r"```\{python\}\n(.*?)\n```", chapter, flags=re.DOTALL)
+        if "def reconcile_sources(" in cell
+    )
+    namespace = {"pd": pd, "np": np}
+    exec(cell, namespace)
+    return namespace["reconcile_sources"]
+
+
+@pytest.fixture
+def source_tables():
+    frequency = pd.DataFrame(
+        {
+            "IDpol": list(range(1, 9)),
+            "Exposure": [0.5, 1, 0.75, 0.5, 1.5, 1, 1, 1],
+            "ClaimNb": [2, 1, 2, 0, 1, 0, 1, 1],
+            "DrivAge": [40] * 8,
+            "VehAge": [5] * 8,
+            "BonusMalus": [50] * 8,
+            "VehPower": [5] * 8,
+            "Density": [100] * 8,
+            "Region": ["R1"] * 8,
+            "VehBrand": ["B1"] * 8,
+            "VehGas": ["Diesel"] * 8,
+            "Area": ["A"] * 8,
+        }
+    )
+    severity = pd.DataFrame(
+        {
+            "IDpol": [1, 1, 3, 5, 6, 7, 8, 99],
+            "ClaimAmount": [150_000, 60_000, 30, 40, 0, 50, 0, 200_000],
+        }
+    )
+    return frequency, severity
+
+
+@pytest.mark.parametrize("shuffle", [False, True])
+@pytest.mark.parametrize("sample_size", [1, 3, 1_000_000])
+def test_source_reconciliation_covers_claims_exclusions_and_sampling(
+    tmp_path, source_tables, shuffle, sample_size
+):
+    frequency, severity = source_tables
+    if shuffle:
+        frequency = frequency.sample(frac=1, random_state=7)
+        severity = severity.sample(frac=1, random_state=8)
+    loader = _portfolio_loader(
+        tmp_path,
+        lambda *, data_id, **kwargs: SimpleNamespace(
+            frame={41214: frequency, 41215: severity}[data_id]
+        ),
+    )
+    loader["SAMPLE_SIZE"] = sample_size
+    sample = loader["load_portfolio"]()
+    cleaned = pd.read_parquet(loader["JOINED_PATH"])
+    audit = pd.read_csv(loader["AUDIT_PATH"])
+    claims, coverage, ledger, sampling, discrepancies = _source_reconciler()(
+        frequency, severity, cleaned, audit, sample, 100_000, sample_size, 42
+    )
+    assert cleaned.set_index("policy_id")["claim_amount"].to_dict() == {
+        1: 160_000,
+        3: 30,
+        4: 0,
+        6: 0,
+        7: 50,
+    }
+    assert claims["Severity records"].tolist() == [8, 2, 8, 1, 2, 5]
+    assert claims["EUR"].tolist() == [410_120, 150_000, 260_120, 100_000, 40, 160_080]
+    groups = coverage.set_index("Policy group")
+    assert groups.loc["Positive reported count; no severity record", "Policies"] == 1
+    assert groups.loc["Positive reported count; no severity record", "Exposure"] == 1
+    assert groups.loc["Reported zero claims; no severity record", "Policies"] == 1
+    discrepancies = discrepancies.sort_values("policy_id")
+    assert discrepancies["policy_id"].tolist() == [3, 6]
+    assert discrepancies["claim_count"].tolist() == [2, 0]
+    assert discrepancies["severity_records"].tolist() == [1, 1]
+    removed = ledger.set_index("rule")
+    assert removed.loc["Inconsistent count and amount", "removed_policies"] == 2
+    assert removed.loc["Exposure outside (0, 1]", "removed_exposure"] == 1.5
+    assert removed.loc["Exposure outside (0, 1]", "removed_exposure_share_pct"] == 100 * 1.5 / 7.25
+    assert sampling["Policies"].tolist() == [5, max(5 - sample_size, 0), min(5, sample_size)]
+    pd.testing.assert_frame_equal(pd.read_parquet(loader["JOINED_PATH"]), cleaned)
+    pd.testing.assert_frame_equal(pd.read_csv(loader["AUDIT_PATH"]), audit)
+
+
+@pytest.mark.parametrize("stale", ["amount", "exposure", "count", "ids", "audit", "cap", "sample"])
+def test_source_reconciliation_rejects_stale_results(tmp_path, source_tables, stale):
+    frequency, severity = source_tables
+    loader = _portfolio_loader(
+        tmp_path,
+        lambda *, data_id, **kwargs: SimpleNamespace(
+            frame={41214: frequency, 41215: severity}[data_id]
+        ),
+    )
+    sample = loader["load_portfolio"]()
+    cleaned = pd.read_parquet(loader["JOINED_PATH"])
+    audit = pd.read_csv(loader["AUDIT_PATH"])
+    if stale in {"amount", "exposure", "count"}:
+        column = {"amount": "claim_amount", "exposure": "exposure", "count": "claim_count"}[stale]
+        # Preserve portfolio totals so a totals-only audit would miss this corruption.
+        delta = 1 if stale != "exposure" else 0.1
+        cleaned.loc[0, column] += delta
+        cleaned.loc[1, column] -= delta
+    elif stale == "ids":
+        cleaned.loc[0, "policy_id"] = 500
+    elif stale == "audit":
+        audit.loc[1, "retained_exposure"] += 0.5
+    elif stale == "cap":
+        audit["claim_cap"] = 200_000
+    else:
+        sample = sample.iloc[:-1]
+    cleaned.to_parquet(loader["JOINED_PATH"], index=False)
+    audit.to_csv(loader["AUDIT_PATH"], index=False)
+    before = {path: path.read_bytes() for path in (loader["JOINED_PATH"], loader["AUDIT_PATH"])}
+    with pytest.raises(AssertionError):
+        _source_reconciler()(frequency, severity, cleaned, audit, sample, 100_000, 1_000_000, 42)
+    assert all(path.read_bytes() == content for path, content in before.items())
 
 
 @pytest.mark.parametrize(

@@ -651,6 +651,58 @@ contracts, local references, and formatting/diff checks. M45 merged in
 CI. M15 subsequently published `0.5.0` / `v0.5.0` after release PR #2 and all
 release/post-publication checks passed.
 
+### M46 — ARFS-style LightGBM preprocessing (completed 2026-10-23)
+
+Adopt one LightGBM regression tree per feature without adding ARFS as a dependency.
+`AutoBinner` defaults to `tree`; `AutoGrouper.similarity` uses native categorical
+splits for nominal levels and numeric codes for ordered contiguous groups.
+Targets remain rates weighted by exposure, with special columns inside X.
+Collapse sibling subtrees for either exposure/claim-count floor, keeping one group
+when portfolio floors are impossible. Numeric monotonic pooling uses observed
+weighted means and preserves floors. Retain quantile/rare alternatives.
+
+Transform through native leaf predictions and frozen leaf-to-group maps. Keep
+inspectable mappings, stable vocabularies, schema/index/column preservation and
+serialization. Changed tree mappings need explicit keyword-only missing routes;
+unchanged round-trips preserve native routing. Learned tree edges use `<=`;
+quantile/manual numeric edges stay lower-inclusive. Export closures and missing
+routes; keep strict tariff application. Validate 1D targets, finite controls,
+monotonic options unconditionally, and fitted feature names.
+
+Acceptance: focused partition/routing/floor/override regressions, sklearn checks,
+pipeline and tariff agreement, serialization, `just check`, strict docs, installed
+wheel/sdist and synthetic tutorial smokes. No release, ARFS dependency, real-data
+performance claim, or automatic next milestone. Old fitted preprocessors need
+refitting; predictive improvement remains to be demonstrated.
+
+Local acceptance passed: **1239 tests**, 4 skips and 2 expected failures, Ruff/Ty,
+strict docs, six isolated synthetic tutorial chapters within the 12 tutorial
+checks, workbook boundary/prediction agreement, and installed wheel/sdist smokes.
+Execution evidence and the uncommitted branch handoff are in `PROGRESS.md`.
+
+### M47 — source-to-target evidence (completed 2026-10-23)
+
+Extend the portfolio chapter with an independent mapping/`math.fsum` reference
+from pinned OpenML 41214/41215 version 1, verifying source checksums, claim-level
+conservation, sequential policy exclusions, retained targets and final sampling.
+Report missing severity coverage and count discrepancies without inferring their
+causes. Define the capped observed rate and its selected population; register
+known definitions and unresolved coverage, valuation, maturity and quotation-time
+availability. Preserve loader rules, caches, claim counts and public interfaces.
+
+Acceptance: network-free synthetic chapter-cell regressions, exact counts,
+EUR 0.01 / 1e-8 policy-year tolerances, pinned source snapshot reproduction,
+`just check`, strict docs, and isolated cached-source portfolio rendering.
+Professional review is pending. This establishes accounting, not full-population
+adequacy, ultimate costs, future performance or M46 superiority. Stop before
+comparisons, Git delivery or release.
+
+Local acceptance passed: **1252 tests**, 4 skips and 2 expected failures, Ruff/Ty,
+strict docs, and the isolated cached-source portfolio render. Both source MD5s,
+exact record/reported-count totals, exposure and monetary conservation, retained
+targets and final sampling passed. Execution evidence and unresolved source
+questions are recorded in `PROGRESS.md`; professional review remains pending.
+
 ## 7. Later iterations (optional, none blocking)
 
 - **v0.2** — optuna objective (`deviance + calibration penalty`) **(M7 -- done)**,

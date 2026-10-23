@@ -47,7 +47,7 @@ def test_preprocessing_rejects_subday_exposure(cls, exposure) -> None:
 
 
 @pytest.mark.parametrize("strategy", ["quantile", "tree"])
-@pytest.mark.parametrize("max_bins", [0, 1, -1, 2.5, 2.0, True, None])
+@pytest.mark.parametrize("max_bins", [0, -1, 2.5, 2.0, True, None])
 def test_autobinner_rejects_invalid_bin_counts(strategy, max_bins) -> None:
     with pytest.raises(ValueError, match="max_bins"):
         AutoBinner(strategy=strategy, max_bins=max_bins).fit(
@@ -58,7 +58,7 @@ def test_autobinner_rejects_invalid_bin_counts(strategy, max_bins) -> None:
 @pytest.mark.parametrize("edges", [[2, 1], [1, 1], [np.nan], [np.inf], [[1, 2]]])
 def test_autobinner_invalid_mapping_preserves_state(edges) -> None:
     df = pd.DataFrame({"x": [0.0, 1.0, 2.0], "z": [1.0, 2.0, 3.0]})
-    binner = AutoBinner(cols=["x", "z"]).fit(df)
+    binner = AutoBinner(strategy="quantile", cols=["x", "z"]).fit(df)
     before = binner.transform(df)
     mapping, dtypes, columns = binner.mapping_, binner.category_dtypes_, binner.bin_cols_
     with pytest.raises(ValueError):
@@ -99,11 +99,11 @@ def test_preprocessing_mapping_replaces_selected_columns(cls) -> None:
     df = pd.DataFrame({"x": [0, 1, 2], "z": [3, 4, 5]})
     transformer = cls(cols=["x", "z"]).fit(df, [1, 2, 3])
     values = [] if cls is AutoBinner else {0: 10, 1: 10, 2: 20}
-    transformer.set_mapping({"x": values})
+    transformer.set_mapping({"x": values}, missing={"x": 0 if cls is AutoBinner else 10})
     out = transformer.transform(df)
     assert list(transformer.mapping_) == ["x"]
     pd.testing.assert_series_equal(out["z"], df["z"])
-    assert out["x"].cat.categories[-1] == ("Missing" if cls is AutoBinner else "Other")
+    assert transformer.missing_["x"] == (0 if cls is AutoBinner else 10)
 
 
 @pytest.mark.parametrize("cls", [AutoBinner, AutoGrouper])
@@ -208,7 +208,8 @@ def test_preprocessing_same_representation_applies_mapping(cls, dataframe) -> No
     else:
         actual = out[:, 0]
         np.testing.assert_array_equal(out[:, 1], X[:, 1])
-    expected = [0, 0, 1, 1] if cls is AutoBinner else ["group_0"] * 2 + ["group_1"] * 2
+    expected = [0, 0, 1, 1] if cls is AutoBinner else [actual[0]] * 2 + [actual[2]] * 2
+    assert actual[0] != actual[2]
     assert list(actual) == expected
 
 
@@ -223,7 +224,7 @@ def _df(seed: int = 0, n: int = 4000) -> pd.DataFrame:
 
 def test_autobinner_quantile_bins_numeric_only() -> None:
     df = _df()
-    binner = AutoBinner(cols=["driver_age", "vehicle_age"], max_bins=5).fit(df)
+    binner = AutoBinner(strategy="quantile", cols=["driver_age", "vehicle_age"], max_bins=5).fit(df)
     out = binner.transform(df)
     assert set(binner.bin_cols_) == {"driver_age", "vehicle_age"}
     for col in ("driver_age", "vehicle_age"):
@@ -237,7 +238,9 @@ def test_autobinner_quantile_bins_numeric_only() -> None:
 
 def test_autobinner_weighted_quantile_uses_exposure() -> None:
     df = _df()
-    binner = AutoBinner(cols=["driver_age"], max_bins=6, exposure_col="exposure").fit(df)
+    binner = AutoBinner(
+        strategy="quantile", cols=["driver_age"], max_bins=6, exposure_col="exposure"
+    ).fit(df)
     # weighted edges present and sorted
     edges = binner.mapping_["driver_age"]
     assert np.all(np.diff(edges) > 0)
@@ -248,8 +251,12 @@ def test_autobinner_quantiles_ignore_missing_exposure() -> None:
     extended = pd.concat(
         [observed, pd.DataFrame({"value": [np.nan], "exposure": [1e9]})], ignore_index=True
     )
-    baseline = AutoBinner(cols=["value"], max_bins=3, exposure_col="exposure").fit(observed)
-    binner = AutoBinner(cols=["value"], max_bins=3, exposure_col="exposure").fit(extended)
+    baseline = AutoBinner(
+        strategy="quantile", cols=["value"], max_bins=3, exposure_col="exposure"
+    ).fit(observed)
+    binner = AutoBinner(
+        strategy="quantile", cols=["value"], max_bins=3, exposure_col="exposure"
+    ).fit(extended)
     np.testing.assert_array_equal(baseline.mapping_["value"], [20, 30])
     np.testing.assert_array_equal(binner.mapping_["value"], baseline.mapping_["value"])
     pd.testing.assert_frame_equal(binner.transform(observed), baseline.transform(observed))
@@ -276,7 +283,11 @@ def test_autobinner_min_exposure_merges_small_bins() -> None:
     df = _df()
     big_floor = 500.0
     binner = AutoBinner(
-        cols=["driver_age"], max_bins=10, min_exposure=big_floor, exposure_col="exposure"
+        strategy="quantile",
+        cols=["driver_age"],
+        max_bins=10,
+        min_exposure=big_floor,
+        exposure_col="exposure",
     ).fit(df)
     # post-merge, every bin must meet the floor
     edges = binner.mapping_["driver_age"]
@@ -317,7 +328,7 @@ def test_merge_small_bins_matches_rebinning_algorithm() -> None:
 def test_autobinner_set_mapping_roundtrip() -> None:
     df = _df()
     custom = {"driver_age": np.array([25.0, 45.0, 65.0])}
-    binner = AutoBinner(cols=["driver_age"]).fit(df)
+    binner = AutoBinner(strategy="quantile", cols=["driver_age"]).fit(df)
     binner.set_mapping(custom)
     assert np.allclose(binner.mapping_["driver_age"], custom["driver_age"])
     out = binner.transform(df)
@@ -338,7 +349,7 @@ def test_autobinner_set_mapping_roundtrip() -> None:
     ],
 )
 def test_autobinner_interval_boundaries_and_mapping_roundtrip(training, edges, labels) -> None:
-    binner = AutoBinner(cols=["x"], max_bins=max(2, len(edges) + 1)).fit(
+    binner = AutoBinner(strategy="quantile", cols=["x"], max_bins=max(2, len(edges) + 1)).fit(
         pd.DataFrame({"x": training})
     )
     np.testing.assert_array_equal(binner.mapping_["x"], edges)
@@ -369,7 +380,7 @@ def test_autobinner_concise_labels_and_close_edges():
 
 def test_autobinner_reserves_ordered_interval_vocabulary() -> None:
     df = pd.DataFrame({"x": [0.0, 1.0, 2.0, 3.0]})
-    binner = AutoBinner(cols=["x"], max_bins=2).fit(df)
+    binner = AutoBinner(strategy="quantile", cols=["x"], max_bins=2).fit(df)
 
     out = binner.transform(df.iloc[[0]])
 
@@ -385,7 +396,7 @@ def test_autobinner_reserves_ordered_interval_vocabulary() -> None:
 
 def test_autobinner_ndarray_input_returns_codes() -> None:
     X = np.column_stack([np.linspace(0, 100, 500), np.linspace(0, 1, 500)])
-    binner = AutoBinner(max_bins=4).fit(X)
+    binner = AutoBinner(strategy="quantile", max_bins=4).fit(X)
     out = binner.transform(X)
     assert out.shape == X.shape
     assert pd.api.types.is_numeric_dtype(pd.Series(out[:, 0]))
@@ -394,7 +405,7 @@ def test_autobinner_ndarray_input_returns_codes() -> None:
 def test_autobinner_handles_nan() -> None:
     df = _df()
     df.loc[df.index[:50], "driver_age"] = np.nan
-    binner = AutoBinner(cols=["driver_age"], max_bins=5).fit(df)
+    binner = AutoBinner(strategy="quantile", cols=["driver_age"], max_bins=5).fit(df)
     out = binner.transform(df)
     assert out["driver_age"].isna().sum() == 0
     assert set(out.loc[df["driver_age"].isna(), "driver_age"]) == {"Missing"}
@@ -422,6 +433,7 @@ def test_autobinner_monotonic_handles_constant_and_tied_values(direction, weight
     if direction == "decreasing":
         y.reverse()
     binner = AutoBinner(
+        strategy="quantile",
         cols=["x"],
         max_bins=4,
         monotonic=direction,
@@ -578,18 +590,18 @@ def test_autogrouper_similarity_groups_meet_floor() -> None:
 
 @pytest.mark.parametrize("rate_target", [False, True], ids=["aggregate-column", "rate-y"])
 @pytest.mark.parametrize(
-    ("rates", "exposures", "claims", "max_groups", "min_exposure", "min_claims", "groups"),
+    ("rates", "exposures", "claims", "max_groups", "min_exposure", "min_claims"),
     [
-        ([100, 101, 10000], [10, 10, 10], [5, 5, 5], 2, None, None, ["AB", "C"]),
-        ([0, 4, 5, 8.7], [1, 9, 1, 1], [5, 5, 5, 5], 2, None, None, ["ABC", "D"]),
-        ([0, 1, 2.2, 3.6], [10, 10, 10, 10], [5, 5, 5, 5], 2, None, None, ["AB", "CD"]),
-        ([100, 101, 102], [10, 10, 10], [5, 5, 5], 2, None, None, ["AB", "C"]),
-        ([100, 10000, 100], [10, 10, 10], [5, 5, 5], 2, None, None, ["AC", "B"]),
-        ([100, 1000, 1001], [10, 1, 10], [5, 5, 5], 3, 5, None, ["A", "BC"]),
-        ([100, 101, 1000], [10, 1, 10], [5, 5, 5], 3, 5, None, ["AB", "C"]),
-        ([100, 101, 102], [10, 1, 10], [5, 5, 5], 3, 5, None, ["AB", "C"]),
-        ([100, 1000, 1001], [10, 10, 10], [5, 1, 5], 3, None, 3, ["A", "BC"]),
-        ([100, 101, 1000], [1, 1, 1], [1, 1, 1], 3, 5, 5, ["ABC"]),
+        ([100, 101, 10000], [10, 10, 10], [5, 5, 5], 2, None, None),
+        ([0, 4, 5, 8.7], [1, 9, 1, 1], [5, 5, 5, 5], 2, None, None),
+        ([0, 1, 2.2, 3.6], [10, 10, 10, 10], [5, 5, 5, 5], 2, None, None),
+        ([100, 101, 102], [10, 10, 10], [5, 5, 5], 2, None, None),
+        ([100, 10000, 100], [10, 10, 10], [5, 5, 5], 2, None, None),
+        ([100, 1000, 1001], [10, 1, 10], [5, 5, 5], 3, 5, None),
+        ([100, 101, 1000], [10, 1, 10], [5, 5, 5], 3, 5, None),
+        ([100, 101, 102], [10, 1, 10], [5, 5, 5], 3, 5, None),
+        ([100, 1000, 1001], [10, 10, 10], [5, 1, 5], 3, None, 3),
+        ([100, 101, 1000], [1, 1, 1], [1, 1, 1], 3, 5, 5),
     ],
     ids=[
         "closest-risk",
@@ -604,8 +616,8 @@ def test_autogrouper_similarity_groups_meet_floor() -> None:
         "impossible-floor",
     ],
 )
-def test_autogrouper_nominal_similarity_merges_nearest_risks(
-    rate_target, rates, exposures, claims, max_groups, min_exposure, min_claims, groups
+def test_autogrouper_nominal_similarity_respects_limits_and_floors(
+    rate_target, rates, exposures, claims, max_groups, min_exposure, min_claims
 ) -> None:
     levels = list("ABCD"[: len(rates)])
     df = pd.DataFrame(
@@ -628,14 +640,13 @@ def test_autogrouper_nominal_similarity_merges_nearest_risks(
     ).fit(df, rates if rate_target else None)
 
     mapping = grouper.mapping_["segment"]
-    expected = {
-        level: group[0] if len(group) == 1 else f"group_{i}"
-        for i, group in enumerate(groups)
-        for level in group
-    }
-    assert list(mapping.items()) == list(expected.items())
+    assert set(mapping) == set(levels)
     out = grouper.transform(df)
-    assert out["segment"].tolist() == [expected[level] for level in levels]
+    assert out["segment"].nunique() <= max_groups
+    for _, indices in out.groupby("segment", observed=True).groups.items():
+        if out["segment"].nunique() > 1:
+            assert df.loc[indices, "exposure"].sum() >= (min_exposure or 0)
+            assert df.loc[indices, "claim_count"].sum() >= (min_claims or 0)
     assert not out["segment"].cat.ordered
     grouper.set_mapping(grouper.mapping_)
     pd.testing.assert_frame_equal(grouper.transform(df), out)
@@ -662,10 +673,10 @@ def test_autogrouper_set_mapping_roundtrip() -> None:
     df = _df()
     custom = {"region": {"urban": "urban", "suburban": "urban", "rural": "rural"}}
     grouper = AutoGrouper(cols=["region"], target_col="claim_amount").fit(df)
-    grouper.set_mapping(custom)
+    grouper.set_mapping(custom, missing={"region": "urban"})
     out = grouper.transform(df)
     assert set(out["region"].unique()) == {"urban", "rural"}
-    assert list(out["region"].cat.categories) == ["urban", "rural", "Other"]
+    assert list(out["region"].cat.categories) == ["urban", "rural"]
 
 
 def test_autogrouper_unknown_level_to_other() -> None:
@@ -718,14 +729,19 @@ def test_autogrouper_ordered_similarity_merges_only_adjacent_levels() -> None:
     ).fit(df)
 
     mapping = grouper.mapping_["segment"]
-    assert mapping["A"] == mapping["B"] == mapping["C"]
-    assert mapping["C"] != mapping["D"]
+    labels = [mapping[level] for level in levels]
+    assert len(set(labels)) <= 2
+    assert len(list(dict.fromkeys(labels))) == len(
+        [v for i, v in enumerate(labels) if i == 0 or v != labels[i - 1]]
+    )
+    out_groups = grouper.transform(df).groupby("segment", observed=True).groups
+    assert all(df.loc[indices, "exposure"].sum() >= 5 for indices in out_groups.values())
     out = grouper.transform(df)
     assert out["segment"].cat.ordered
-    assert list(out["segment"].cat.categories) == [mapping["A"], "D", "Other"]
+    assert list(out["segment"].cat.categories) == list(dict.fromkeys(labels))
 
 
-def test_autogrouper_nominal_similarity_vocabulary_follows_risk() -> None:
+def test_autogrouper_nominal_similarity_vocabulary_is_frozen() -> None:
     df = pd.DataFrame(
         {
             "segment": ["A", "B", "C"],
@@ -740,7 +756,9 @@ def test_autogrouper_nominal_similarity_vocabulary_follows_risk() -> None:
         target_col="claim_amount",
     ).fit(df)
 
-    assert list(grouper.category_dtypes_["segment"].categories) == ["B", "C", "A", "Other"]
+    pd.testing.assert_frame_equal(
+        grouper.transform(df), pd.concat([grouper.transform(df.iloc[[i]]) for i in range(len(df))])
+    )
     assert not grouper.category_dtypes_["segment"].ordered
 
 
@@ -751,11 +769,14 @@ def test_autogrouper_set_mapping_rebuilds_ordered_vocabulary() -> None:
         [1.0, 2.0, 3.0],
     )
 
-    grouper.set_mapping({"segment": {"B": "second", "A": "first", "C": "second"}})
+    grouper.set_mapping(
+        {"segment": {"B": "second", "A": "first", "C": "second"}},
+        missing={"segment": "first"},
+    )
 
     fitted = grouper.category_dtypes_["segment"]
     assert fitted.ordered
-    assert list(fitted.categories) == ["second", "first", "Other"]
+    assert list(fitted.categories) == ["second", "first"]
 
 
 def test_autogrouper_reserved_other_supports_glm_prediction() -> None:
@@ -803,29 +824,6 @@ def test_supervised_preprocessors_exclude_and_reject_special_columns() -> None:
         AutoBinner(cols=["exposure"], exposure_col="exposure").fit(df)
     with pytest.raises(ValueError, match="special"):
         AutoGrouper(cols=["claim_amount"], target_col="claim_amount").fit(df)
-
-
-def test_autogrouper_relativities_use_aggregate_claims_over_exposure() -> None:
-    df = pd.DataFrame(
-        {
-            "segment": ["A", "A", "B", "B"],
-            "exposure": [1.0, 9.0, 1.0, 9.0],
-            "claim_amount": [10.0, 0.0, 0.0, 20.0],
-        }
-    )
-    grouper = AutoGrouper(
-        cols=["segment"],
-        exposure_col="exposure",
-        target_col="claim_amount",
-    ).fit(df)
-    stats = grouper._level_stats(
-        df["segment"].to_numpy(),
-        df["exposure"].to_numpy(),
-        None,
-        df["claim_amount"].to_numpy(),
-    )
-    assert stats.loc["A", "pp"] == pytest.approx(1.0)
-    assert stats.loc["B", "pp"] == pytest.approx(2.0)
 
 
 def test_autobinner_min_claims_uses_aggregate_claim_count_per_bin() -> None:
@@ -955,7 +953,7 @@ def test_min_exposure_below_one_day_raises(cls) -> None:
 
 @pytest.mark.parametrize(
     ("cls", "kwargs"),
-    [(AutoBinner, {}), (AutoGrouper, {"strategy": "rare"})],
+    [(AutoBinner, {"strategy": "quantile"}), (AutoGrouper, {"strategy": "rare"})],
     ids=["binner", "grouper"],
 )
 def test_min_exposure_requires_a_real_exposure_column(cls, kwargs) -> None:
@@ -1027,9 +1025,9 @@ def test_autobinner_rejects_inf_in_fit_and_transform_and_roundtrips_mapping(
     dirty = dirty_df if as_dataframe else dirty_df.to_numpy()
 
     with pytest.raises(ValueError, match="infinite"):
-        AutoBinner(max_bins=2).fit(dirty)
+        AutoBinner(strategy="quantile", max_bins=2).fit(dirty)
 
-    binner = AutoBinner(max_bins=2).fit(clean)
+    binner = AutoBinner(strategy="quantile", max_bins=2).fit(clean)
     expected = binner.transform(clean)
     binner.set_mapping(binner.mapping_)
     actual = binner.transform(clean)
@@ -1050,7 +1048,7 @@ def test_autobinner_default_cols_exclude_boolean_dtypes() -> None:
             "flag_nullable": pd.Series([True, False, pd.NA, True], dtype="boolean"),
         }
     )
-    binner = AutoBinner(max_bins=2).fit(df)
+    binner = AutoBinner(strategy="quantile", max_bins=2).fit(df)
     assert binner.bin_cols_ == ["num"]
     assert list(binner.mapping_) == ["num"]
     out = binner.transform(df)
@@ -1087,7 +1085,7 @@ def test_preprocessing_transform_tolerates_absent_special_columns(cls) -> None:
         transformer.transform(df[["driver_age", "region", "vehicle_brand"]])
 
 
-def test_autogrouper_merge_loop_matches_reference_and_1000_levels_under_one_second() -> None:
+def test_autogrouper_native_tree_handles_1000_levels_under_one_second() -> None:
     import time
 
     rng = np.random.default_rng(42)
@@ -1113,56 +1111,11 @@ def test_autogrouper_merge_loop_matches_reference_and_1000_levels_under_one_seco
         target_col="claim_amount",
     ).fit(df)
 
-    stats = grouper._level_stats(
-        df["cat"],
-        df["exposure"].to_numpy(),
-        df["claim_count"].to_numpy(),
-        df["claim_amount"].to_numpy(),
-    ).sort_values("pp", kind="stable")
-    groups = [[level] for level in stats.index]
-
-    def total(group, column):
-        return float(stats.loc[group, column].sum())
-
-    def risk(group):
-        exposure = total(group, "exp")
-        return total(group, "tgt") / exposure if exposure > 0 else 0.0
-
-    while len(groups) > 1:
-        index = next(
-            (
-                i
-                for i, group in enumerate(groups)
-                if total(group, "exp") < 15.0 or total(group, "cc") < 3.0
-            ),
-            None,
-        )
-        if index is None:
-            break
-        if index == 0:
-            merge_left = False
-        elif index == len(groups) - 1:
-            merge_left = True
-        else:
-            merge_left = abs(risk(groups[index]) - risk(groups[index - 1])) <= abs(
-                risk(groups[index]) - risk(groups[index + 1])
-            )
-        if merge_left:
-            groups[index - 1].extend(groups.pop(index))
-        else:
-            groups[index].extend(groups.pop(index + 1))
-
-    while len(groups) > 8:
-        differences = [abs(risk(groups[i]) - risk(groups[i + 1])) for i in range(len(groups) - 1)]
-        index = min(range(len(differences)), key=differences.__getitem__)
-        groups[index].extend(groups.pop(index + 1))
-
-    expected = {}
-    for i, group in enumerate(groups):
-        label = group[0] if len(group) == 1 else f"group_{i}"
-        for level in group:
-            expected[level] = label
-    assert grouper.mapping_["cat"] == expected
+    out = grouper.transform(df)
+    assert out["cat"].nunique() <= 8
+    for indices in out.groupby("cat", observed=True).groups.values():
+        assert df.loc[indices, "exposure"].sum() >= 15
+        assert df.loc[indices, "claim_count"].sum() >= 3
 
     big_levels = [f"k_{i:04d}" for i in range(1_000)]
     big_df = pd.DataFrame(
@@ -1186,4 +1139,329 @@ def test_autogrouper_merge_loop_matches_reference_and_1000_levels_under_one_seco
     ).fit(big_df)
     elapsed = time.perf_counter() - start
     assert elapsed < 1.0
-    assert len(set(big_grouper.mapping_["cat"].values())) == 10
+    assert 1 <= len(set(big_grouper.mapping_["cat"].values())) <= 10
+
+
+@pytest.mark.parametrize("cls", [AutoBinner, AutoGrouper])
+@pytest.mark.parametrize("target", [[[1], [2], [3]], [[1, 2, 3]], [1, 2]])
+def test_preprocessing_strict_target_shape(cls, target):
+    with pytest.raises(ValueError, match="one-dimensional|inconsistent numbers"):
+        cls(cols=["x"]).fit(pd.DataFrame({"x": [0, 1, 2]}), target)
+
+
+@pytest.mark.parametrize("cls", [AutoBinner, AutoGrouper])
+@pytest.mark.parametrize("control", ["min_exposure", "min_claims"])
+@pytest.mark.parametrize("value", [np.nan, np.inf, -np.inf, -1, True, "bad"])
+def test_preprocessing_finite_controls(cls, control, value):
+    df = pd.DataFrame({"x": [0, 1, 2], "e": 1.0, "n": 1.0})
+    with pytest.raises(ValueError, match=control):
+        cls(cols=["x"], exposure_col="e", claim_count_col="n", **{control: value}).fit(
+            df, [1, 2, 3]
+        )
+
+
+@pytest.mark.parametrize("max_groups", [None, True, 2.5, np.nan, np.inf])
+def test_autogrouper_integer_limit(max_groups):
+    with pytest.raises(ValueError, match="max_groups"):
+        AutoGrouper(max_groups=max_groups).fit(pd.DataFrame({"x": ["A", "B"]}), [1, 2])
+
+
+@pytest.mark.parametrize("monotonic", ["bad", 1, [], np.nan])
+@pytest.mark.parametrize("values", [[np.nan, np.nan], [1, 1]])
+def test_monotonic_option_validated_without_target_or_variation(monotonic, values):
+    with pytest.raises(ValueError, match="monotonic"):
+        AutoBinner(strategy="quantile", monotonic=monotonic).fit(pd.DataFrame({"x": values}))
+
+
+@pytest.mark.parametrize("cls", [AutoBinner, AutoGrouper])
+def test_feature_names_out_checked_against_fit(cls):
+    transformer = cls(cols=["x"]).fit(pd.DataFrame({"x": [0, 1, 2]}), [1, 2, 3])
+    assert transformer.get_feature_names_out(["x"]).tolist() == ["x"]
+    with pytest.raises(ValueError, match="fitted feature names"):
+        transformer.get_feature_names_out(["wrong"])
+
+
+@pytest.mark.parametrize("cls", [AutoBinner, AutoGrouper])
+@pytest.mark.parametrize("values", [[5.0] * 4, [np.nan] * 4])
+def test_native_constant_and_all_missing_features(cls, values):
+    X = pd.DataFrame({"x": values})
+    transformer = cls(cols=["x"]).fit(X, [1, 2, 3, 4])
+    out = transformer.transform(X)
+    assert out["x"].nunique() == 1
+    assert not out["x"].isna().any()
+    assert len(out["x"].cat.categories) == 1
+    pd.testing.assert_frame_equal(
+        out, pd.concat([transformer.transform(X.iloc[[i]]) for i in range(4)])
+    )
+
+
+@pytest.mark.parametrize("cls", [AutoBinner, AutoGrouper])
+@pytest.mark.parametrize("limit", [1, 4])
+@pytest.mark.parametrize("floor", [2.0, 1e6])
+def test_native_floors_include_missing_and_impossible_portfolios(cls, limit, floor):
+    X = pd.DataFrame(
+        {"x": [0, 1, 2, 3, 4, np.nan], "e": [1, 3, 1, 4, 2, 1], "n": [0, 1, 1, 3, 0, 1]}
+    )
+    params = {"max_bins": limit} if cls is AutoBinner else {"max_groups": limit}
+    fitted = cls(
+        cols=["x"],
+        exposure_col="e",
+        claim_count_col="n",
+        min_exposure=floor,
+        min_claims=floor,
+        **params,
+    ).fit(X, [0, 1, 8, 2, 30, 100])
+    out = fitted.transform(X)
+    assert out["x"].nunique() <= limit
+    groups = out.groupby("x", observed=True).groups
+    if floor > X["e"].sum() or limit == 1:
+        assert len(groups) == 1
+    elif len(groups) > 1:
+        for indices in groups.values():
+            assert X.loc[indices, "e"].sum() >= floor
+            assert X.loc[indices, "n"].sum() >= floor
+
+
+def test_native_numeric_thresholds_and_roundtrip_use_less_equal():
+    X = pd.DataFrame({"x": [10.0, 20.0, 30.0, 40.0, np.nan]})
+    fitted = AutoBinner(max_bins=3).fit(X, [1, 1, 10, 20, 20])
+    assert fitted.strategy == "tree"
+    edges = fitted.mapping_["x"]
+    assert len(edges) >= 1
+    probe = pd.DataFrame(
+        {
+            "x": [
+                value
+                for edge in edges
+                for value in (np.nextafter(edge, -np.inf), edge, np.nextafter(edge, np.inf))
+            ]
+            + [np.nan]
+        }
+    )
+    out = fitted.transform(probe)
+    for i in range(len(edges)):
+        assert out["x"].cat.codes.iloc[i * 3 : i * 3 + 3].tolist() == [i, i, i + 1]
+    assert out["x"].cat.codes.iloc[-1] == fitted.missing_["x"]
+    assert "Missing" not in out["x"].cat.categories
+    fitted.set_mapping(fitted.mapping_)
+    pd.testing.assert_frame_equal(fitted.transform(probe), out)
+
+
+@pytest.mark.parametrize("cls", [AutoBinner, AutoGrouper])
+def test_changed_native_mapping_requires_explicit_missing_transactionally(cls):
+    X = pd.DataFrame({"x": [10, 20, 30, 40, np.nan]})
+    fitted = cls(cols=["x"]).fit(X, [1, 1, 5, 5, 5])
+    out = fitted.transform(X)
+    mapping = (
+        {"x": [25.0]}
+        if cls is AutoBinner
+        else {"x": {10: "low", 20: "low", 30: "high", 40: "high"}}
+    )
+    with pytest.raises(ValueError, match="explicit missing destination"):
+        fitted.set_mapping(mapping)
+    pd.testing.assert_frame_equal(out, fitted.transform(X))
+    with pytest.raises(ValueError):
+        fitted.set_mapping(mapping, missing={"x": 99 if cls is AutoBinner else None})
+    pd.testing.assert_frame_equal(out, fitted.transform(X))
+    fitted.set_mapping(mapping, missing={"x": 1 if cls is AutoBinner else "high"})
+    result = fitted.transform(X)
+    assert result["x"].cat.codes.tolist() == [0, 0, 1, 1, 1]
+    fitted.set_mapping(fitted.mapping_)
+    pd.testing.assert_frame_equal(result, fitted.transform(X))
+    if cls is AutoBinner:
+        assert fitted.transform(pd.DataFrame({"x": [25.0]}))["x"].cat.codes.tolist() == [1]
+    else:
+        with pytest.warns(UserWarning, match="unseen"):
+            assert fitted.transform(pd.DataFrame({"x": ["new"]}))["x"].iloc[0] == "high"
+
+
+@pytest.mark.parametrize("cls", [AutoBinner, AutoGrouper])
+def test_in_place_mapping_edits_still_require_missing_destination(cls):
+    fitted = cls(cols=["x"]).fit(pd.DataFrame({"x": [10, 20, 30, 40]}), [1, 1, 5, 5])
+    if cls is AutoBinner:
+        fitted.mapping_["x"] = np.array([21.0])
+    else:
+        fitted.mapping_["x"][10] = "new"
+    with pytest.raises(ValueError, match="explicit missing destination"):
+        fitted.set_mapping(fitted.mapping_)
+
+
+@pytest.mark.parametrize("ordered", [False, True])
+def test_native_categorical_missing_unseen_and_frozen_vocabulary(ordered):
+    dtype = pd.CategoricalDtype(["A", "B", "C", "unused"], ordered=ordered)
+    X = pd.DataFrame({"x": pd.Series(["A", "B", "C", None] * 30, dtype=dtype)})
+    fitted = AutoGrouper(cols=["x"], max_groups=3).fit(X, [1, 1, 10, 10] * 30)
+    out = fitted.transform(X)
+    probe = pd.DataFrame({"x": [None, "unused", "new"]})
+    with pytest.warns(UserWarning, match="unseen"):
+        result = fitted.transform(probe)
+    assert result["x"].tolist() == [fitted.missing_["x"]] * 3
+    assert result["x"].dtype == out["x"].dtype
+    assert result["x"].cat.ordered == ordered
+    fitted.set_mapping(fitted.mapping_)
+    pd.testing.assert_frame_equal(out, fitted.transform(X))
+
+
+@pytest.mark.parametrize("ordered", [False, True])
+def test_weighted_native_partitions_match_replicated_exposure(ordered):
+    X = pd.DataFrame(
+        {"x": pd.Categorical(list("ABCDE"), ordered=ordered), "e": [9, 22, 25, 23, 28]}
+    )
+    y = np.array([22.0, 33.0, 32.0, 5.0, 24.0])
+    weighted = AutoGrouper(cols=["x"], max_groups=2, exposure_col="e").fit(X, y)
+    indices = np.repeat(np.arange(len(X)), X["e"])
+    repeated = X.iloc[indices].drop(columns="e").reset_index(drop=True)
+    expanded = AutoGrouper(cols=["x"], max_groups=2).fit(repeated, y[indices])
+    assert weighted.mapping_ == expanded.mapping_
+    if not ordered:
+        plain = (
+            AutoGrouper(cols=["x"], max_groups=2).fit(X, y).transform(X)["x"].cat.codes.to_numpy()
+        )
+        codes = weighted.transform(X)["x"].cat.codes.to_numpy()
+        assert not np.array_equal(codes[:, None] == codes, plain[:, None] == plain)
+    if ordered:
+        labels = [weighted.mapping_["x"][level] for level in X["x"].cat.categories]
+        assert sum(a != b for a, b in zip(labels[:-1], labels[1:], strict=True)) <= 1
+
+
+def test_weighted_numeric_tree_matches_replicated_exposure():
+    X = pd.DataFrame({"x": [10.0, 20.0, 30.0, 40.0], "e": [1, 9, 1, 1]})
+    y = np.array([0.0, 4.0, 5.0, 8.7])
+    weighted = AutoBinner(cols=["x"], max_bins=2, exposure_col="e").fit(X, y)
+    indices = np.repeat(np.arange(len(X)), X["e"])
+    expanded = AutoBinner(max_bins=2).fit(X.iloc[indices][["x"]], y[indices])
+    unweighted = AutoBinner(max_bins=2).fit(X[["x"]], y)
+    np.testing.assert_array_equal(weighted.mapping_["x"], expanded.mapping_["x"])
+    assert not np.array_equal(weighted.mapping_["x"], unweighted.mapping_["x"])
+
+
+@pytest.mark.parametrize("direction", ["increasing", "decreasing"])
+def test_native_monotonic_means_and_floors_include_missing(direction):
+    X = pd.DataFrame(
+        {
+            "x": np.r_[np.repeat(np.arange(8), 10), [np.nan] * 10],
+            "e": np.tile([1.0, 3.0], 45),
+            "n": 1.0,
+        }
+    )
+    y = np.repeat([1.0, 8.0, 3.0, 6.0, 2.0, 9.0, 5.0, 10.0, 20.0], 10)
+    fitted = AutoBinner(
+        cols=["x"],
+        max_bins=8,
+        monotonic=direction,
+        exposure_col="e",
+        claim_count_col="n",
+        min_exposure=10,
+        min_claims=5,
+    ).fit(X, y)
+    out = fitted.transform(X)
+    means = []
+    for indices in out.groupby("x", observed=True).groups.values():
+        assert X.loc[indices, "e"].sum() >= 10
+        assert X.loc[indices, "n"].sum() >= 5
+        means.append(np.average(y[indices], weights=X.loc[indices, "e"]))
+    assert (
+        np.all(np.diff(means) >= -1e-10)
+        if direction == "increasing"
+        else np.all(np.diff(means) <= 1e-10)
+    )
+
+
+def test_native_pipeline_serialization_and_tariff_agreement(tmp_path):
+    import joblib
+
+    from azoic.tariff import apply_tariff, extract_tariff
+
+    X = pd.DataFrame(
+        {"x": [10.0, 20.0, 30.0, 40.0, np.nan] * 30, "c": ["A", "A", "B", "C", None] * 30, "e": 1.0}
+    )
+    y = np.tile([1.0, 2.0, 5.0, 10.0, 15.0], 30)
+    pipeline = Pipeline(
+        [
+            ("binner", AutoBinner(cols=["x"], max_bins=3, exposure_col="e")),
+            ("grouper", AutoGrouper(cols=["c"], max_groups=2, exposure_col="e")),
+            ("model", RiskGLM(family="poisson", link="log", exposure_col="e")),
+        ]
+    ).fit(X, y)
+    transformed = pipeline[:-1].transform(X)
+    np.testing.assert_allclose(
+        pipeline.predict(X), apply_tariff(extract_tariff(pipeline[-1]), transformed)
+    )
+    path = tmp_path / "pipeline.joblib"
+    joblib.dump(pipeline, path)
+    loaded = joblib.load(path)
+    np.testing.assert_array_equal(pipeline.predict(X), loaded.predict(X))
+    pd.testing.assert_frame_equal(transformed, loaded[:-1].transform(X))
+
+
+def test_nominal_native_splits_pool_nonadjacent_labels():
+    X = pd.DataFrame({"x": list("ABCD") * 30})
+    fitted = AutoGrouper(max_groups=2).fit(X, [1, 10, 1, 10] * 30)
+    mapping = fitted.mapping_["x"]
+    assert mapping["A"] == mapping["C"] != mapping["B"] == mapping["D"]
+
+
+def test_claim_floor_prunes_siblings_without_reweighting_or_collapsing_everything():
+    values = np.repeat(np.arange(8, dtype=float), 20)
+    X = pd.DataFrame({"x": values, "e": 1.0, "n": np.where(values == 1, 0.0, 1.0)})
+    y = np.repeat([1.0, 2.0, 4.0, 5.0, 10.0, 11.0, 20.0, 21.0], 20)
+    params = {
+        "cols": ["x"],
+        "max_bins": 8,
+        "exposure_col": "e",
+        "claim_count_col": "n",
+        "min_exposure": 20,
+    }
+    unrestricted = AutoBinner(**params).fit(X, y)
+    fitted = AutoBinner(min_claims=15, **params).fit(X, y)
+    out = fitted.transform(X)
+    assert 1 < out["x"].nunique() < unrestricted.transform(X)["x"].nunique()
+    for indices in out.groupby("x", observed=True).groups.values():
+        assert X.loc[indices, "e"].sum() >= 20
+        assert X.loc[indices, "n"].sum() >= 15
+    changed_counts = X.assign(n=100.0)
+    other = AutoBinner(**params).fit(changed_counts, y)
+    np.testing.assert_array_equal(unrestricted.mapping_["x"], other.mapping_["x"])
+
+
+@pytest.mark.parametrize("cls", [AutoBinner, AutoGrouper])
+def test_native_transform_preserves_index_columns_and_passthrough(cls):
+    X = pd.DataFrame(
+        {"x": [10.0, 20.0, 30.0, 40.0], "passthrough": ["a", "b", "c", "d"]},
+        index=pd.Index([10, 2, 7, 1], name="policy"),
+    )
+    fitted = cls(cols=["x"]).fit(X, [1, 1, 10, 10])
+    out = fitted.transform(X)
+    pd.testing.assert_index_equal(out.index, X.index)
+    pd.testing.assert_index_equal(out.columns, X.columns)
+    pd.testing.assert_series_equal(out["passthrough"], X["passthrough"])
+
+
+def test_default_tree_requires_outcomes_and_quantile_does_not():
+    X = pd.DataFrame({"x": [1.0, 2.0, 3.0]})
+    with pytest.raises(ValueError, match="tree binning requires a target"):
+        AutoBinner().fit(X)
+    AutoBinner(strategy="quantile").fit(X)
+
+
+def test_manual_missing_destination_takes_precedence_over_null_mapping_keys():
+    X = pd.DataFrame({"x": ["A", "B", None]})
+    fitted = AutoGrouper(cols=["x"]).fit(X, [1, 10, 10])
+    fitted.set_mapping(
+        {"x": {"A": "low", "B": "high", np.nan: "incidental"}},
+        missing={"x": "Missing"},
+    )
+    assert fitted.transform(X)["x"].tolist() == ["low", "high", "Missing"]
+    with pytest.warns(UserWarning, match="unseen"):
+        out = fitted.transform(pd.DataFrame({"x": ["new"]}))
+    assert out["x"].tolist() == ["Missing"]
+    assert out["x"].cat.categories.tolist() == ["low", "high", "incidental", "Missing"]
+
+
+def test_rare_grouping_preserves_declared_order_despite_encounter_order():
+    X = pd.DataFrame(
+        {"x": pd.Categorical(["A", "B", "C"], categories=["C", "B", "A"], ordered=True)}
+    )
+    fitted = AutoGrouper(strategy="rare").fit(X)
+    assert fitted.transform(X)["x"].cat.categories.tolist() == ["C", "B", "A", "Other"]
+    assert fitted.transform(X)["x"].cat.ordered

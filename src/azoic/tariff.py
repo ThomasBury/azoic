@@ -451,6 +451,8 @@ def _pipeline_parts(estimator, X):
                         "n_levels": len(levels),
                         "reference_level": "",
                         "mapping": ", ".join(map(str, edges)),
+                        "interval_closure": step.closure_[feature],
+                        "missing_destination": str(levels[step.missing_[feature]]),
                     }
                 )
         elif isinstance(step, AutoGrouper):
@@ -471,6 +473,8 @@ def _pipeline_parts(estimator, X):
                                 key=lambda item: str(item[0]),
                             )
                         ),
+                        "missing_destination": str(step.missing_[feature]),
+                        "unseen_destination": str(step.missing_[feature]),
                     }
                 )
         if transformed is not None:

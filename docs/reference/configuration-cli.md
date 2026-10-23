@@ -56,15 +56,18 @@ without `exposure_col` use unweighted binning or unit row weights for grouping.
 | Setting | Type | Default | Meaning |
 |---|---|---|---|
 | `cols` | list or null | `null` | Numeric columns to bin; null selects numeric non-special columns |
-| `strategy` | `quantile` or `tree` | `quantile` | Exposure-balanced cut points or target-aware decision-tree cuts |
-| `max_bins` | integer | `8` | Maximum bins per feature; at least 2 |
+| `strategy` | `quantile` or `tree` | `tree` | Exposure-balanced cut points or one weighted LightGBM tree |
+| `max_bins` | integer | `8` | Maximum bins per feature; at least 1 |
 | `min_exposure` | number or null | `null` | Merge bins below aggregate exposure |
 | `min_claims` | number or null | `null` | Merge bins below aggregate claim count |
 | `monotonic` | false, true, `increasing`, or `decreasing` | `false` | Isotonic smoothing and adjacent-bin merging |
-| `random_state` | integer | `42` | Decision-tree seed |
+| `random_state` | integer | `42` | LightGBM tree seed |
 
-`min_claims` requires `spec.claim_count`. Missing numeric values get a stable
-`Missing` category.
+`min_claims` requires `spec.claim_count`. Tree methods require outcomes and route
+missing values through the fitted tree. Quantile binning reserves `Missing`.
+Learned tree edges include the upper boundary (`<=`); quantile and manual edges
+include the lower boundary. Both credibility floors apply to each tree group;
+impossible portfolio-wide floors leave one group.
 Interval labels use six significant digits for readability, falling back to
 full precision when rounding would make boundaries indistinguishable. Stored
 numeric edges and bin membership retain their original precision.
@@ -74,14 +77,18 @@ numeric edges and bin membership retain their original precision.
 | Setting | Type | Default | Meaning |
 |---|---|---|---|
 | `cols` | list or null | `null` | Categorical columns to group; null selects non-numeric non-special columns |
-| `strategy` | `similarity` or `rare` | `similarity` | Risk-similar grouping or credibility-only rare-level collapse |
+| `strategy` | `similarity` or `rare` | `similarity` | Native categorical tree groups or credibility-only rare-level collapse |
 | `max_groups` | integer | `10` | Maximum groups for similarity grouping |
 | `min_exposure` | number or null | `null` | Collapse levels below aggregate exposure |
 | `min_claims` | number or null | `null` | Collapse levels below aggregate claim count |
-| `other_label` | string | `"Other"` | Output label for collapsed or unknown levels |
+| `other_label` | string | `"Other"` | Rare strategy label for collapsed, missing or unknown levels |
 
-Similarity uses aggregate claim amount divided by aggregate exposure. Ordered
-categoricals only merge adjacent levels.
+Similarity fits one LightGBM regression tree on rates with exposure weights.
+Nominal levels use native categorical splitting; ordered categories use numeric
+codes and stay contiguous. Missing and unseen levels use the fitted missing
+route; unseen levels warn. Rare grouping retains `Other`. Controls must be finite;
+limits must be positive integers. See [manual mapping edits](../guide/data-preprocessing.md#learn-transparent-mappings)
+for explicit missing destinations when changing tree mappings.
 
 ## Model kinds
 

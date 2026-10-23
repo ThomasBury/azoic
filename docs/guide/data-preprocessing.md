@@ -32,25 +32,38 @@ include missingness and cardinality, without continuous numeric statistics.
 
 ## Learn transparent mappings
 
-`AutoBinner` handles numeric features. Quantile binning balances row count or
-exposure; tree binning learns target-aware cut points. Credibility floors can
-merge bins with insufficient exposure or claim count. Intervals include their
-finite lower edge and exclude their upper edge: with edges 30 and 60, the bins
-are `(-inf, 30.0)`, `[30.0, 60.0)`, and `[60.0, inf)`. A value of exactly 30
-belongs to the second bin; exactly 60 belongs to the third. With no edges, all
-observed values belong to `(-inf, inf)`; missing values still use `Missing`.
-Monotonic pooling uses only occupied bins. With monotonic pooling enabled,
-constant predictors produce a single observed-value interval.
+`AutoBinner(strategy="tree")` is the default numeric method. Like
+[ARFS TreeDiscretizer](https://arfs.readthedocs.io/en/latest/notebooks/preprocessing.html),
+it fits one LightGBM regression tree per feature, on pure-premium rates with
+exposure weights. `AutoGrouper(strategy="similarity")` uses the same core:
+nominal levels use native categorical subset splits; ordered categories use
+numeric codes so their groups stay contiguous. Categorical splits retain
+LightGBM's L2 regularization (`cat_l2=10`); category smoothing and the per-leaf
+row-count floor are disabled. The native Hessian limit guides exposure-aware
+splits; final subtree pooling enforces both of Azoic's credibility floors.
 
-`AutoGrouper` handles categorical features. The `rare` strategy collapses
-thin levels; `similarity` stably sorts nominal levels by aggregate pure premium
-(`sum(claim_amount) / sum(exposure)`). Ordered categoricals retain their declared
-order. Groups below an exposure or claim-count floor merge with their closest
-adjacent risk. The closest adjacent pair then merges until `max_groups` is met,
-recomputing aggregate risks after each merge and breaking distance ties to the
-left. For equal exposures, rates 100, 101, and 10000 with `max_groups=2` pool
-100 and 101, leaving 10000 separate. If the whole portfolio cannot meet a floor,
-only one group remains.
+Both tree methods require a target. Sibling subtrees collapse if a group falls
+below either the aggregate exposure or claim-count floor. Claim counts constrain
+groups; they never replace exposure weights. If the whole portfolio cannot meet
+a floor, one group remains. Numeric monotonic pooling merges adjacent bins using
+observed exposure-weighted target means, including missing rows in their fitted
+group. Merging preserves the floors. It does not constrain a downstream model's
+predictions after other features enter the model.
+
+Learned numeric tree intervals include their upper edge (`<=`): with edges 30
+and 60, the bins are `(-inf, 30]`, `(30, 60]`, and `(60, inf)`. Missing values
+follow the fitted tree. Unseen categorical levels follow its missing route and
+emit a warning because their risks were never observed. Output vocabularies are
+frozen at fit, independent of the scoring batch.
+
+For unsupervised alternatives, `AutoBinner(strategy="quantile")` balances row
+count or exposure, uses lower-inclusive intervals (`[30, 60)`), and reserves
+`Missing`. `AutoGrouper(strategy="rare")` pools thin levels into `other_label`
+(default `Other`), also used for missing and unseen values. Without numeric
+edges, every finite value belongs to `(-inf, inf)`.
+
+Native splitting optimizes a training objective; better validation performance
+or calibration is not guaranteed. Existing fitted preprocessors must be refitted.
 
 ```python
 from sklearn.pipeline import Pipeline
@@ -98,8 +111,9 @@ Configured exposure and claim-count columns must exist during fitting and
 contain finite numeric values. Each exposure must be at least one day (1/366,
 with a 0.1% day-count tolerance); claim counts must be non-negative. Omitting
 `exposure_col` explicitly selects unweighted binning or unit row weights for
-grouping. A missing `target_col` falls back to `y`: rates stay rates for tree
-binning and are multiplied by exposure before similarity grouping pools them.
+grouping. A present `target_col` takes precedence and contains aggregate claims
+when exposure is configured; dividing by exposure gives rates. Otherwise `y`
+supplies a strictly one-dimensional rate vector for either tree method.
 Supplied outcomes must remain finite after numeric and unit conversion. NaN,
 infinity, and entirely missing outcomes raise an error before mappings are
 learned, even when the corresponding predictor is missing. Unknown outcomes
@@ -115,9 +129,27 @@ An override replaces the entire mapping; omitted columns pass through unchanged.
 Keys must name currently binned or grouped columns. Bin edges must be finite,
 one-dimensional, and strictly increasing; an empty edge vector selects one bin.
 Invalid overrides leave mappings and category vocabularies unchanged.
-Missing numeric values get a
-stable `Missing` bin. Unknown categorical levels map to `other_label` during
-general preprocessing; tariff application is stricter and rejects them.
+An unchanged mapping round-trip preserves native routing. Changing a tree
+mapping requires keyword-only `missing={column: destination}`: a zero-based
+bin index for the binner, or a group label for the grouper. A separate group
+for missing values is allowed. Manual numeric edges use the lower-inclusive
+convention. For example:
+
+```python
+binner = preprocessor.named_steps["binner"]
+binner.set_mapping({"driver_age": [30, 60]}, missing={"driver_age": 1})
+
+grouper = preprocessor.named_steps["grouper"]
+grouper.set_mapping(
+    {"region": {"urban": "urban", "suburban": "urban", "rural": "rural"}},
+    missing={"region": "urban"},
+)
+```
+
+Manual overrides are actuarial decisions: they replace learned floors and
+monotonic guarantees. Exported mappings record interval closure and missing
+routes. Tariff application remains strict and rejects unseen levels and
+nonfinite raw numerics; ordinary pipeline prediction uses the fitted routes.
 
 !!! warning "Fit preprocessing inside the training boundary"
 

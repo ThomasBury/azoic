@@ -9,15 +9,239 @@ Legend: ☐ pending · ◐ in progress · ☑ done
 
 ## Current focus
 
-- **WP5 ☑ — ergonomics** completed 2026-10-23; [PR #8](https://github.com/ThomasBury/azoic/pull/8) is open.
-- **Branch:** `feat/wp5-ergonomics`. Scope: in-memory experiment/tuning frames,
-  predictor-only CLI profiling, per-model preprocessing, and four small polish fixes.
-- **Next:** user review of PR #8. Codex re-review is clear and code CI passed;
-  no next implementation milestone or release is selected. Merge requires a request.
+- **M47 ☑ — source-to-target evidence** completed 2026-10-23.
+- Independent source checksums, claim/policy ledgers, retained targets and final
+  sampling passed; the chapter defines the observed capped rate and its limits.
+- M46 and M47 passed local acceptance. Git delivery and Codex review are now
+  explicitly authorized; no loader rules, interfaces, source claim counts or
+  dependencies changed for M47.
+- **Next:** user review of [PR #9](https://github.com/ThomasBury/azoic/pull/9).
+  Codex reviewed the implementation with no findings and all CI checks passed;
+  the delivery-only checkpoint below records the reviewed commit and evidence.
+  No merge, professional endorsement, comparison or release is requested.
 
-- **Review follow-up ☑:** both component-flag findings are fixed; all threads
-  resolved, Codex re-review clear, and CI green on the reviewed implementation.
-- Earlier WP findings and any patch release are outside this milestone.
+- **Branch:** `feat/m46-lightgbm-preprocessing`, based on the completed WP5 branch.
+- Previous delivery: WP5 [PR #8](https://github.com/ThomasBury/azoic/pull/8)
+  merged into `main` at `a99df81`; this branch was fast-forwarded to that base.
+
+## M47 — Source-to-target evidence ☑ — 2026-10-23
+
+Kickoff: user selected public data only and source reconciliation before model
+comparisons. Read Current focus, M46 completion, the portfolio chapter, shared
+loader, existing tutorial tests, and cached OpenML metadata. Existing M46 changes
+remain in place. No source or cleaning rule changes are planned.
+
+Acceptance: exact record/reported-count reconciliation; monetary residuals within
+EUR 0.01 and exposure residuals within 1e-8 policy-years; independent per-policy
+target checks; version/checksum and pinned snapshot verification; synthetic cap,
+missing/unmatched severity, count mismatch, exclusion, reorder, sampling and stale
+cache regressions. Run `just check`, `just docs-build`, and isolated cached-source
+portfolio rendering. Professional actuarial review remains pending.
+
+### M47 checkpoint — independent accounting and focused regression
+
+Added the chapter mapping/`math.fsum` reconstruction, version/MD5 checks,
+claim-level monetary and record conservation, policy coverage/exposure shares,
+sequential exclusion checks, per-policy target and sample checks, and evidence
+register. Loader rules, interfaces and source claim counts are unchanged.
+
+Focused synthetic run: **14 passed**, including the existing all-rule/cache test
+and 13 new parameterized cases for claims, exclusions, reordering, sampling and
+stale derived results. Isolated Python execution against the cached sources
+passed all cells: 678,013 frequency records, 26,639 severity records, 667,673
+retained policies, EUR 49,214,268.67 retained amount; both advertised MD5s passed.
+Reproduced 9,116 positive-count policies without severity, 195 unmatched severity
+rows and the retained policy with reported count 2 versus one severity record.
+The source dictionary/metadata population count differs from the actual file;
+the chapter explicitly leaves this unresolved. Added exact source/retained
+reported-count and full-precision exposure snapshot assertions after this run.
+
+Remaining: verify those final assertions in the isolated Quarto render, run
+`just check` and `just docs-build`, inspect rendered tables/equation and final
+diff, then record completion. Professional review remains pending.
+
+### M47 checkpoint — acceptance and presentation review
+
+`just check` passed: Ruff/Ty green, **1252 passed, 4 skipped, 2 expected failures**
+in 194.40 seconds. `just docs-build` passed strictly. Isolated
+`QUARTO_PYTHON=/home/bsatom/Documents/azoic/.venv/bin/python uv run quarto render examples/01-portfolio.qmd`
+passed all 12 cells against cached public sources and wrote the chapter HTML.
+The final full-precision exposure and reported-count assertions passed.
+
+Rendered HTML inspection confirmed 12 tables, all expected ledger amounts,
+no cell errors, and the target equation. Local Chrome inspection confirmed the
+rendered equation/evidence register and found long internal exclusion headers
+causing avoidable horizontal scrolling. Shortened display labels and formatted
+coverage/exclusion values without changing the reconciliation calculation.
+Remaining: rerender and inspect these display-only changes, then record completion.
+
+### M47 completion checkpoint — 2026-10-23
+
+Acceptance complete:
+
+- `just check` exited **0**: Ruff/Ty passed; **1252 passed, 4 skipped,
+  2 expected failures** in 194.40 seconds. Includes all 25 tutorial checks:
+  13 new synthetic cases plus the existing 12, with the all-rule loader test
+  also exercising independent reconciliation. No automated test downloads data.
+- `just docs-build` exited **0**, strict, with no issues.
+- Final isolated portfolio render exited **0**, executing all 12 cells from
+  the cached OpenML sources after the display-only improvements. Both version-1
+  uncompressed MD5s matched the pinned advertised checksums. Source records,
+  reported counts, full-precision exposures and monetary snapshot assertions
+  passed; all retained targets matched by policy ID within the stated tolerances.
+- Verified source -> retained: 678,013 -> 667,673 policies;
+  358,499.44546298374 -> 352,530.64803128975 policy-years;
+  36,102 -> 26,391 reported claims. Of 26,639 severity rows, 195 are unmatched,
+  54 belong to excluded policies and 26,390 belong to retained policies.
+- Monetary identity: EUR 60,697,930.68 original less EUR 10,733,521.57 cap excess,
+  EUR 662,213.06 unmatched capped costs and EUR 87,927.38 excluded capped costs
+  equals EUR 49,214,268.67 retained. No unexplained accounting residual.
+- HTML inspection found all 12 expected tables and no cell errors. Local Chrome
+  inspection verified readable claim/coverage/exclusion tables, source exposure
+  shares, the equation and evidence register. Both exclusion tables now fit the
+  chapter width with the default theme and no added CSS/JavaScript.
+- `git diff --check` passed. Generated site, source caches, rendered chapter and
+  screenshots remain ignored/outside the source diff. Removed Quarto's automatic
+  redundant `.gitignore` addition; no loader/cache format changes were needed.
+
+Logs: `/tmp/azoic-m47-check.log`, `/tmp/azoic-m47-docs.log`,
+`/tmp/azoic-m47-execute.log`, `/tmp/azoic-m47-render-final.log`.
+
+Handoff: M47 source changes are uncommitted alongside preserved M46 changes on
+`feat/m46-lightgbm-preprocessing`. Review `examples/01-portfolio.qmd`,
+`tests/test_tutorial.py`, and the M47 tracking additions. No commit, PR, release,
+preprocessing comparison or later milestone was started.
+
+Open questions: source documentation's 677,991 population count versus 678,013
+actual records; 9,116 positive-count policies without severity evidence; one
+retained reported-count/record mismatch; coverage/deductibles, precise valuation,
+maturity, inflation and quotation-time availability. Causes and pricing effects
+remain unproven. A second pricing actuary's professional review is pending.
+Accounting success does not establish population adequacy, ultimate claim costs,
+future stability or M46 superiority. Prior development use of this public
+benchmark is disclosed; any later study must freeze its own fitting/selection
+and evaluation boundaries. Exact next action: user review of this completed
+milestone and a separate decision on those unresolved questions.
+
+### M46/M47 Git delivery checkpoint — 2026-10-23
+
+User explicitly requested staging, Conventional Commits, a plain-English PR, and
+iteration on Codex bot feedback. Refreshed `origin/main`: WP5 PR #8 has merged;
+the merge tree matches the former branch base, so the fast-forward preserved all
+local changes. The PR will contain only M46/M47. Reviewed the implementation,
+callers, docs, distribution/tariff regressions and independent source checks.
+Existing local acceptance is green (1252 tests, Ruff/Ty, strict docs and isolated
+cached-source chapter rendering); source-only presentation changes were verified
+by the final render. Prepare separate milestone commits; check staged diffs and
+wait for bot review/CI after pushing. Publication and merge remain outside scope.
+
+### M46/M47 PR review checkpoint — 2026-10-23
+
+Created [PR #9](https://github.com/ThomasBury/azoic/pull/9) against `main` with
+plain-English scope, compatibility changes, validation and evidence limits.
+Milestone commits:
+
+- `227a5b6` — `feat: learn tariff bins and groups with LightGBM`
+- `28dcec5` — `docs: reconcile tutorial targets with the public source records`
+
+Staged diffs passed `git diff --cached --check`; the pushed tree was clean.
+[Codex review](https://github.com/ThomasBury/azoic/pull/9#issuecomment-6372503455)
+completed on `28dcec52d6c5ccbc4b697bcf6389dd0bb8879553` with
+`has_any_findings=false` and `has_unresolved_findings=false`. There were no review
+threads or requested changes, so no implementation follow-up was needed.
+[CI run 40007727198](https://github.com/ThomasBury/azoic/actions/runs/40007727198)
+passed every step: locked dependency sync, Ruff, Ty, tests, strict docs,
+distribution builds, installed wheel smoke and installed source-distribution smoke.
+
+This final documentation-only change records delivery evidence. No runtime,
+test, tutorial calculation or dependency changed after the clear review.
+After pushing this record, check the PR's latest Codex summary and CI again;
+the PR holds the live status for this documentation commit. Handoff remains
+user review of PR #9; no merge, release, professional endorsement, preprocessing
+comparison or next milestone is authorized automatically.
+
+## M46 — ARFS-style LightGBM preprocessing ☑ — 2026-10-23
+
+Kickoff: clean `feat/wp5-ergonomics` checkout. Read Current focus, M45 scope,
+preprocessing and its workflow/tariff callers, tests, tutorial and distribution
+smokes. User explicitly selected this new milestone. Preserve class/strategy
+names, quantile/rare alternatives, special-column units, schema and tariff guards.
+Existing fitted preprocessors require refitting; validation improvement is unproven.
+
+Acceptance: weighted numeric/nominal partitions, ordered contiguous groups,
+constant/all-missing features, exact thresholds, stable vocabularies, unseen
+routing, both/impossible floors, one-group limits, monotonic means, transactional
+overrides, serialization, sklearn checks, pipeline/tariff agreement, exported
+routes/closures, full checks, strict docs and distribution/tutorial smokes.
+
+### M46 checkpoint — implementation and focused checks
+
+Replaced sklearn numeric trees and greedy categorical merging with one shared
+weighted LightGBM regression tree per feature. Added native leaves, sibling
+credibility pooling, observed monotonic pooling, frozen vocabularies/routes,
+transactional manual overrides with explicit missing destinations, validation,
+and tariff closure/route metadata. Updated old tests to select quantile explicitly
+when unsupervised behavior is intended; removed greedy-reference assertions.
+
+Focused run: **357 passed, 2 skipped, 1 failed**. The new replicated-exposure
+regression exposed LightGBM's Hessian-based row-count estimate blocking a valid
+low-exposure split. Disabled that row floor; Azoic's exposure/claim floors remain
+authoritative. Remaining: rerun focused tests, finish API prose, full gates,
+strict docs, installed artifacts and tutorial smokes, review final diff.
+
+### M46 checkpoint — integration acceptance
+
+Preprocessing/tariff focused checks passed **435 tests, 2 skipped**. Workbook
+checks independently reconstruct boundary premiums for tree and quantile
+closures and recorded missing destinations. All **12 synthetic tutorial checks**
+passed, including six fresh-process chapters, scoring/distillation, MLflow and
+tuning. The native exposure Hessian limit now guides credible tree growth before
+both-floor subtree pruning; this avoided collapsing the synthetic teacher to a
+constant. Strict docs passed. Wheel/sdist built successfully (uv emitted its
+existing build-tool version warning). Ruff/Ty passed before the final additional
+regressions; full-gate attempt stopped at a new test's literal-dict lint, now fixed.
+
+First full `just check` passed: **1237 passed, 4 skipped, 2 expected failures**,
+Ruff/Ty green. Installed wheel (Python 3.12) and sdist (Python 3.13), each resolved
+with pandas 3.1.0, passed model, preprocessing, import/version and all-five-CLI
+smokes outside the source import path. Final review found a manual null mapping
+key could override the explicit missing destination; fixed the shared transform
+and added a regression, with **363 preprocessing tests passed, 2 skipped**.
+
+Remaining: repeat final gates/build/artifact smokes after that last correction,
+record completion and hand off. No real-data render or predictive-comparison
+study is part of this acceptance.
+
+### M46 completion checkpoint — 2026-10-23
+
+Final review also restored declared category order for the retained `rare`
+strategy and added a regression with reversed encounter order. An intermediate
+full-gate retry was deliberately interrupted so the final run includes this fix.
+
+Acceptance complete:
+
+- Final `just check` exited **0**: Ruff/Ty passed, **1239 passed, 4 skipped,
+  2 expected failures** in 216.66 seconds. Skips are sklearn array-API checks;
+  expected failures remain the two model wrappers' strict 1D target contract.
+- All **12 synthetic tutorial checks** passed in the full suite, including six
+  isolated chapters, scoring/distillation/workbook agreement, MLflow, and tuning.
+- Final `just docs-build` exited **0**, strict, with no issues.
+- Final `uv build` exited **0**; wheel and sdist contain byte-identical current
+  preprocessing source. Both final installed-artifact smokes exited **0** outside
+  the checkout on Python 3.13 / pandas 3.1.0; earlier wheel acceptance also ran
+  on Python 3.12. Imports/version, GLM/GBM fit/score, native preprocessing and
+  all five CLI helps passed. No dependency or version change was needed.
+- `git diff --check` passed. Generated site/artifacts/data remain ignored.
+
+Logs: `/tmp/azoic-m46-final-check.log`, `/tmp/azoic-m46-final-docs.log`,
+`/tmp/azoic-m46-final-build.log`, `/tmp/azoic-m46-final-wheel.log`, and
+`/tmp/azoic-m46-final-sdist.log`.
+
+Handoff: changes are uncommitted on `feat/m46-lightgbm-preprocessing`, based on
+WP5's branch. Review the local diff, then explicitly choose commit/PR delivery.
+Do not start another milestone or release. Existing fitted preprocessors require
+refitting. No full real-data Quarto render or real-portfolio validation comparison
+was run; predictive or calibration improvements remain unproven.
 
 ## WP5 — ergonomics ☑ — 2026-10-23
 
