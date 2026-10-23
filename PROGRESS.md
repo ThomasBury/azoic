@@ -12,8 +12,10 @@ Legend: ☐ pending · ◐ in progress · ☑ done
 - **M48 ☑ — selection and target sensitivity** completed 2026-10-23. The portfolio
   evidence study reproduces cohorts, Area/fixed-age missing severity shares,
   fixed-ID cap comparisons and explicitly hypothetical missing costs.
-- **Next:** deliver M48 as a Conventional Commit and plain-English PR, then
-  wait for Codex review and address any findings, as authorized by the user.
+- **Next:** user review of [PR #10](https://github.com/ThomasBury/azoic/pull/10).
+  Codex reviewed the M48 implementation with no findings; the delivery checkpoint
+  below records the reviewed commit. Verify the final branch head and CI before
+  handoff; the PR holds their live status.
   `just check`, strict docs and final isolated rendering passed. Loader rules,
   public interfaces, architecture and dependencies are unchanged.
 - Professional review and predictive comparisons remain pending. No subsequent
@@ -160,6 +162,30 @@ passed, final isolated source-checksummed rendering passed, and independent
 calculations and rendered HTML contents passed. No implementation changed since
 those checks. Stage and inspect the diff, commit and push, open the PR, then wait
 for Codex review and CI. Address findings before handing off; do not merge.
+
+### M48 PR review checkpoint — 2026-10-23
+
+Created [PR #10](https://github.com/ThomasBury/azoic/pull/10) against `main` with
+the plain-English title `docs: show how missing claim costs and caps affect
+tutorial targets`, a description of the population/target changes, numerical
+evidence, verification and unresolved limits. Implementation commit:
+`0b00763` — `docs: show how missing claim costs and caps affect tutorial targets`.
+Staged checks passed and the pushed working tree was clean.
+
+[Codex review](https://github.com/ThomasBury/azoic/pull/10#issuecomment-6373734467)
+completed on `0b00763ebddb837681154a791f31822687985640` with
+`has_any_findings=false` and `has_unresolved_findings=false`. No review threads
+or requested changes were present; no implementation follow-up was needed.
+[CI run 40016844291](https://github.com/ThomasBury/azoic/actions/runs/40016844291)
+was still running when this checkpoint was written. Local acceptance remains
+green: 1256 tests, Ruff/Ty, strict docs and the isolated checksummed-source render.
+
+This documentation-only follow-up records delivery evidence. No runtime, test,
+tutorial calculation or dependency changed after the clear implementation review.
+Exact next action: push this record, request Codex review of the final branch head,
+and wait for that review and its CI result before notifying the user that the PR
+is ready. The PR holds the latest review/CI status. No merge, release, professional
+endorsement, predictive comparison or next milestone is authorized by this delivery.
 
 ## M47 — Source-to-target evidence ☑ — 2026-10-23
 
