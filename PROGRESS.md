@@ -9,11 +9,130 @@ Legend: ☐ pending · ◐ in progress · ☑ done
 
 ## Current focus
 
-- **M46 ☑ — ARFS-style LightGBM preprocessing** completed 2026-10-23.
-- Scope: weighted numeric/categorical trees, credibility floors, missing routes,
-  manual overrides, tariff metadata, docs and regression coverage.
-- **Next:** review the M46 changes and choose further work separately.
-- **Branch:** `feat/m46-lightgbm-preprocessing`, based on merged WP5 PR #8.
+- **M47 ☑ — source-to-target evidence** completed 2026-10-23.
+- Independent source checksums, claim/policy ledgers, retained targets and final
+  sampling passed; the chapter defines the observed capped rate and its limits.
+- M46 and M47 passed local acceptance. Git delivery and Codex review are now
+  explicitly authorized; no loader rules, interfaces, source claim counts or
+  dependencies changed for M47.
+- **Next:** commit the two milestones separately, open one PR against `main`,
+  wait for Codex review, and address any findings before handing off. No merge,
+  professional endorsement, comparison or release is requested.
+
+- **Branch:** `feat/m46-lightgbm-preprocessing`, based on the completed WP5 branch.
+- Previous delivery: WP5 [PR #8](https://github.com/ThomasBury/azoic/pull/8)
+  merged into `main` at `a99df81`; this branch was fast-forwarded to that base.
+
+## M47 — Source-to-target evidence ☑ — 2026-10-23
+
+Kickoff: user selected public data only and source reconciliation before model
+comparisons. Read Current focus, M46 completion, the portfolio chapter, shared
+loader, existing tutorial tests, and cached OpenML metadata. Existing M46 changes
+remain in place. No source or cleaning rule changes are planned.
+
+Acceptance: exact record/reported-count reconciliation; monetary residuals within
+EUR 0.01 and exposure residuals within 1e-8 policy-years; independent per-policy
+target checks; version/checksum and pinned snapshot verification; synthetic cap,
+missing/unmatched severity, count mismatch, exclusion, reorder, sampling and stale
+cache regressions. Run `just check`, `just docs-build`, and isolated cached-source
+portfolio rendering. Professional actuarial review remains pending.
+
+### M47 checkpoint — independent accounting and focused regression
+
+Added the chapter mapping/`math.fsum` reconstruction, version/MD5 checks,
+claim-level monetary and record conservation, policy coverage/exposure shares,
+sequential exclusion checks, per-policy target and sample checks, and evidence
+register. Loader rules, interfaces and source claim counts are unchanged.
+
+Focused synthetic run: **14 passed**, including the existing all-rule/cache test
+and 13 new parameterized cases for claims, exclusions, reordering, sampling and
+stale derived results. Isolated Python execution against the cached sources
+passed all cells: 678,013 frequency records, 26,639 severity records, 667,673
+retained policies, EUR 49,214,268.67 retained amount; both advertised MD5s passed.
+Reproduced 9,116 positive-count policies without severity, 195 unmatched severity
+rows and the retained policy with reported count 2 versus one severity record.
+The source dictionary/metadata population count differs from the actual file;
+the chapter explicitly leaves this unresolved. Added exact source/retained
+reported-count and full-precision exposure snapshot assertions after this run.
+
+Remaining: verify those final assertions in the isolated Quarto render, run
+`just check` and `just docs-build`, inspect rendered tables/equation and final
+diff, then record completion. Professional review remains pending.
+
+### M47 checkpoint — acceptance and presentation review
+
+`just check` passed: Ruff/Ty green, **1252 passed, 4 skipped, 2 expected failures**
+in 194.40 seconds. `just docs-build` passed strictly. Isolated
+`QUARTO_PYTHON=/home/bsatom/Documents/azoic/.venv/bin/python uv run quarto render examples/01-portfolio.qmd`
+passed all 12 cells against cached public sources and wrote the chapter HTML.
+The final full-precision exposure and reported-count assertions passed.
+
+Rendered HTML inspection confirmed 12 tables, all expected ledger amounts,
+no cell errors, and the target equation. Local Chrome inspection confirmed the
+rendered equation/evidence register and found long internal exclusion headers
+causing avoidable horizontal scrolling. Shortened display labels and formatted
+coverage/exclusion values without changing the reconciliation calculation.
+Remaining: rerender and inspect these display-only changes, then record completion.
+
+### M47 completion checkpoint — 2026-10-23
+
+Acceptance complete:
+
+- `just check` exited **0**: Ruff/Ty passed; **1252 passed, 4 skipped,
+  2 expected failures** in 194.40 seconds. Includes all 25 tutorial checks:
+  13 new synthetic cases plus the existing 12, with the all-rule loader test
+  also exercising independent reconciliation. No automated test downloads data.
+- `just docs-build` exited **0**, strict, with no issues.
+- Final isolated portfolio render exited **0**, executing all 12 cells from
+  the cached OpenML sources after the display-only improvements. Both version-1
+  uncompressed MD5s matched the pinned advertised checksums. Source records,
+  reported counts, full-precision exposures and monetary snapshot assertions
+  passed; all retained targets matched by policy ID within the stated tolerances.
+- Verified source -> retained: 678,013 -> 667,673 policies;
+  358,499.44546298374 -> 352,530.64803128975 policy-years;
+  36,102 -> 26,391 reported claims. Of 26,639 severity rows, 195 are unmatched,
+  54 belong to excluded policies and 26,390 belong to retained policies.
+- Monetary identity: EUR 60,697,930.68 original less EUR 10,733,521.57 cap excess,
+  EUR 662,213.06 unmatched capped costs and EUR 87,927.38 excluded capped costs
+  equals EUR 49,214,268.67 retained. No unexplained accounting residual.
+- HTML inspection found all 12 expected tables and no cell errors. Local Chrome
+  inspection verified readable claim/coverage/exclusion tables, source exposure
+  shares, the equation and evidence register. Both exclusion tables now fit the
+  chapter width with the default theme and no added CSS/JavaScript.
+- `git diff --check` passed. Generated site, source caches, rendered chapter and
+  screenshots remain ignored/outside the source diff. Removed Quarto's automatic
+  redundant `.gitignore` addition; no loader/cache format changes were needed.
+
+Logs: `/tmp/azoic-m47-check.log`, `/tmp/azoic-m47-docs.log`,
+`/tmp/azoic-m47-execute.log`, `/tmp/azoic-m47-render-final.log`.
+
+Handoff: M47 source changes are uncommitted alongside preserved M46 changes on
+`feat/m46-lightgbm-preprocessing`. Review `examples/01-portfolio.qmd`,
+`tests/test_tutorial.py`, and the M47 tracking additions. No commit, PR, release,
+preprocessing comparison or later milestone was started.
+
+Open questions: source documentation's 677,991 population count versus 678,013
+actual records; 9,116 positive-count policies without severity evidence; one
+retained reported-count/record mismatch; coverage/deductibles, precise valuation,
+maturity, inflation and quotation-time availability. Causes and pricing effects
+remain unproven. A second pricing actuary's professional review is pending.
+Accounting success does not establish population adequacy, ultimate claim costs,
+future stability or M46 superiority. Prior development use of this public
+benchmark is disclosed; any later study must freeze its own fitting/selection
+and evaluation boundaries. Exact next action: user review of this completed
+milestone and a separate decision on those unresolved questions.
+
+### M46/M47 Git delivery checkpoint — 2026-10-23
+
+User explicitly requested staging, Conventional Commits, a plain-English PR, and
+iteration on Codex bot feedback. Refreshed `origin/main`: WP5 PR #8 has merged;
+the merge tree matches the former branch base, so the fast-forward preserved all
+local changes. The PR will contain only M46/M47. Reviewed the implementation,
+callers, docs, distribution/tariff regressions and independent source checks.
+Existing local acceptance is green (1252 tests, Ruff/Ty, strict docs and isolated
+cached-source chapter rendering); source-only presentation changes were verified
+by the final render. Prepare separate milestone commits; check staged diffs and
+wait for bot review/CI after pushing. Publication and merge remain outside scope.
 
 ## M46 — ARFS-style LightGBM preprocessing ☑ — 2026-10-23
 

@@ -71,109 +71,464 @@ Rerender affected chapters to regenerate matching reports and workbooks.
 
 {{< include _shared.qmd >}}
 
+## Independent source reconciliation
+
+The folded calculation below uses the original downloaded rows, Python mappings
+and `math.fsum`, independently of the loader's join and grouped sums. It checks
+the full cleaned cache and exclusion audit before checking the current sample.
+An inconsistent derived cache raises an assertion; this audit never deletes or
+repairs it. Missing derived files may still be built by the existing loader.
+
 ```{python}
-source_metadata = pd.DataFrame(
-    [
-        {
-            "openml_id": 41214,
-            "name": "freMTPL2freq",
-            "role": "policy exposure and claim counts",
-            "source": "https://www.openml.org/d/41214",
-        },
-        {
-            "openml_id": 41215,
-            "name": "freMTPL2sev",
-            "role": "individual claim amounts",
-            "source": "https://www.openml.org/d/41215",
-        },
+#| code-fold: true
+#| code-summary: "Independent source-to-target calculation"
+from collections import defaultdict
+from math import fsum, isclose, isnan
+
+
+def reconcile_sources(frequency, severity, cleaned, audit, sample, cap, sample_size, seed):
+    """Check derived targets against source rows, without the loader's join."""
+    claims = defaultdict(list)
+    for policy_id, amount in severity[["IDpol", "ClaimAmount"]].itertuples(index=False, name=None):
+        assert pd.notna(policy_id) and np.isfinite(amount), "Invalid severity source row"
+        claims[float(policy_id)].append(float(amount))
+    assert not frequency["IDpol"].duplicated().any(), "Duplicate source policy IDs"
+    policy_ids = [float(value) for value in frequency["IDpol"]]
+    id_counts = pd.Series(policy_ids).value_counts().to_dict()
+    capped = {key: fsum(min(value, cap) for value in values) for key, values in claims.items()}
+    rules = [
+        "Joined policies before exclusions",
+        "Missing or duplicate policy ID",
+        "Exposure outside (0, 1]",
+        "Negative or missing claim count",
+        "Negative claim amount",
+        "Driver age outside [18, 100]",
+        "Vehicle age outside [0, 100]",
+        "Bonus-malus outside [50, 230]",
+        "Vehicle power outside [2, 15]",
+        "Non-positive or missing density",
+        "Inconsistent count and amount",
     ]
-)
-display(source_metadata)
+    excluded = {rule: [] for rule in rules}
+    retained = []
+    source_rows = []
+    for row in frequency.itertuples(index=False):
+        key, exposure, count = float(row.IDpol), float(row.Exposure), float(row.ClaimNb)
+        amount = capped.get(key, 0.0)
+        record = (key, exposure, count, amount, len(claims.get(key, [])))
+        source_rows.append(record)
+        passes = [
+            True,
+            not isnan(key) and id_counts.get(key, 0) == 1,
+            0 < exposure <= 1,
+            count >= 0,
+            amount >= 0,
+            18 <= float(row.DrivAge) <= 100,
+            0 <= float(row.VehAge) <= 100,
+            50 <= float(row.BonusMalus) <= 230,
+            2 <= float(row.VehPower) <= 15,
+            float(row.Density) > 0,
+            (count == 0 and amount == 0) or (count > 0 and amount > 0),
+        ]
+        failure = next((rule for rule, ok in zip(rules, passes, strict=True) if not ok), None)
+        if failure is None:
+            retained.append(record)
+        else:
+            excluded[failure].append(record)
+
+    columns = ["policy_id", "exposure", "claim_count", "claim_amount", "severity_records"]
+
+    def totals(rows):
+        return [len(rows)] + [fsum(row[i] for row in rows if not isnan(row[i])) for i in (1, 2, 3)]
+
+    def same_totals(actual, expected):
+        assert actual[0] == expected[0], "Policy count differs"
+        assert actual[2] == expected[2], "Reported claim count differs"
+        assert isclose(actual[1], expected[1], rel_tol=0, abs_tol=1e-8), "Exposure differs"
+        assert isclose(actual[3], expected[3], rel_tol=0, abs_tol=0.01), "Claim amount differs"
+
+    previous = totals(source_rows)
+    ledger = []
+    for rule in rules:
+        removed = totals(excluded[rule])
+        remaining = [a - b for a, b in zip(previous, removed, strict=True)]
+        ledger.append([rule, *removed, *remaining])
+        previous = remaining
+    ledger = pd.DataFrame(
+        ledger,
+        columns=["rule"]
+        + [
+            f"{status}_{metric}"
+            for status in ("removed", "retained")
+            for metric in ("policies", "exposure", "claim_count", "claim_amount")
+        ],
+    )
+    assert audit["rule"].tolist() == rules, "Exclusion rules differ"
+    for actual, expected in zip(
+        audit.itertuples(index=False), ledger.itertuples(index=False), strict=True
+    ):
+        for status in ("removed", "retained"):
+            names = [
+                f"{status}_{metric}"
+                for metric in ("policies", "exposure", "claim_count", "claim_amount")
+            ]
+            same_totals(
+                [getattr(actual, name) for name in names],
+                [getattr(expected, name) for name in names],
+            )
+    same_totals(previous, totals(retained))
+    reference = pd.DataFrame(retained, columns=columns)
+
+    def check_targets(actual, expected):
+        assert not actual["policy_id"].duplicated().any(), "Duplicate derived policy IDs"
+        actual = actual.set_index("policy_id").sort_index()
+        expected = expected.set_index("policy_id").sort_index()
+        assert actual.index.equals(expected.index), "Selected policy IDs differ"
+        for column, tolerance in [("exposure", 1e-8), ("claim_count", 0), ("claim_amount", 0.01)]:
+            assert np.allclose(actual[column], expected[column], rtol=0, atol=tolerance), column
+        same_totals(
+            totals(list(actual.reset_index()[columns[:4]].itertuples(index=False, name=None))),
+            totals(list(expected.reset_index()[columns[:4]].itertuples(index=False, name=None))),
+        )
+
+    check_targets(cleaned, reference)
+    selection = reference.sample(n=min(sample_size, len(reference)), random_state=seed)
+    check_targets(sample, selection)
+    raw_total = fsum(value for values in claims.values() for value in values)
+    capped_total = fsum(capped.values())
+    unmatched_ids = set(claims) - set(policy_ids)
+    unmatched = fsum(capped[key] for key in unmatched_ids)
+    removed_amount = fsum(row[3] for rows in excluded.values() for row in rows)
+    retained_amount = fsum(row[3] for row in retained)
+    assert isclose(
+        raw_total,
+        fsum([raw_total - capped_total, unmatched, removed_amount, retained_amount]),
+        rel_tol=0,
+        abs_tol=0.01,
+    ), "Monetary conservation failed"
+    assert audit["claim_cap"].eq(cap).all(), "Cached cap differs"
+    assert np.allclose(audit["raw_severity_claim_amount"], raw_total, rtol=0, atol=0.01)
+    assert np.allclose(audit["capped_severity_claim_amount"], capped_total, rtol=0, atol=0.01)
+    claim_ledger = pd.DataFrame(
+        [
+            ["Original severity rows", len(severity), raw_total],
+            [
+                "Excess removed by individual caps",
+                sum(value > cap for values in claims.values() for value in values),
+                raw_total - capped_total,
+            ],
+            ["After individual caps", len(severity), capped_total],
+            ["Unmatched severity rows", sum(len(claims[key]) for key in unmatched_ids), unmatched],
+            [
+                "Matched rows on excluded policies",
+                sum(row[4] for rows in excluded.values() for row in rows),
+                removed_amount,
+            ],
+            ["Matched rows on retained policies", sum(row[4] for row in retained), retained_amount],
+        ],
+        columns=["Disposition", "Severity records", "EUR"],
+    )
+    assert len(severity) == sum(row[4] for row in source_rows) + sum(
+        len(claims[key]) for key in unmatched_ids
+    ), "Severity record conservation failed"
+    groups = {
+        "All source policies": source_rows,
+        "Reported zero claims; no severity record": [
+            row for row in source_rows if row[2] == 0 and row[4] == 0
+        ],
+        "Has severity records; all recorded costs zero": [
+            row for row in source_rows if row[4] > 0 and all(value == 0 for value in claims[row[0]])
+        ],
+        "Positive reported count; no severity record": [
+            row for row in source_rows if row[2] > 0 and row[4] == 0
+        ],
+        "Has severity records; reported count differs": [
+            row for row in source_rows if row[4] > 0 and row[2] != row[4]
+        ],
+        "Retained; reported count differs": [row for row in retained if row[2] != row[4]],
+        "Retained before sampling": retained,
+    }
+    coverage = pd.DataFrame(
+        [[name, *totals(rows), sum(row[4] for row in rows)] for name, rows in groups.items()],
+        columns=[
+            "Policy group",
+            "Policies",
+            "Exposure",
+            "Reported claims",
+            "EUR",
+            "Severity records",
+        ],
+    )
+    source_exposure = totals(source_rows)[1]
+    coverage["Source exposure share (%)"] = 100 * coverage["Exposure"] / source_exposure
+    ledger["removed_exposure_share_pct"] = 100 * ledger["removed_exposure"] / source_exposure
+    sampling = pd.DataFrame(
+        [
+            ["Retained before sampling", *totals(retained)],
+            [
+                "Not selected by sampling",
+                *totals(
+                    list(
+                        reference.loc[~reference.index.isin(selection.index)].itertuples(
+                            index=False, name=None
+                        )
+                    )
+                ),
+            ],
+            [
+                "Selected for this render",
+                *totals(list(selection.itertuples(index=False, name=None))),
+            ],
+        ],
+        columns=["Selection", "Policies", "Exposure", "Reported claims", "EUR"],
+    )
+    same_totals(
+        sampling.iloc[0, 1:].tolist(), (sampling.iloc[1, 1:] + sampling.iloc[2, 1:]).tolist()
+    )
+    discrepancies = reference.loc[
+        reference["claim_count"] != reference["severity_records"], columns
+    ]
+    return claim_ledger, coverage, ledger, sampling, discrepancies
 ```
 
-## Claim cap before policy exclusions
+## Source identity and pinned snapshot
 
-These totals cover every row in the pinned **severity** input, before the
-policy join, exclusions, or sampling. The exclusion audit starts from the
-left-joined **frequency** policies, so unmatched severity IDs do not contribute
-to that table. The configured cap is stored with the audit.
+The source checksums below cover **uncompressed ARFF bytes**, not gzip wrappers.
+MD5 verifies identity against the advertised OpenML snapshot; it is not a security
+guarantee. The source files and metadata come from the existing download cache.
+The pinned frequency file has 678,013 unique IDs, whereas the OpenML description
+and CASdatasets dictionary state 677,991 policies. That discrepancy is unresolved;
+the ledger uses the actual downloaded rows.
 
 ```{python}
+#| code-fold: true
+#| code-summary: "Verify downloaded source identities"
+import gzip
+import hashlib
+import json
+
+source_frames = {}
+source_identities = []
+cache_root = ARTIFACT_DIR / "openml-cache" / "openml" / "openml.org"
+for data_id, checksum in [
+    (41214, "f8875568bf0ca622929105197e2db613"),
+    (41215, "24cc74449e3931cb1aad0d43a12e7a6e"),
+]:
+    source_frames[data_id] = fetch_openml(
+        data_id=data_id, as_frame=True, parser="auto", data_home=ARTIFACT_DIR / "openml-cache"
+    ).frame
+    with gzip.open(cache_root / f"api/v1/json/data/{data_id}.gz", "rt") as handle:
+        metadata = json.load(handle)["data_set_description"]
+    assert metadata["id"] == str(data_id) and metadata["version"] == "1"
+    assert metadata["md5_checksum"] == checksum
+    raw_path = cache_root / "data/v1/download" / metadata["file_id"] / f"{metadata['name']}.arff.gz"
+    with gzip.open(raw_path, "rb") as handle:
+        observed_checksum = hashlib.file_digest(handle, "md5").hexdigest()
+    assert observed_checksum == checksum, "Downloaded source checksum differs"
+    source_identities.append(
+        [data_id, metadata["name"], metadata["version"], len(source_frames[data_id]), checksum]
+    )
+display(
+    pd.DataFrame(
+        source_identities,
+        columns=["OpenML ID", "Dataset", "Version", "Records", "Uncompressed MD5"],
+    )
+)
+```
+
+## Claim-level accounting and policy-level coverage
+
+Capping precedes aggregation. Unmatched severity rows have no frequency-policy
+exposure and are shown separately. A positive reported count with no severity
+record is **missing cost evidence**, not a confirmed zero-cost claim. A reported
+zero with no severity record becomes zero in the tutorial target, but does not
+independently establish complete claim reporting. Coverage groups below overlap;
+only the sequential exclusion table is an additive partition.
+
+```{python}
+#| code-fold: true
 portfolio = load_portfolio()
 cleaning_audit = pd.read_csv(AUDIT_PATH)
-cap_totals = cleaning_audit.iloc[0]
-raw_amount = cap_totals["raw_severity_claim_amount"]
-capped_amount = cap_totals["capped_severity_claim_amount"]
-display(pd.Series({
-    "Individual claim cap (EUR)": cap_totals["claim_cap"],
-    "Raw severity total (EUR)": raw_amount,
-    "Capped severity total (EUR)": capped_amount,
-    "Reduction (EUR)": raw_amount - capped_amount,
-    "Reduction (%)": 100 * (raw_amount - capped_amount) / raw_amount,
-}).to_frame("Before policy exclusions").style.format("{:,.2f}"))
+claim_ledger, coverage, policy_ledger, sampling, discrepancies = reconcile_sources(
+    source_frames[41214],
+    source_frames[41215],
+    pd.read_parquet(JOINED_PATH),
+    cleaning_audit,
+    portfolio,
+    CLAIM_CAP,
+    SAMPLE_SIZE,
+    RANDOM_STATE,
+)
+assert len(source_frames[41214]) == source_frames[41214]["IDpol"].nunique() == 678_013
+assert len(source_frames[41215]) == 26_639
+assert (
+    coverage.set_index("Policy group").loc[
+        "Positive reported count; no severity record", "Policies"
+    ]
+    == 9_116
+)
+assert (
+    claim_ledger.set_index("Disposition").loc["Unmatched severity rows", "Severity records"] == 195
+)
+assert policy_ledger.iloc[-1]["retained_policies"] == 667_673
+snapshot = coverage.set_index("Policy group").loc[
+    ["All source policies", "Retained before sampling"]
+]
+assert snapshot["Reported claims"].tolist() == [36_102, 26_391]
+assert snapshot["Severity records"].tolist() == [26_444, 26_390]
+np.testing.assert_allclose(
+    snapshot["Exposure"], [358_499.44546298374, 352_530.64803128975], rtol=0, atol=1e-8
+)
+assert len(discrepancies) == 1
+assert discrepancies.iloc[0]["claim_count"] == 2 and discrepancies.iloc[0]["severity_records"] == 1
+np.testing.assert_allclose(
+    claim_ledger["EUR"],
+    [
+        60_697_930.68,
+        10_733_521.57,
+        49_964_409.11,
+        662_213.06,
+        87_927.38,
+        49_214_268.67,
+    ],
+    rtol=0,
+    atol=0.01,
+)
+display(claim_ledger.style.format({"Severity records": "{:,.0f}", "EUR": "{:,.2f}"}))
+display(
+    coverage.style.format(
+        {
+            "Policies": "{:,.0f}",
+            "Exposure": "{:,.2f}",
+            "Reported claims": "{:,.0f}",
+            "EUR": "{:,.2f}",
+            "Severity records": "{:,.0f}",
+            "Source exposure share (%)": "{:.4f}",
+        }
+    )
+)
+display(discrepancies)
 ```
+
+The retained count discrepancy is reported, not repaired: frequency modelling
+continues to use the source `ClaimNb`. Neither missing severity records nor this
+mismatch has an established explanation in the supplied source information.
 
 ## Sequential policy exclusions
 
-Read the rules from top to bottom. Each removed policy is attributed to its
-**first failing rule**, so overlapping problems count once. At each step,
-previous retained totals equal removed plus newly retained totals. The first
-row is the joined population; the last is the cleaned population **before
-sampling**. The default pinned inputs retain 667,673 policies.
-
-Exposure is in policy-years; claim amounts are policy aggregates of capped
-claims in euros. Missing numeric values contribute no amount to sums, while
-those rows still count as policies. Negative invalid values remain signed in
-removed totals. The one-to-one join rejects duplicate source policy IDs before
-these rules; the ID rule also catches missing IDs or duplicates after numeric
-conversion. Zero/positive count–amount inconsistencies are excluded, not repaired.
+Each policy is attributed to its **first failing rule**. Counts, reported claims,
+exposure and capped amounts are independently checked against the stored audit.
+Removed exposure shares use all frequency-source exposure as the denominator,
+including exposure outside the retained range. Missing numeric values contribute
+zero to sums; negative invalid values remain signed. These shares describe the
+source records, not an estimated share of a wider insured population.
 
 ```{python}
 #| echo: false
-audit_by_rule = cleaning_audit.set_index("rule")
-display(audit_by_rule[[
-    "removed_policies", "retained_policies", "removed_exposure", "retained_exposure",
-]].rename(columns={
-    "removed_policies": "Policies removed", "retained_policies": "Policies retained",
-    "removed_exposure": "Exposure removed", "retained_exposure": "Exposure retained",
-}).style.format({
-    "Policies removed": "{:,.0f}", "Policies retained": "{:,.0f}",
-    "Exposure removed": "{:,.2f}", "Exposure retained": "{:,.2f}",
-}))
-display(audit_by_rule[[
-    "removed_claim_count", "retained_claim_count",
-    "removed_claim_amount", "retained_claim_amount",
-]].rename(columns={
-    "removed_claim_count": "Claims removed", "retained_claim_count": "Claims retained",
-    "removed_claim_amount": "EUR removed", "retained_claim_amount": "EUR retained",
-}).style.format({
-    "Claims removed": "{:,.0f}", "Claims retained": "{:,.0f}",
-    "EUR removed": "{:,.2f}", "EUR retained": "{:,.2f}",
-}))
+exposure_ledger = policy_ledger.set_index("rule")[
+    [
+        "removed_policies",
+        "retained_policies",
+        "removed_exposure",
+        "retained_exposure",
+        "removed_exposure_share_pct",
+    ]
+]
+exposure_ledger.columns = [
+    "Policies removed",
+    "Policies retained",
+    "Exposure removed",
+    "Exposure retained",
+    "Source exposure removed (%)",
+]
+display(
+    exposure_ledger.style.format(
+        {
+            "Policies removed": "{:,.0f}",
+            "Policies retained": "{:,.0f}",
+            "Exposure removed": "{:,.2f}",
+            "Exposure retained": "{:,.2f}",
+            "Source exposure removed (%)": "{:.4f}",
+        }
+    )
+)
+outcome_ledger = policy_ledger.set_index("rule")[
+    [
+        "removed_claim_count",
+        "retained_claim_count",
+        "removed_claim_amount",
+        "retained_claim_amount",
+    ]
+]
+outcome_ledger.columns = ["Claims removed", "Claims retained", "EUR removed", "EUR retained"]
+display(
+    outcome_ledger.style.format(
+        {
+            "Claims removed": "{:,.0f}",
+            "Claims retained": "{:,.0f}",
+            "EUR removed": "{:,.2f}",
+            "EUR retained": "{:,.2f}",
+        }
+    )
+)
 ```
 
 ## Portfolio used in this render
 
-This summary describes the actual `SAMPLE_SIZE`/`RANDOM_STATE` selection from
-the cleaned policies. Reducing the sample changes these totals, not the
-pre-sampling audit above.
+This selection uses the current `SAMPLE_SIZE` and `RANDOM_STATE`. The reference
+checks the selected IDs and each selected exposure, reported count and amount,
+not just their totals. Changed sample settings leave the source ledger unchanged.
 
 ```{python}
-pd.DataFrame(
-    {
-        "policies": [len(portfolio)],
-        "exposure": [portfolio["exposure"].sum()],
-        "claims": [portfolio["claim_count"].sum()],
-        "claim_amount": [portfolio["claim_amount"].sum()],
-        "observed_frequency": [
-            portfolio["claim_count"].sum() / portfolio["exposure"].sum()
-        ],
-        "observed_pure_premium": [
-            portfolio["claim_amount"].sum() / portfolio["exposure"].sum()
-        ],
-    }
-).T.rename(columns={0: "portfolio value"})
+#| echo: false
+display(sampling.round(6))
+display(
+    pd.Series(
+        {
+            "Observed frequency (reported claims / policy-year)": portfolio["claim_count"].sum()
+            / portfolio["exposure"].sum(),
+            "Observed pure premium (EUR / policy-year)": portfolio["claim_amount"].sum()
+            / portfolio["exposure"].sum(),
+        }
+    ).to_frame("Selected portfolio")
+)
 ```
+
+## What target is being modelled?
+
+For retained policy $i$, with observed exposure $e_i$ in policy-years and source
+claim costs $C_j$ in euros, the tutorial models
+
+$$
+r_i = \frac{\sum_{j:\,\mathrm{IDpol}_j=i}\min(C_j,100{,}000)}{e_i},
+\qquad i\in\text{retained policies}.
+$$
+
+This is an **observed, individually capped cost rate**, in euros per policy-year,
+for the policies passing the listed rules and then the configured sampling. It
+is fitted with `sample_weight=exposure`; frequency uses reported count divided
+by exposure. Exposure weighting specifies the rate model's variance convention;
+it does not by itself establish equivalence to every aggregate Tweedie model
+with an exposure offset. Changing that convention needs a separate investigation.
+The displayed snapshot assertions require the default EUR 100,000 cap.
+
+### Source evidence register
+
+| Question | Evidence and remaining limit | Pricing implication |
+|---|---|---|
+| Population and coverage | [OpenML frequency metadata](https://www.openml.org/api/v1/json/data/41214) and the [CASdatasets dictionary](https://github.com/dutangc/CASdatasets/blob/master/man/freMTPL.Rd) describe French motor third-party liability from an unnamed insurer, approximately 2011–2013. No sampling frame, coverage limits or deductible schedule is supplied here. | Retained policies cannot establish adequacy for a different or full market population. |
+| Exposure and reported count | Dictionary: exposure is in years; `ClaimNb` counts claims during exposure. The ledger measures exclusions and absent severity coverage. | Do not replace absent costs with an assumption of zero-cost claims. Selection effects remain unquantified. |
+| Cost basis and valuation | Dictionary: costs seen at a recent date; some costs follow fixed IRSA-IDA conventions. No precise valuation date, paid/incurred split, recovery/expense basis or inflation index is established here. | These are not demonstrated ultimate or current-price losses; the cap defines an observed layer, not a contractual coverage limit. |
+| Maturity and time | Approximate portfolio era is given, but no policy-time or development history is present in the retained fields. | Cannot establish claim maturity or future-period stability. `IDpol` is a join key, not time; the severity dictionary's occurrence-date wording conflicts with its linking role. |
+| Predictor availability | The dictionary defines recorded features, but supplies no as-of history or quotation-time extraction evidence. | Availability at quotation and absence of information leakage require separate verification. |
+| Independent assessment | Accounting assertions and synthetic regressions are reproducible; a second pricing actuary's professional review is **pending**. | Passing CI does not supply actuarial endorsement, statistical credibility or predictive superiority. |
+
+Accounting success supports the construction of this observed target. It does
+not establish ultimate claim costs, population representativeness, future
+performance, or superiority of M46 preprocessing. These public observations
+have already been used during package development and are not untouched external
+evidence. Any later comparison must freeze its study and reserve evaluation rows
+from all fitting and selection within that study, while disclosing that prior use.
 
 ## Descriptive review before learned preprocessing
 
