@@ -15,8 +15,9 @@ Cleaning is deliberately deterministic and conservative:
 3. retain unique policies with $0 < exposure \le 1$, non-negative outcomes,
    positive density, plausible ages, bonus-malus in $[50, 230]$, vehicle
    power in $[2, 15]$, and consistent zero/positive claim count and amount;
-4. rename only the columns used by Azoic and derive no outcome-informed
-   features.
+4. rename only the columns used by Azoic. This ingestion step derives no learned
+   features; the next chapter's tree binning and grouping **do use outcomes**,
+   fitted on training rows only, with native missing-value routing.
 
 The cap applies to **each claim before aggregation**. A policy with two capped
 claims can therefore have a `claim_amount` above the cap. Costs above that layer
@@ -111,6 +112,7 @@ def reconcile_sources(frequency, severity, cleaned, audit, sample, cap, sample_s
     ]
     excluded = {rule: [] for rule in rules}
     retained = []
+    eligible = []
     source_rows = []
     for row in frequency.itertuples(index=False):
         key, exposure, count = float(row.IDpol), float(row.Exposure), float(row.ClaimNb)
@@ -130,6 +132,9 @@ def reconcile_sources(frequency, severity, cleaned, audit, sample, cap, sample_s
             float(row.Density) > 0,
             (count == 0 and amount == 0) or (count > 0 and amount > 0),
         ]
+        if all(passes[:-1]):
+            area = "Missing" if pd.isna(row.Area) else str(row.Area)
+            eligible.append((*record, area, float(row.DrivAge)))
         failure = next((rule for rule, ok in zip(rules, passes, strict=True) if not ok), None)
         if failure is None:
             retained.append(record)
@@ -288,7 +293,107 @@ def reconcile_sources(frequency, severity, cleaned, audit, sample, cap, sample_s
     discrepancies = reference.loc[
         reference["claim_count"] != reference["severity_records"], columns
     ]
-    return claim_ledger, coverage, ledger, sampling, discrepancies
+    eligible = pd.DataFrame(eligible, columns=columns + ["area", "driver_age"])
+    return claim_ledger, coverage, ledger, sampling, discrepancies, eligible
+
+
+def selection_sensitivity(eligible, severity, retained_ids):
+    """Describe full cohorts and hypothetical costs without changing model data."""
+    retained = eligible.loc[eligible["policy_id"].isin(retained_ids)]
+    assert set(retained["policy_id"]) == set(retained_ids), "Retained IDs differ"
+    missing = eligible["claim_count"].gt(0) & eligible["severity_records"].eq(0)
+    rejected = ~eligible["policy_id"].isin(retained_ids)
+    assert not (missing & ~rejected).any(), "Missing-cost policy was retained"
+
+    def summarize(frame):
+        positive = frame["claim_count"].gt(0)
+        absent = positive & frame["severity_records"].eq(0)
+        exposure = fsum(frame["exposure"])
+        reported = fsum(frame["claim_count"])
+        return pd.Series(
+            {
+                "Policies": len(frame),
+                "Exposure": exposure,
+                "Reported claims": reported,
+                "Severity records": int(frame["severity_records"].sum()),
+                "Positive-count policies": int(positive.sum()),
+                "Missing policies": int(absent.sum()),
+                "Missing reported claims": fsum(frame.loc[absent, "claim_count"]),
+                "Missing exposure": fsum(frame.loc[absent, "exposure"]),
+                "Recorded EUR": fsum(frame["claim_amount"]),
+            }
+        )
+
+    cohorts = pd.DataFrame(
+        {
+            "All other rules passed": summarize(eligible),
+            "Final retained": summarize(retained),
+            "Absent severity; excluded": summarize(eligible.loc[missing]),
+            "Other inconsistent outcomes; excluded": summarize(eligible.loc[rejected & ~missing]),
+        }
+    ).T
+    tolerance = np.array([0, 1e-8, 0, 0, 0, 0, 0, 1e-8, 0.01])
+    assert ((cohorts.iloc[0] - cohorts.iloc[1:].sum()).abs() <= tolerance).all()
+    strata = []
+    bands = pd.cut(
+        eligible["driver_age"], bins=[18, 25, 65, 101], right=False,
+        labels=["18–24", "25–64", "65–100"],
+    )
+    assert bands.notna().all(), "Eligible age outside fixed bands"
+    for dimension, labels in [("Area", eligible["area"]), ("Driver age", bands)]:
+        for label in sorted(labels.unique()):
+            strata.append(summarize(eligible.loc[labels.eq(label)]).rename((dimension, label)))
+    strata = pd.DataFrame(strata)
+    strata.index.names = ["Dimension", "Stratum"]
+    for dimension in ["Area", "Driver age"]:
+        assert ((strata.loc[dimension].sum() - cohorts.iloc[0]).abs() <= tolerance).all()
+    for table in [cohorts, strata]:
+        table["Frequency"] = table["Reported claims"] / table["Exposure"].replace(0, np.nan)
+        table["Coverage (%)"] = 100 * (
+            1 - table["Missing policies"] / table["Positive-count policies"].replace(0, np.nan)
+        )
+        table["Missing policies (%)"] = (
+            100 * table["Missing policies"] / table["Positive-count policies"].replace(0, np.nan)
+        )
+        table["Missing claims (%)"] = (
+            100 * table["Missing reported claims"] / table["Reported claims"].replace(0, np.nan)
+        )
+        table["Missing exposure (%)"] = (
+            100 * table["Missing exposure"] / table["Exposure"].replace(0, np.nan)
+        )
+        table["Recorded EUR/year"] = table["Recorded EUR"] / table["Exposure"].replace(0, np.nan)
+
+    amounts = severity.loc[severity["IDpol"].isin(retained_ids), "ClaimAmount"]
+    assert len(amounts) == cohorts.loc["Final retained", "Severity records"]
+    caps = pd.DataFrame(
+        [
+            [label, len(retained), fsum(retained["exposure"]),
+             int(amounts.gt(cap).sum()), fsum(min(value, cap) for value in amounts)]
+            for label, cap in [("EUR 50k", 50_000), ("EUR 100k", 100_000),
+                               ("EUR 200k", 200_000), ("Uncapped", float("inf"))]
+        ],
+        columns=["Claim cap", "Policies", "Exposure", "Records above cap", "Recorded EUR"],
+    ).set_index("Claim cap")
+    retained_amount = cohorts.loc["Final retained", "Recorded EUR"]
+    assert isclose(caps.loc["EUR 100k", "Recorded EUR"], retained_amount, rel_tol=0, abs_tol=0.01)
+    caps["Recorded EUR/year"] = caps["Recorded EUR"] / caps["Exposure"]
+    caps["Change vs 100k (%)"] = 100 * (caps["Recorded EUR"] / retained_amount - 1)
+
+    mean_record_cost = retained_amount / len(amounts) if len(amounts) else np.nan
+    missing_claims = fsum(eligible.loc[missing, "claim_count"])
+    known_amount = fsum(eligible["claim_amount"])
+    exposure = fsum(eligible["exposure"])
+    scenarios = pd.DataFrame(
+        [
+            [multiplier, multiplier * mean_record_cost,
+             missing_claims * multiplier * mean_record_cost]
+            for multiplier in [0.5, 1.0, 2.0]
+        ],
+        columns=["Assumed multiplier", "Assumed EUR/missing claim", "Added hypothetical EUR"],
+    ).set_index("Assumed multiplier")
+    scenarios["Hypothetical total EUR"] = known_amount + scenarios["Added hypothetical EUR"]
+    scenarios["Hypothetical EUR/year"] = scenarios["Hypothetical total EUR"] / exposure
+    return cohorts, strata, caps, scenarios
 ```
 
 ## Source identity and pinned snapshot
@@ -349,7 +454,7 @@ only the sequential exclusion table is an additive partition.
 #| code-fold: true
 portfolio = load_portfolio()
 cleaning_audit = pd.read_csv(AUDIT_PATH)
-claim_ledger, coverage, policy_ledger, sampling, discrepancies = reconcile_sources(
+claim_ledger, coverage, policy_ledger, sampling, discrepancies, eligible = reconcile_sources(
     source_frames[41214],
     source_frames[41215],
     pd.read_parquet(JOINED_PATH),
@@ -473,6 +578,183 @@ display(
 )
 ```
 
+## Selection and target sensitivity
+
+This study uses the **full population before sampling**, from the same checksummed
+source rows. “All other rules passed” means every eligibility rule except the
+final count/amount consistency rule. “Final retained” also passes that last rule.
+The two excluded rows below partition their difference: positive reported counts
+with **no severity record**, and all other inconsistent outcomes. A zero-valued
+severity record is present evidence, distinct from an absent record.
+
+Reported frequency is total `ClaimNb` / total exposure, never an average of
+policy frequencies. Severity-record coverage is the percentage of **positive-count
+policies with at least one severity record**; it does not require record counts
+to equal reported counts or prove that all costs are present. The retained count
+mismatch remains untouched. Recorded EUR/year for the wider cohort is only a
+partial observed rate, since some reported claims have no recorded cost.
+
+```{python}
+#| code-fold: true
+#| code-summary: "Compute cohort, stratum, cap and hypothetical-cost sensitivity"
+full_retained_ids = pd.read_parquet(JOINED_PATH)["policy_id"]
+cohorts, strata, cap_sensitivity, missing_cost_scenarios = selection_sensitivity(
+    eligible, source_frames[41215], full_retained_ids
+)
+for label, ledger_row in [("All other rules passed", -2), ("Final retained", -1)]:
+    for column, metric, tolerance in [
+        ("Policies", "policies", 0), ("Exposure", "exposure", 1e-8),
+        ("Reported claims", "claim_count", 0), ("Recorded EUR", "claim_amount", 0.01),
+    ]:
+        assert isclose(
+            cohorts.loc[label, column], policy_ledger.iloc[ledger_row][f"retained_{metric}"],
+            rel_tol=0, abs_tol=tolerance,
+        )
+assert cohorts["Policies"].tolist() == [676_789, 667_673, 9_116, 0]
+assert cohorts["Reported claims"].tolist() == [36_048, 26_391, 9_657, 0]
+np.testing.assert_allclose(
+    cohorts["Exposure"], [357_136.1054629838, 352_530.64803128975, 4_605.457431693989, 0],
+    rtol=0, atol=1e-8,
+)
+assert strata.loc["Area", "Missing policies"].tolist() == [1_594, 1_106, 2_626, 1_849, 1_599, 342]
+assert strata.loc["Driver age", "Missing policies"].tolist() == [321, 7_198, 1_597]
+np.testing.assert_allclose(
+    cap_sensitivity["Recorded EUR"], [46_303_959.85, 49_214_268.67, 52_112_499.80, 59_821_289.12],
+    rtol=0, atol=0.01,
+)
+np.testing.assert_allclose(
+    missing_cost_scenarios["Hypothetical total EUR"],
+    [58_218_857.38819231, 67_223_446.10638462, 85_232_623.54276922], rtol=0, atol=0.01,
+)
+count_format = {
+    column: "{:,.0f}"
+    for column in ["Policies", "Reported claims", "Severity records", "Positive-count policies",
+                   "Missing policies", "Missing reported claims"]
+}
+number_format = {
+    **count_format, "Exposure": "{:,.2f}", "Frequency": "{:.6f}",
+    "Coverage (%)": "{:.3f}", "Missing policies (%)": "{:.3f}",
+    "Missing claims (%)": "{:.3f}", "Missing exposure (%)": "{:.3f}",
+    "Recorded EUR": "{:,.2f}", "Recorded EUR/year": "{:,.2f}",
+}
+display(cohorts[["Policies", "Exposure", "Reported claims", "Severity records"]].style.format(number_format, na_rep="—"))
+display(cohorts[["Frequency", "Coverage (%)", "Recorded EUR", "Recorded EUR/year"]].style.format(number_format, na_rep="—"))
+```
+
+In this snapshot, the final rule removes 9,116 of 676,789 otherwise eligible
+policies, carrying 9,657 reported claims and 4,605.46 policy-years. All lack
+severity records; no other inconsistent outcomes remain after the earlier rules.
+Reported frequency falls from 0.100936 to 0.074862 claims per policy-year, while
+the recorded capped amount stays unchanged. The wider cohort has 73.195%
+severity-record coverage among positive-count policies. The retained rate's
+different denominator is therefore a material part of its interpretation.
+
+### Missing severity by Area and fixed driver-age bands
+
+The strata use the wider eligible cohort, including policies subsequently
+excluded for missing severity. Age bands are fixed in advance: 18–24, 25–64,
+65–100; Area uses the recorded A–F categories (missing Area would be shown as
+`Missing`). Each dimension separately reconciles to the wider cohort; do not add
+Area totals to age totals.
+
+“Missing policies (%)” divides absent-record positive-count policies by **all
+positive-count policies in that stratum**. “Missing claims (%)” divides their
+reported claims by all reported claims in the stratum. “Missing exposure (%)”
+divides their exposure by all eligible exposure in that stratum. Undefined
+percentages display as “—”. These are descriptive coverage differences, not
+estimates of missing costs or evidence about the cause of missingness.
+
+```{python}
+#| echo: false
+display(
+    strata[["Policies", "Positive-count policies", "Missing policies", "Missing reported claims"]]
+    .style.format(number_format, na_rep="—")
+)
+display(
+    strata[["Missing policies (%)", "Missing claims (%)", "Missing exposure (%)"]]
+    .style.format(number_format, na_rep="—")
+)
+```
+
+Absent records concern 26.805% of positive-count policies overall but only 1.290%
+of eligible exposure. Their positive-count policy share varies from 21.970%
+(Area E) to 33.023% (Area A), and from 14.765% (age 18–24) to 37.191%
+(age 65–100). This observed variation rules out describing coverage as uniform
+across these strata; it does not identify their missing severity amounts.
+
+### Individual claim caps on identical retained IDs
+
+The four rows use exactly the **same final retained policy IDs and exposure**,
+before sampling. Only the cap applied to each original severity record changes;
+eligibility is never rerun under an alternative cap. Unmatched severity records
+and records on excluded policies stay outside every row. “Uncapped” means the
+recorded amounts before this tutorial's cap, not ultimate or unlimited covered
+costs. EUR 100k is the unchanged model target; the other rows are sensitivity
+calculations, not alternative fitted models.
+
+```{python}
+#| echo: false
+display(
+    cap_sensitivity[["Records above cap", "Recorded EUR", "Recorded EUR/year", "Change vs 100k (%)"]]
+    .style.format({**number_format, "Records above cap": "{:,.0f}", "Change vs 100k (%)": "{:+.3f}"})
+)
+```
+
+The observed retained rate is EUR 131.35/year at EUR 50k, EUR 139.60 at EUR 100k,
+EUR 147.82 at EUR 200k and EUR 169.69 uncapped. Removing the tutorial cap raises
+recorded costs by 21.553% on these IDs; it supplies no evidence about unrecorded
+claims or future large losses.
+
+### Hypothetical costs for absent severity records
+
+These scenarios are **assumptions, never recovered observations**. Let $M$ be the
+sum of reported claims on wider-cohort positive-count policies with no severity
+records, $\bar C_R$ the mean EUR 100k-capped cost **per retained severity record**
+(including zero-valued records), $K_E$ the wider cohort's known capped costs and
+$E_E$ its exposure. For assumed multiplier $m\in\{0.5,1,2\}$, the hypothetical
+cohort rate is
+
+$$
+r_E^{(m)} = \frac{K_E + M m\bar C_R}{E_E}.
+$$
+
+Every scenario uses the **wider cohort denominator**, not the retained exposure.
+Known capped costs include those on the other inconsistent-outcome policies;
+their record/count discrepancies receive no invented extra claims. In particular,
+the one retained count/record mismatch is not treated as an observed missing
+record. This exercise concerns wholly absent severity records only. It neither
+identifies their actual costs nor resolves valuation, maturity, coverage or
+inflation. The multipliers are not a confidence interval, and 2× is not an upper
+bound. Nothing is written back to the loader or modelling target.
+
+```{python}
+#| echo: false
+display(
+    pd.Series({
+        "Missing reported claims (M)": cohorts.loc["All other rules passed", "Missing reported claims"],
+        "Mean retained capped EUR/record": cohorts.loc["Final retained", "Recorded EUR"]
+        / cohorts.loc["Final retained", "Severity records"],
+        "Wider cohort exposure (policy-years)": cohorts.loc["All other rules passed", "Exposure"],
+        "Known wider cohort capped EUR (K_E)": cohorts.loc["All other rules passed", "Recorded EUR"],
+        "Partial recorded EUR/year (costs missing)": cohorts.loc["All other rules passed", "Recorded EUR/year"],
+    }).to_frame("Scenario inputs").style.format("{:,.6f}")
+)
+display(missing_cost_scenarios.style.format("{:,.2f}"))
+```
+
+The assumed missing-claim means are EUR 932.44, EUR 1,864.88 and EUR 3,729.77.
+They produce wider-cohort hypothetical rates of EUR 163.02, EUR 188.23 and
+EUR 238.66 per policy-year, respectively. These differ from both the partial
+recorded wider-cohort rate (EUR 137.80) and the retained target (EUR 139.60);
+none is an estimate of ultimate pricing cost.
+
+The cohort and stratum tables quantify observed selection and coverage; the cap
+table identifies the arithmetic effect of capping recorded costs on fixed IDs.
+The missing-cost scenarios show dependence on explicit assumptions. They do not
+identify the true selection effect on pure premium: that requires cost evidence
+for the absent records and a defined pricing cost basis. Professional actuarial
+review and predictive comparisons remain **pending**.
+
 ## Portfolio used in this render
 
 This selection uses the current `SAMPLE_SIZE` and `RANDOM_STATE`. The reference
@@ -517,7 +799,7 @@ The displayed snapshot assertions require the default EUR 100,000 cap.
 | Question | Evidence and remaining limit | Pricing implication |
 |---|---|---|
 | Population and coverage | [OpenML frequency metadata](https://www.openml.org/api/v1/json/data/41214) and the [CASdatasets dictionary](https://github.com/dutangc/CASdatasets/blob/master/man/freMTPL.Rd) describe French motor third-party liability from an unnamed insurer, approximately 2011–2013. No sampling frame, coverage limits or deductible schedule is supplied here. | Retained policies cannot establish adequacy for a different or full market population. |
-| Exposure and reported count | Dictionary: exposure is in years; `ClaimNb` counts claims during exposure. The ledger measures exclusions and absent severity coverage. | Do not replace absent costs with an assumption of zero-cost claims. Selection effects remain unquantified. |
+| Exposure and reported count | Dictionary: exposure is in years; `ClaimNb` counts claims during exposure. The cohort/stratum tables measure observed selection and absent severity coverage; missing-cost scenarios state their assumptions. | Do not replace absent costs with an assumption of zero-cost claims. The actual cost effect of selection remains unidentified. |
 | Cost basis and valuation | Dictionary: costs seen at a recent date; some costs follow fixed IRSA-IDA conventions. No precise valuation date, paid/incurred split, recovery/expense basis or inflation index is established here. | These are not demonstrated ultimate or current-price losses; the cap defines an observed layer, not a contractual coverage limit. |
 | Maturity and time | Approximate portfolio era is given, but no policy-time or development history is present in the retained fields. | Cannot establish claim maturity or future-period stability. `IDpol` is a join key, not time; the severity dictionary's occurrence-date wording conflicts with its linking role. |
 | Predictor availability | The dictionary defines recorded features, but supplies no as-of history or quotation-time extraction evidence. | Availability at quotation and absence of information leakage require separate verification. |
