@@ -9,11 +9,11 @@ Legend: ☐ pending · ◐ in progress · ☑ done
 
 ## Current focus
 
-- **WP5 ☑ — ergonomics** completed locally 2026-10-23; PR delivery pending.
+- **WP5 ☑ — ergonomics** completed 2026-10-23; [PR #8](https://github.com/ThomasBury/azoic/pull/8) is open.
 - **Branch:** `feat/wp5-ergonomics`. Scope: in-memory experiment/tuning frames,
   predictor-only CLI profiling, per-model preprocessing, and four small polish fixes.
-- **Next:** commit/push the dedicated branch and open one focused WP5 PR.
-  No next implementation milestone or release is selected.
+- **Next:** review PR #8 and its CI results. No next implementation milestone
+  or release is selected; merge requires a separate request.
 - Earlier WP findings and any patch release are outside this milestone.
 
 ## WP5 — ergonomics ☑ — 2026-10-23
@@ -81,6 +81,15 @@ Remaining implementation/blockers: none. Delivery: commit/push this dedicated
 branch and open a WP5 PR against main after WP4 PR #7. Stop after handoff;
 do not merge, start another WP, or publish a patch release automatically.
 Full real-data Quarto rendering and installed-distribution builds were not run.
+
+### WP5 delivery checkpoint
+
+Implementation commit `b2afca5` is pushed on `feat/wp5-ergonomics`.
+[PR #8](https://github.com/ThomasBury/azoic/pull/8) targets main after WP4 PR #7;
+its description links this milestone record and includes acceptance/limitations.
+The initial [PR CI run](https://github.com/ThomasBury/azoic/actions/runs/39909974711)
+was in progress at handoff. This documentation-only follow-up records delivery;
+the tested implementation is unchanged. No merge or publication performed.
 
 ## Historical release focus — 2026-10-17
 
