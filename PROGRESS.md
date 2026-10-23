@@ -12,11 +12,11 @@ Legend: ☐ pending · ◐ in progress · ☑ done
 - **WP5 ☑ — ergonomics** completed 2026-10-23; [PR #8](https://github.com/ThomasBury/azoic/pull/8) is open.
 - **Branch:** `feat/wp5-ergonomics`. Scope: in-memory experiment/tuning frames,
   predictor-only CLI profiling, per-model preprocessing, and four small polish fixes.
-- **Next:** review PR #8 and its CI results. No next implementation milestone
-  or release is selected; merge requires a separate request.
+- **Next:** user review of PR #8. Codex re-review is clear and code CI passed;
+  no next implementation milestone or release is selected. Merge requires a request.
 
-- **Review follow-up:** both component-flag findings are fixed and locally green;
-  request Codex re-review and wait for PR CI before declaring the PR ready.
+- **Review follow-up ☑:** both component-flag findings are fixed; all threads
+  resolved, Codex re-review clear, and CI green on the reviewed implementation.
 - Earlier WP findings and any patch release are outside this milestone.
 
 ## WP5 — ergonomics ☑ — 2026-10-23
@@ -111,6 +111,18 @@ strict-target failures**, in **228.74 s**. Strict `just docs-build` passed in
 flag and omit both component flags, including JSON/YAML round-trips; effective
 params and real MLflow runs agree. Next: push this fix, respond to both findings,
 and wait for Codex re-review plus the new CI run. No merge is authorized.
+
+### WP5 review clearance
+
+Fix commit `ca1c467aeb1fdc76bf887aab909a12565c987887` is pushed. Replied to and
+resolved both review threads. The manually requested
+[Codex re-review](https://github.com/ThomasBury/azoic/pull/8#issuecomment-6369392062)
+completed on that commit with **no findings and no unresolved findings**.
+[PR CI](https://github.com/ThomasBury/azoic/actions/runs/39984739341) passed on
+the same commit. PR #8 now has a common-English title and description explaining
+the final behavior, review correction, checks, and local rendering limitation.
+This completion record changes documentation only; no implementation changed
+after the clear review. Ready for user review; merge/publication are not performed.
 
 ## Historical release focus — 2026-10-17
 
