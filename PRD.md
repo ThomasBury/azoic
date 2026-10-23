@@ -703,6 +703,37 @@ exact record/reported-count totals, exposure and monetary conservation, retained
 targets and final sampling passed. Execution evidence and unresolved source
 questions are recorded in `PROGRESS.md`; professional review remains pending.
 
+### M48 — selection and target sensitivity (completed 2026-10-23)
+
+Extend the portfolio chapter's pinned-source evidence study without changing
+loader rules, public interfaces, architecture or dependencies. Compare policies
+passing all rules except count/amount consistency with final retained policies,
+before sampling: counts, exposure, reported frequency and severity-record coverage.
+Describe absent severity shares by Area and fixed driver-age bands 18–24, 25–64,
+65–100. Compare individual EUR 50k, 100k, 200k and uncapped recorded costs on the
+same retained IDs. Show explicitly hypothetical missing-cost means at 0.5, 1 and
+2 times retained mean capped severity-record cost, using the wider cohort exposure;
+never treat those assumptions as recovered observations or change model inputs.
+Correct the ingestion/preprocessing explanation and distinguish observed capped
+rates from ultimate pricing costs. Professional review and predictive comparisons
+remain pending; unidentified missing-cost effects do not block completion.
+
+Acceptance: reproduce cohort counts and aggregate rates from checksummed original
+records; exposure residuals within 1e-8 policy-years and monetary differences within
+EUR 0.01; focused network-free cohort/stratum/scenario checks reusing reconciliation;
+`just check`, strict docs and isolated portfolio rendering. Stop after M48.
+
+Local acceptance passed: **1256 tests**, 4 skips and 2 expected failures, Ruff/Ty,
+strict docs and final isolated rendering with source MD5/snapshot checks. Independent
+reconstruction confirmed both cohorts, nine strata, four caps and three scenarios.
+The wider cohort has 676,789 policies versus 667,673 retained; 9,116 absent-record
+policies carry 9,657 reported claims. Fixed-ID recorded rates span EUR 131.35/year
+(50k) to EUR 169.69/year (uncapped); hypothetical wider-cohort rates span EUR
+163.02–238.66/year under the specified assumptions. Actual missing-cost effects
+remain unidentified. HTML contents were checked; visual layout was unavailable
+because local-file browser navigation is blocked. See `PROGRESS.md` for evidence
+and the completed milestone handoff; no predictive superiority is claimed.
+
 ## 7. Later iterations (optional, none blocking)
 
 - **v0.2** — optuna objective (`deviance + calibration penalty`) **(M7 -- done)**,

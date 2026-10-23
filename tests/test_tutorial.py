@@ -124,7 +124,7 @@ def test_portfolio_audit_reconciles_first_failures_and_cache_rebuilds(tmp_path):
     _source_reconciler()(frequency, severity, cleaned, audit, result, 100, 1_000_000, 42)
 
 
-def _source_reconciler():
+def _source_reconciler(name="reconcile_sources"):
     chapter = (Path(__file__).parents[1] / "examples" / "01-portfolio.qmd").read_text()
     cell = next(
         cell
@@ -133,7 +133,7 @@ def _source_reconciler():
     )
     namespace = {"pd": pd, "np": np}
     exec(cell, namespace)
-    return namespace["reconcile_sources"]
+    return namespace[name]
 
 
 @pytest.fixture
@@ -182,7 +182,7 @@ def test_source_reconciliation_covers_claims_exclusions_and_sampling(
     sample = loader["load_portfolio"]()
     cleaned = pd.read_parquet(loader["JOINED_PATH"])
     audit = pd.read_csv(loader["AUDIT_PATH"])
-    claims, coverage, ledger, sampling, discrepancies = _source_reconciler()(
+    claims, coverage, ledger, sampling, discrepancies, eligible = _source_reconciler()(
         frequency, severity, cleaned, audit, sample, 100_000, sample_size, 42
     )
     assert cleaned.set_index("policy_id")["claim_amount"].to_dict() == {
@@ -207,6 +207,102 @@ def test_source_reconciliation_covers_claims_exclusions_and_sampling(
     assert removed.loc["Exposure outside (0, 1]", "removed_exposure"] == 1.5
     assert removed.loc["Exposure outside (0, 1]", "removed_exposure_share_pct"] == 100 * 1.5 / 7.25
     assert sampling["Policies"].tolist() == [5, max(5 - sample_size, 0), min(5, sample_size)]
+    assert set(eligible["policy_id"]) == {1, 2, 3, 4, 6, 7, 8}
+    pd.testing.assert_frame_equal(pd.read_parquet(loader["JOINED_PATH"]), cleaned)
+    pd.testing.assert_frame_equal(pd.read_csv(loader["AUDIT_PATH"]), audit)
+
+
+@pytest.mark.parametrize("shuffle", [False, True])
+@pytest.mark.parametrize("absent_records", [False, True])
+def test_selection_sensitivity_denominators_caps_and_scenarios(
+    tmp_path, source_tables, shuffle, absent_records
+):
+    frequency, severity = source_tables
+    frequency = frequency.assign(
+        DrivAge=[18, 24, 25, 64, 65, 65, 100, 25],
+        Area=["A", None, "B", "D", "Z", "C", "C", "C"],
+    )
+    if not absent_records:
+        severity = pd.concat([severity, pd.DataFrame({"IDpol": [2], "ClaimAmount": [20]})])
+    if shuffle:
+        frequency = frequency.sample(frac=1, random_state=7)
+        severity = severity.sample(frac=1, random_state=8)
+    loader = _portfolio_loader(
+        tmp_path,
+        lambda *, data_id, **kwargs: SimpleNamespace(
+            frame={41214: frequency, 41215: severity}[data_id]
+        ),
+    )
+    loader["SAMPLE_SIZE"] = 1
+    sample = loader["load_portfolio"]()
+    cleaned = pd.read_parquet(loader["JOINED_PATH"])
+    audit = pd.read_csv(loader["AUDIT_PATH"])
+    *_, eligible = _source_reconciler()(frequency, severity, cleaned, audit, sample, 100_000, 1, 42)
+    before = eligible.copy(deep=True)
+    cohorts, strata, caps, scenarios = _source_reconciler("selection_sensitivity")(
+        eligible, severity, cleaned["policy_id"]
+    )
+    wider = cohorts.loc["All other rules passed"]
+    retained = cohorts.loc["Final retained"]
+    assert wider["Policies"] == 7
+    assert wider["Exposure"] == 5.75
+    assert wider["Reported claims"] == 7
+    assert wider["Frequency"] == pytest.approx(7 / 5.75)
+    assert cohorts.loc["Other inconsistent outcomes; excluded", "Policies"] == 1
+    assert cohorts.loc["Other inconsistent outcomes; excluded", "Severity records"] == 1
+    assert wider["Missing policies"] == int(absent_records)
+    assert wider["Coverage (%)"] == pytest.approx(100 * (1 - int(absent_records) / 5))
+    assert retained["Policies"] == 5 + int(not absent_records)
+    assert retained["Exposure"] == 3.75 + int(not absent_records)
+    assert retained["Frequency"] == pytest.approx(
+        (5 + int(not absent_records)) / (3.75 + int(not absent_records))
+    )
+    assert strata.loc["Driver age", "Policies"].to_dict() == {"18–24": 2, "25–64": 3, "65–100": 2}
+    assert "Z" not in strata.loc["Area"].index
+    assert strata.loc[("Area", "Missing"), "Missing policies (%)"] == 100 * int(absent_records)
+    assert strata.loc[("Driver age", "18–24"), "Missing claims (%)"] == pytest.approx(
+        100 * int(absent_records) / 3
+    )
+    assert strata.loc[("Driver age", "18–24"), "Missing exposure (%)"] == pytest.approx(
+        100 * int(absent_records) / 1.5
+    )
+    assert np.isnan(strata.loc[("Area", "D"), "Missing policies (%)"])
+    for dimension in ["Area", "Driver age"]:
+        for column in ["Policies", "Exposure", "Reported claims", "Missing reported claims"]:
+            assert strata.loc[dimension, column].sum() == wider[column]
+    expected_amounts = np.array([100_080, 160_080, 210_080, 210_080])
+    expected_amounts += 20 * int(not absent_records)
+    np.testing.assert_allclose(caps["Recorded EUR"], expected_amounts, rtol=0, atol=0.01)
+    np.testing.assert_allclose(caps["Exposure"], retained["Exposure"], rtol=0, atol=1e-8)
+    assert caps["Policies"].eq(retained["Policies"]).all()
+    assert caps["Records above cap"].tolist() == [2, 1, 0, 0]
+    np.testing.assert_allclose(
+        caps["Recorded EUR/year"], expected_amounts / retained["Exposure"], rtol=0, atol=0.01
+    )
+    mean_cost = 32_016 if absent_records else 160_100 / 6
+    expected_added = np.array([0.5, 1, 2]) * mean_cost * int(absent_records)
+    np.testing.assert_allclose(
+        scenarios["Assumed EUR/missing claim"],
+        np.array([0.5, 1, 2]) * mean_cost,
+        rtol=0,
+        atol=0.01,
+    )
+    np.testing.assert_allclose(
+        scenarios["Added hypothetical EUR"], expected_added, rtol=0, atol=0.01
+    )
+    np.testing.assert_allclose(
+        scenarios["Hypothetical total EUR"],
+        wider["Recorded EUR"] + expected_added,
+        rtol=0,
+        atol=0.01,
+    )
+    np.testing.assert_allclose(
+        scenarios["Hypothetical EUR/year"],
+        (wider["Recorded EUR"] + expected_added) / 5.75,
+        rtol=0,
+        atol=0.01,
+    )
+    pd.testing.assert_frame_equal(eligible, before)
     pd.testing.assert_frame_equal(pd.read_parquet(loader["JOINED_PATH"]), cleaned)
     pd.testing.assert_frame_equal(pd.read_csv(loader["AUDIT_PATH"]), audit)
 

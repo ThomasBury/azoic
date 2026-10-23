@@ -9,6 +9,23 @@ Legend: ☐ pending · ◐ in progress · ☑ done
 
 ## Current focus
 
+- **M48 ☑ — selection and target sensitivity** completed 2026-10-23. The portfolio
+  evidence study reproduces cohorts, Area/fixed-age missing severity shares,
+  fixed-ID cap comparisons and explicitly hypothetical missing costs.
+- **Next:** user review of [PR #10](https://github.com/ThomasBury/azoic/pull/10).
+  Codex reviewed the M48 implementation with no findings; the delivery checkpoint
+  below records the reviewed commit. Verify the final branch head and CI before
+  handoff; the PR holds their live status.
+  `just check`, strict docs and final isolated rendering passed. Loader rules,
+  public interfaces, architecture and dependencies are unchanged.
+- Professional review and predictive comparisons remain pending. No subsequent
+  milestone, merge or release is started by this work.
+- **Active branch:** `docs/m48-selection-target-sensitivity`, based on `main`.
+  The implementation session began with a clean checkout. The
+  previous focus below is historical, including its then-current branch/handoff.
+
+Previous focus and delivery evidence:
+
 - **M47 ☑ — source-to-target evidence** completed 2026-10-23.
 - Independent source checksums, claim/policy ledgers, retained targets and final
   sampling passed; the chapter defines the observed capped rate and its limits.
@@ -23,6 +40,152 @@ Legend: ☐ pending · ◐ in progress · ☑ done
 - **Branch:** `feat/m46-lightgbm-preprocessing`, based on the completed WP5 branch.
 - Previous delivery: WP5 [PR #8](https://github.com/ThomasBury/azoic/pull/8)
   merged into `main` at `a99df81`; this branch was fast-forwarded to that base.
+
+## M48 — Selection and target sensitivity ☑ — 2026-10-23
+
+Kickoff: read Current focus, M47 completion and delivery checkpoints, PRD scope,
+the portfolio reconciliation, unchanged shared loader and its test callers. The
+checkout is clean on `main`; pinned raw sources and derived caches are available.
+Scope reaches the portfolio chapter, focused tutorial checks, AGENTS/PRD and this
+tracker only. Reuse independent eligibility accounting, before sampling. No
+cleaning changes, predictive comparison or imputation enters model inputs.
+
+Acceptance: exact cohort/stratum counts; exposure residuals within 1e-8 policy-years
+and monetary calculations within EUR 0.01; EUR 50k/100k/200k/uncapped comparisons
+on identical retained IDs; missing-cost multipliers 0.5/1/2 clearly labelled as
+assumptions. Run network-free regressions, `just check`, `just docs-build` and an
+isolated portfolio render against checksummed original records. Record conclusions
+even where selection effects remain unidentified; keep professional review pending.
+
+### M48 checkpoint — implementation and source reproduction
+
+Extended independent reconciliation to expose the all-other-rules cohort, then
+added chapter-local cohort/stratum totals, fixed-ID claim-cap comparisons and
+explicit missing-cost scenarios. No loader, cache format, model input, dependency
+or public API changes. Corrected ingestion prose to say training-only tree
+preprocessing learns from outcomes. Added snapshot assertions and quantitative
+conclusions while keeping professional review and predictive comparisons pending.
+
+Focused network-free run: **18 passed**, including 4 new parameterized sensitivity
+cases and 14 existing reconciliation/cache cases. Checks cover age-band boundaries,
+missing Area, zero-valued records versus absent records, zero-positive denominators,
+no absent records, reordered inputs, full-cohort rather than sample denominators,
+per-record caps and scenario arithmetic; original cache contents remain unchanged.
+
+All chapter cells executed against cached sources; both advertised MD5s passed.
+Reproduced 676,789 otherwise eligible policies, 357,136.1054629838 policy-years and
+36,048 reported claims, versus 667,673 retained policies, 352,530.64803128975
+policy-years and 26,391 reported claims. The difference is 9,116 policies with
+absent records, 9,657 reported claims and 4,605.457431693989 policy-years. Wider
+positive-count policy record coverage is 73.195331%; reported frequencies are
+0.10093630817099304 versus 0.07486157628387986.
+
+Fixed-ID capped amounts: EUR 46,303,959.85 / 49,214,268.67 / 52,112,499.80 /
+59,821,289.12 for 50k / 100k / 200k / uncapped. Mean retained capped record cost
+is EUR 1,864.8832387267905. Assumed 0.5/1/2 multipliers yield wider-cohort rates
+EUR 163.01588245388575 / 188.22920751526243 / 238.65585763801573 per policy-year.
+These are hypothetical; actual absent costs and ultimate pricing costs remain
+unidentified. Tables are inspectable at `/tmp/azoic-m48-*.csv`.
+
+First isolated portfolio render passed all 16 cells. Strict `just docs-build`
+passed. Remaining: complete `just check`, rerender final snapshot/prose additions,
+inspect rendered study tables/equations and final diff, then record completion.
+
+### M48 checkpoint — independent calculation and rendered-content QA
+
+An independent pandas join/groupby cross-check of the original rows passed for
+both cohorts, all nine Area/age strata, all four claim caps and all three scenarios,
+including exact counts, exposure within 1e-8 policy-years and money within EUR 0.01.
+Final isolated rendering passed all 16 cells after the snapshot/prose additions.
+HTML inspection verified all 19 tables (including seven new study outputs), the
+equations, expected numerical conclusions and no cell errors. Browser policy
+blocked opening the local HTML file, so visual layout remains unverified; no
+alternate browser route was attempted. Strict docs passed. Full suite is still
+running; Ruff and Ty passed.
+
+Quarto automatically appended a redundant notebook-ignore pattern. Automatic
+approval review initially rejected its removal, citing generated-artifact rules.
+A temporary Git repository proved the original tracked `**/*.quarto_ipynb*` alone
+ignores notebooks and support variants. Retrying the narrow cleanup succeeded;
+the original ignore file is unchanged and generated outputs remain ignored.
+
+### M48 completion checkpoint — 2026-10-23
+
+Acceptance complete:
+
+- `just check` exited **0**: Ruff and Ty passed; **1256 passed, 4 skipped,
+  2 expected failures** in 199.11 seconds. All 29 tutorial checks passed; automated
+  checks use synthetic sources and never download real data.
+- `just docs-build` exited **0**, strict, with no issues.
+- Final isolated command
+  `QUARTO_PYTHON=/home/bsatom/Documents/azoic/.venv/bin/python uv run quarto render examples/01-portfolio.qmd`
+  exited **0**, executing all 16 cells against cached public original records.
+  Both pinned version-1 uncompressed MD5s, existing reconciliation, new cohort and
+  stratum assertions, fixed-ID cap totals and scenario totals passed.
+- Independent pandas reconstruction confirmed both cohorts, all nine strata,
+  four caps and three scenarios at the stated count/exposure/money tolerances.
+- Final HTML content inspection passed: 19 tables, including seven new outputs,
+  equations and numerical conclusions; no cell errors. Visual layout remains
+  unverified because browser policy blocks local-file navigation.
+- `git diff --check` passed. Only AGENTS, PRD, this tracker, the portfolio chapter
+  and tutorial tests changed. Generated output and raw sources remain ignored;
+  Quarto's redundant ignore-file addition was removed without changing protections.
+
+Conclusion: 26.805% of otherwise eligible positive-count policies lack severity
+records, with unequal Area/age shares; they account for 1.290% of eligible exposure.
+The observed retained EUR 100k target is EUR 139.60/year; uncapped recorded costs
+give EUR 169.69/year on identical IDs (+21.553%). Hypothetical absent-claim costs
+give wider-cohort rates EUR 163.02 / 188.23 / 238.66/year at 0.5/1/2 times retained
+mean capped record cost. Actual selection effects on cost and ultimate pricing
+costs remain unidentified. No predictive superiority is claimed.
+
+Logs: `/tmp/azoic-m48-check.log`, `/tmp/azoic-m48-docs.log`,
+`/tmp/azoic-m48-render.log`, `/tmp/azoic-m48-render-final.log`.
+Supporting full-precision tables: `/tmp/azoic-m48-cohorts.csv`,
+`/tmp/azoic-m48-strata.csv`, `/tmp/azoic-m48-cap_sensitivity.csv`,
+`/tmp/azoic-m48-missing_cost_scenarios.csv`.
+
+Handoff: M48 is complete and uncommitted on `main`. Exact next action: user review
+of this source diff and its evidence/limitations. Professional actuarial review,
+predictive comparisons and source-definition questions from M47 remain pending.
+No additional milestone, commit, PR, push or release was started.
+
+### M48 Git delivery checkpoint — 2026-10-23
+
+User authorized staging, a Conventional Commit, a plain-English PR and iteration
+on Codex bot feedback. Refreshed `origin/main`; it matches the local base
+`af5fb35`. Created `docs/m48-selection-target-sensitivity` and reviewed the complete
+study/test diff and its callers. Scope is the five M48 source/tracking files only.
+
+Existing acceptance remains applicable: Ruff/Ty and 1256 tests passed, strict docs
+passed, final isolated source-checksummed rendering passed, and independent
+calculations and rendered HTML contents passed. No implementation changed since
+those checks. Stage and inspect the diff, commit and push, open the PR, then wait
+for Codex review and CI. Address findings before handing off; do not merge.
+
+### M48 PR review checkpoint — 2026-10-23
+
+Created [PR #10](https://github.com/ThomasBury/azoic/pull/10) against `main` with
+the plain-English title `docs: show how missing claim costs and caps affect
+tutorial targets`, a description of the population/target changes, numerical
+evidence, verification and unresolved limits. Implementation commit:
+`0b00763` — `docs: show how missing claim costs and caps affect tutorial targets`.
+Staged checks passed and the pushed working tree was clean.
+
+[Codex review](https://github.com/ThomasBury/azoic/pull/10#issuecomment-6373734467)
+completed on `0b00763ebddb837681154a791f31822687985640` with
+`has_any_findings=false` and `has_unresolved_findings=false`. No review threads
+or requested changes were present; no implementation follow-up was needed.
+[CI run 40016844291](https://github.com/ThomasBury/azoic/actions/runs/40016844291)
+was still running when this checkpoint was written. Local acceptance remains
+green: 1256 tests, Ruff/Ty, strict docs and the isolated checksummed-source render.
+
+This documentation-only follow-up records delivery evidence. No runtime, test,
+tutorial calculation or dependency changed after the clear implementation review.
+Exact next action: push this record, request Codex review of the final branch head,
+and wait for that review and its CI result before notifying the user that the PR
+is ready. The PR holds the latest review/CI status. No merge, release, professional
+endorsement, predictive comparison or next milestone is authorized by this delivery.
 
 ## M47 — Source-to-target evidence ☑ — 2026-10-23
 
