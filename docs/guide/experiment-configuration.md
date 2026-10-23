@@ -89,6 +89,27 @@ names, and per-model metrics, overall calibration table, and protected-group
 calibration tables when declared. Fitted estimators are returned only when
 requested.
 
+For a notebook portfolio already held in memory, pass
+`run_experiment(config, df=portfolio, return_estimators=True)`;
+`tune_experiment(config, df=portfolio)` accepts the same input. No Parquet read
+occurs. Keep `data_path` in the configuration as metadata; the fingerprint
+identifies the frame actually used.
+
+When an experiment declares `preprocessing`, each model uses it by default.
+Set `preprocess: false` on the raw GBM to compare it with a binned/grouped GLM
+on one split:
+
+```yaml
+models:
+  binned-glm:
+    kind: glm
+    params: {family: tweedie, link: log, tweedie_power: 1.5}
+  raw-gbm:
+    kind: gbm
+    preprocess: false
+    params: {objective: tweedie, tweedie_variance_power: 1.5}
+```
+
 ## Use task-oriented CLI commands
 
 ```bash

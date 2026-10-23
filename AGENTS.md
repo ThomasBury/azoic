@@ -24,8 +24,8 @@ an in-progress milestone first; otherwise use the explicit delivery order, not
 the lowest milestone number or an older handoff. The focused documentation
 revision M43–M44 is complete, following M40–M42. M45 preprocessing fixes are
 complete and merged in PR #1; M15 published Azoic 0.5.0 on PyPI and GitHub
-on 2026-10-17. No next milestone is selected; do not start optional work
-automatically.
+on 2026-10-17. WP5 ergonomics passed local acceptance on 2026-10-23; see Current
+focus for its PR delivery. Do not start another WP or release automatically.
 Current focus is the authority for the active/next milestone. Read
 `PREPROCESSING_FIX_PLAN.md` for the verified bugs, regression scope, PR delivery,
 and release reconciliation. The scope is mirrored in `PRD.md` section 6.

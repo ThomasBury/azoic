@@ -9,6 +9,7 @@ metrics, and an artifact file.
 
 from __future__ import annotations
 
+import ast
 from pathlib import Path
 
 import numpy as np
@@ -17,11 +18,18 @@ import pytest
 mlflow = pytest.importorskip("mlflow")  # skip the whole module if mlops extra absent
 
 from azoic.mlops import _flatten_params, log_run  # noqa: E402
-from azoic.workflow import ExperimentConfig, ModelSpec, run_experiment  # noqa: E402
+from azoic.workflow import (  # noqa: E402
+    ExperimentConfig,
+    ModelSpec,
+    PreprocessingSpec,
+    run_experiment,
+)
 from tests.conftest import make_synthetic_portfolio  # noqa: E402
 
 
-def _run(tmp_path: Path, *, models: dict[str, ModelSpec] | None = None) -> tuple:
+def _run(
+    tmp_path: Path, *, models: dict[str, ModelSpec] | None = None, preprocessing=None
+) -> tuple:
     p = tmp_path / "portfolio.parquet"
     make_synthetic_portfolio(n=2000, seed=42).to_parquet(p)
     if models is None:
@@ -56,6 +64,7 @@ def _run(tmp_path: Path, *, models: dict[str, ModelSpec] | None = None) -> tuple
         test_size=0.2,
         random_state=42,
         models=models,
+        preprocessing=preprocessing,
     )
     return cfg, run_experiment(cfg)
 
@@ -96,6 +105,42 @@ def test_log_run_returns_run_id_and_records_experiment_params(tmp_path: Path) ->
     assert int(data.params["experiment.n_test"]) == run.n_test
     assert data.params["experiment.data_fingerprint"] == run.data_fingerprint
     assert "experiment.feature_names" in data.params
+
+
+def test_log_run_records_preprocessing_params(tmp_path):
+    _, run = _run(
+        tmp_path,
+        preprocessing=PreprocessingSpec(
+            binner={"cols": ["driver_age"], "max_bins": 3},
+            grouper={"cols": ["region"], "max_groups": 2},
+        ),
+    )
+    run_id = log_run(run, tracking_uri=_tracking_uri(tmp_path), experiment_name="azoic-tests")
+    params = _data(run_id).params
+    assert params["experiment.preprocessing.binner.max_bins"] == "3"
+    assert params["experiment.preprocessing.binner.cols"] == "['driver_age']"
+    assert params["experiment.preprocessing.grouper.max_groups"] == "2"
+
+
+@pytest.mark.parametrize("preprocess", [False, True])
+def test_log_run_records_only_parent_preprocessing_for_freq_sev(tmp_path, preprocess):
+    _, run = _run(
+        tmp_path,
+        models={
+            "fsm": ModelSpec(
+                kind="frequency_severity",
+                preprocess=preprocess,
+                frequency={"kind": "glm", "params": {"family": "poisson"}},
+                severity={"kind": "glm", "params": {"family": "gamma"}},
+            )
+        },
+        preprocessing=PreprocessingSpec(binner={"cols": ["driver_age"], "max_bins": 3}),
+    )
+    run_id = log_run(run, tracking_uri=_tracking_uri(tmp_path), experiment_name="azoic-tests")
+    params = _data(run_id).params
+    assert params["fsm.preprocess"] == str(preprocess)
+    for role in ("frequency", "severity"):
+        assert "preprocess" not in ast.literal_eval(params[f"fsm.params.{role}"])
 
 
 def test_log_run_records_per_model_params_and_metrics(tmp_path: Path) -> None:

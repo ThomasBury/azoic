@@ -56,7 +56,7 @@ def profile(
         time_col=time_col,
     )
     df = load_data(data, spec=spec)
-    prof = profile_features(df)
+    prof = profile_features(df.drop(columns=spec.required_columns()))
     screened = screen_features(prof)
 
     if out is not None:

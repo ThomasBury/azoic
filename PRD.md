@@ -73,6 +73,20 @@ plus a shared `_shared.qmd` include) and is linked rather than restyled.
 
 ## 4. Model API conventions
 
+### Experiment input and per-model preprocessing
+
+`run_experiment(config, *, df=None)` and `tune_experiment(config, *, df=None)`
+accept an in-memory pandas portfolio. When `df` is omitted, load
+`config.data_path`; the path remains required configuration metadata. Both routes
+validate the portfolio and fingerprint the actual frame, preserving its row order
+for recorded split positions without mutating the caller's data.
+
+`ModelSpec.preprocess: bool = True` applies the experiment's configured binner
+and grouper. Set `preprocess=False` on a top-level model to use raw features on
+the same input/split, including during tuning. A frequency-severity model's
+components share its top-level preprocessing decision. Explicit component flags
+are rejected and omitted from serialized configs and effective component params.
+
 ### Special columns travel inside X (not as fit kwargs)
 sklearn's `GridSearchCV`/`cross_val_score` will not forward
 `fit(X, y, exposure=...)`. So:
@@ -128,6 +142,14 @@ declares each used param explicitly.
 ## 6. Milestones
 
 Each is independently shippable. Done-when = acceptance check.
+
+- **WP5 — ergonomics (P2) — completed 2026-10-23**: in-memory experiment/tuning input, predictor-only
+  CLI profiling, per-model preprocessing, flattened MLflow preprocessing params,
+  integer report labels, concise bin labels, and lazy public package exports.
+  Tutorial compares a binned/grouped GLM with a raw GBM in one run. Existing
+  `run_experiment(df=)`/CLI export reuse is retained and regression-covered.
+  *Done when regressions, synthetic tutorial chapters, `just check`, and strict
+  `just docs-build` pass. Earlier WP fixes and release publication are separate.*
 
 - **M0 — scaffold**: uv project, src layout, ruff, pytest, pre-commit,
   AGENTS/PRD/PROGRESS, first green smoke test. *Done when `uv run pytest` and

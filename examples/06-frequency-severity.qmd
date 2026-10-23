@@ -21,12 +21,11 @@ errors can reinforce or offset each other.
 #| include: false
 
 portfolio = load_portfolio()
-glm_config, gbm_config = make_experiment_configs(str(PORTFOLIO_PATH))
-glm_run = run_experiment(glm_config)
-gbm_run = run_experiment(gbm_config)
-runs = [glm_run, gbm_run]
-train_frame = portfolio.iloc[list(glm_run.train_indices)].copy()
-test_frame = portfolio.iloc[list(glm_run.test_indices)].copy()
+experiment_config = make_experiment_config(str(PORTFOLIO_PATH))
+main_run = run_experiment(experiment_config, df=portfolio)
+runs = [main_run]
+train_frame = portfolio.iloc[list(main_run.train_indices)].copy()
+test_frame = portfolio.iloc[list(main_run.test_indices)].copy()
 y_train = train_frame["claim_amount"].to_numpy()
 w_train = train_frame["exposure"].to_numpy()
 y_test = test_frame["claim_amount"].to_numpy()
@@ -41,7 +40,7 @@ positive-claim training filter remains inside the composite estimator; no rows a
 removed from the frequency training population.
 
 ```{python}
-fs_glm_config = glm_config.model_copy(update={
+fs_glm_config = experiment_config.model_copy(update={
     "name": "fremtpl2-frequency-severity-glm",
     "models": {
         "frequency-severity-glm": ModelSpec(
@@ -57,11 +56,12 @@ fs_glm_config = glm_config.model_copy(update={
         ),
     },
 })
-fs_gbm_config = gbm_config.model_copy(update={
+fs_gbm_config = experiment_config.model_copy(update={
     "name": "fremtpl2-frequency-severity-gbm",
     "models": {
         "frequency-severity-gbm": ModelSpec(
             kind="frequency_severity",
+            preprocess=False,
             frequency=ModelSpec(
                 kind="gbm",
                 params={
@@ -93,9 +93,9 @@ appendix_runs = []
 fs_estimators = {}
 for config in [fs_glm_config, fs_gbm_config]:
     run, fitted = run_experiment(config, return_estimators=True)
-    assert run.data_fingerprint == glm_run.data_fingerprint
-    assert run.train_indices == glm_run.train_indices
-    assert run.test_indices == glm_run.test_indices
+    assert run.data_fingerprint == main_run.data_fingerprint
+    assert run.train_indices == main_run.train_indices
+    assert run.test_indices == main_run.test_indices
     appendix_runs.append(run)
     fs_estimators.update(fitted)
 ```

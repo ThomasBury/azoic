@@ -98,8 +98,11 @@ def test_cli_profile_writes_csv(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output
     assert out.exists()
     table = pd.read_csv(out)
-    # Every dataframe column was profiled.
-    assert set(table["column"]) == set(make_synthetic_portfolio(n=10, seed=1).columns)
+    assert set(table["column"]) == set(make_synthetic_portfolio(n=10, seed=1).columns) - {
+        "claim_amount",
+        "exposure",
+        "claim_count",
+    }
     assert "action" in table.columns and "reason" in table.columns
 
 
@@ -121,7 +124,9 @@ def test_cli_profile_prints_plain_table_to_stdout(tmp_path: Path) -> None:
     )
     assert result.exit_code == 0, result.output
     assert "column" in result.output
-    assert "claim_amount" in result.output
+    assert "claim_amount" not in result.output
+    assert "exposure" not in result.output
+    assert "claim_count" not in result.output
     assert "action" in result.output
 
 
@@ -350,6 +355,7 @@ def test_cli_export_tariff_uses_stored_split_and_fits_only_requested_model(
         return actual_distill(teacher, X_fit, X_valid)
 
     monkeypatch.setattr(cli, "load_data", record_load)
+    monkeypatch.setattr(workflow, "load_data", record_load)
     monkeypatch.setattr(workflow, "_data_fingerprint", record_fp)
     monkeypatch.setattr(RiskGLM, "fit", record_glm_fit)
     monkeypatch.setattr(RiskGBM, "fit", record_gbm_fit)

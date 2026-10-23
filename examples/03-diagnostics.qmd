@@ -23,12 +23,10 @@ Azoic metrics on these same held-out rows.
 #| code-fold: true
 #| code-summary: "Refit this chapter's candidates"
 portfolio = load_portfolio()
-glm_config, gbm_config = make_experiment_configs(str(PORTFOLIO_PATH))
-glm_run, glm_estimators = run_experiment(glm_config, return_estimators=True)
-gbm_run, gbm_estimators = run_experiment(gbm_config, return_estimators=True)
-estimators = {**glm_estimators, **gbm_estimators}
-train_frame = portfolio.iloc[list(glm_run.train_indices)].copy()
-test_frame = portfolio.iloc[list(glm_run.test_indices)].copy()
+experiment_config = make_experiment_config(str(PORTFOLIO_PATH))
+main_run, estimators = run_experiment(experiment_config, df=portfolio, return_estimators=True)
+train_frame = portfolio.iloc[list(main_run.train_indices)].copy()
+test_frame = portfolio.iloc[list(main_run.test_indices)].copy()
 y_train = train_frame["claim_amount"].to_numpy()
 w_train = train_frame["exposure"].to_numpy()
 y_test = test_frame["claim_amount"].to_numpy()
@@ -108,7 +106,7 @@ for name, estimator in estimators.items():
     assert np.isfinite(prediction).all() and (prediction > 0).all()
     raw_test_predictions[name] = prediction
     raw_metrics = holdout_diagnostics(y_test, w_test, prediction)
-    result = (glm_run if name in glm_run.models else gbm_run).models[name]
+    result = main_run.models[name]
     np.testing.assert_allclose(
         list(raw_metrics.values()), [result.metrics[key] for key in raw_metrics]
     )
@@ -286,7 +284,7 @@ Changing the reporting groups does not change any policy's prediction.
 ```{python}
 #| fig-alt: "Observed and raw GLM rates within training-fitted rating groups reveal segment gaps that overall O/P can conceal."
 #| code-fold: true
-glm_pipeline = glm_estimators["direct-tweedie-glm"]
+glm_pipeline = estimators["direct-tweedie-glm"]
 fitted_preprocessing = glm_pipeline[:-1]
 special_predict_columns = [*FEATURES, "exposure", "claim_amount", "claim_count"]
 test_grouped = fitted_preprocessing.transform(test_frame[special_predict_columns])

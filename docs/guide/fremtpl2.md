@@ -40,7 +40,7 @@ diagnostic derivations, and all subsequent chapters are optional recipes.
 1. **Index** — what the series builds, conventions, and setup.
 2. **Portfolio ingestion and review** — pinned OpenML fetch, deterministic
    cleaning, portfolio summary, profiling, and screening.
-3. **Two reproducible experiments** — direct Tweedie GLM baseline, raw
+3. **Two models in one reproducible experiment** — direct Tweedie GLM baseline, raw
    LightGBM benchmark, representative fitted bins/groups, and optional full
    inspection with exact partitions.
 4. **Held-out diagnostics** — frozen training recalibration, held-out

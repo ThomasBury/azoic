@@ -39,10 +39,9 @@ def _df_preview_md(df: pd.DataFrame, n: int = 12) -> str:
     head = "| " + " | ".join(cols) + " |"
     sep = "| " + " | ".join(["---"] * len(cols)) + " |"
     rows = [head, sep]
-    for _, row in df.head(n).iterrows():
+    for row in df.head(n).itertuples(index=False, name=None):
         cells = []
-        for c in cols:
-            v = row[c]
+        for v in row:
             if isinstance(v, float):
                 cells.append(_fmt(v, 4))
             else:

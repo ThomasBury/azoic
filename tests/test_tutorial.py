@@ -197,24 +197,24 @@ def reject_download(*args, **kwargs):
 sklearn.datasets.fetch_openml = reject_download
 """
     checks = """
-assert len(mlflow_run_ids) == 2
+assert len(mlflow_run_ids) == 1
 assert set(metrics["model"]) == {"direct-tweedie-glm", "tweedie-lightgbm"}
 assert {path.name for path in artifacts} == {
-    "model_card_tariff_structured.md", "model_card_raw_feature.md", "comparison_dashboard.html"
+    "model_card.md", "comparison_dashboard.html"
 }
 assert not list(ARTIFACT_DIR.glob("*.xlsx"))
 """
     if chapter_name == "02-experiments.qmd":
         checks = """
-canonical_run = run_experiment(make_experiment_configs(str(PORTFOLIO_PATH))[0])
-assert glm_run.train_indices == canonical_run.train_indices
-assert glm_run.test_indices == canonical_run.test_indices
-assert glm_config.name == "fremtpl2-tariff-structured"
-assert gbm_config.name == "fremtpl2-raw-feature"
+canonical_run = run_experiment(make_experiment_config(str(PORTFOLIO_PATH)))
+assert main_run.train_indices == canonical_run.train_indices
+assert main_run.test_indices == canonical_run.test_indices
+assert experiment_config.name == "fremtpl2-comparison"
 assert set(estimators) == {
     "direct-tweedie-glm", "tweedie-lightgbm"
 }
-assert (glm_config, gbm_config) == make_experiment_configs(str(PORTFOLIO_PATH))
+assert experiment_config == make_experiment_config(str(PORTFOLIO_PATH))
+assert not hasattr(estimators["tweedie-lightgbm"], "steps")
 """
     if chapter_name == "03-diagnostics.qmd":
         checks = """
@@ -234,10 +234,12 @@ assert len(axd) == 4
             """
 assert set(estimators) == {"direct-tweedie-glm", "tweedie-lightgbm"}
 assert set(teacher_estimators) == {"tweedie-lightgbm-tariff"}
-assert teacher_config.preprocessing == glm_config.preprocessing
-assert teacher_config.models["tweedie-lightgbm-tariff"] == gbm_config.models["tweedie-lightgbm"]
-assert teacher_run.train_indices == glm_run.train_indices
-assert teacher_run.test_indices == glm_run.test_indices
+assert teacher_config.preprocessing == experiment_config.preprocessing
+assert teacher_config.models["tweedie-lightgbm-tariff"].preprocess
+assert (teacher_config.models["tweedie-lightgbm-tariff"].params
+        == experiment_config.models["tweedie-lightgbm"].params)
+assert teacher_run.train_indices == main_run.train_indices
+assert teacher_run.test_indices == main_run.test_indices
 assert len(final_metrics) == 8
 assert direct_tariff_path.exists() and tariff_path.exists()
 assert worked_policy["policy_id"].iloc[0] == test_frame["policy_id"].min()
@@ -354,12 +356,14 @@ for index, predictions in enumerate(component_predictions.values()):
     if chapter_name == "07-tuning.qmd":
         checks = """
 assert baseline_config.tuning is None
-main_glm, main_gbm = make_experiment_configs(str(subset_path))
-assert set(main_glm.models) == {"direct-tweedie-glm"}
+main_config = make_experiment_config(str(subset_path))
+assert set(main_config.models) == {"direct-tweedie-glm", "tweedie-lightgbm"}
 assert set(baseline_config.models) == {"direct-tweedie-glm", "tweedie-lightgbm-tariff"}
-assert baseline_config.models["direct-tweedie-glm"] == main_glm.models["direct-tweedie-glm"]
-assert baseline_config.models["tweedie-lightgbm-tariff"] == main_gbm.models["tweedie-lightgbm"]
-assert baseline_config.preprocessing == main_glm.preprocessing
+assert baseline_config.models["direct-tweedie-glm"] == main_config.models["direct-tweedie-glm"]
+assert (baseline_config.models["tweedie-lightgbm-tariff"].params
+        == main_config.models["tweedie-lightgbm"].params)
+assert baseline_config.models["tweedie-lightgbm-tariff"].preprocess
+assert baseline_config.preprocessing == main_config.preprocessing
 for field in [
     "data_path", "spec", "features", "preprocessing", "split", "test_size", "random_state",
 ]:

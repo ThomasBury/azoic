@@ -1,4 +1,4 @@
-# Two reproducible experiments
+# Two models in one reproducible experiment
 
 ## Choose the model roles
 
@@ -87,6 +87,7 @@ claim that tuning has selected them.
 ```{python}
 raw_gbm = ModelSpec(
     kind="gbm",
+    preprocess=False,
     params={
         "objective": "tweedie", "tweedie_variance_power": 1.5,
         "n_estimators": 100, "num_leaves": 31, "learning_rate": 0.05,
@@ -95,63 +96,53 @@ raw_gbm = ModelSpec(
 )
 ```
 
-## Assemble and run the experiments
+## Assemble and run the experiment
 
-freMTPL2 has no suitable policy-time field. Both experiments therefore use the
-same random seed and 20% holdout on the same ordered data. The GLM experiment uses
-bins and groups; the GBM experiment uses raw features. The names identify these
-two runs and their two candidates in later chapters.
+freMTPL2 has no suitable policy-time field, so this experiment uses a random
+20% holdout. The GLM uses the experiment's bins and groups; `preprocess=False`
+keeps the GBM's features raw. Both models use one split and one input frame.
 
 ```{python}
-glm_config = ExperimentConfig(
-    name="fremtpl2-tariff-structured", data_path=str(PORTFOLIO_PATH),
+experiment_config = ExperimentConfig(
+    name="fremtpl2-comparison", data_path=str(PORTFOLIO_PATH),
     spec=spec, features=features, preprocessing=preprocessing,
     split="random", test_size=0.2, random_state=42,
     models={
         "direct-tweedie-glm": direct_glm,
+        "tweedie-lightgbm": raw_gbm,
     },
-)
-gbm_config = ExperimentConfig(
-    name="fremtpl2-raw-feature", data_path=str(PORTFOLIO_PATH),
-    spec=spec.model_copy(), features=features,
-    split="random", test_size=0.2, random_state=42,
-    models={"tweedie-lightgbm": raw_gbm},
 )
 ```
 
-Other chapters use `make_experiment_configs` from `_shared.qmd` as the canonical
+Other chapters use `make_experiment_config` from `_shared.qmd` as the canonical
 reusable configuration. This check prevents the visible version from drifting:
 
 ```{python}
 #| code-fold: true
 #| code-summary: "Verify the shared configuration matches"
-assert (glm_config, gbm_config) == make_experiment_configs(str(PORTFOLIO_PATH))
+assert experiment_config == make_experiment_config(str(PORTFOLIO_PATH))
 ```
 
 Request fitted estimators explicitly so we can inspect and score with them.
-The returned `Run` objects record metrics and the actual training/test positions.
+The returned `Run` records metrics and the actual training/test positions.
+Passing `df=portfolio` reuses the already-loaded frame; its fingerprint records
+the actual input, while `data_path` remains in the saved configuration for CLI use.
 
 ```{python}
-glm_run, glm_estimators = run_experiment(glm_config, return_estimators=True)
-gbm_run, gbm_estimators = run_experiment(gbm_config, return_estimators=True)
-runs = [glm_run, gbm_run]
-estimators = {**glm_estimators, **gbm_estimators}
-train_idx = np.asarray(glm_run.train_indices, dtype=int)
-test_idx = np.asarray(glm_run.test_indices, dtype=int)
+main_run, estimators = run_experiment(experiment_config, df=portfolio, return_estimators=True)
+runs = [main_run]
+train_idx = np.asarray(main_run.train_indices, dtype=int)
+test_idx = np.asarray(main_run.test_indices, dtype=int)
 ```
 
 ```{python}
 #| code-fold: true
 #| code-summary: "Verify identical partitions and complete row coverage"
-assert set(glm_run.models) == set(glm_config.models)
-assert set(gbm_run.models) == set(gbm_config.models)
-assert glm_run.data_fingerprint == gbm_run.data_fingerprint
-assert glm_run.train_indices == gbm_run.train_indices
-assert glm_run.test_indices == gbm_run.test_indices
+assert set(main_run.models) == set(experiment_config.models)
 pd.testing.assert_frame_equal(portfolio, pd.read_parquet(PORTFOLIO_PATH))
 
-assert len(train_idx) == glm_run.n_train
-assert len(test_idx) == glm_run.n_test
+assert len(train_idx) == main_run.n_train
+assert len(test_idx) == main_run.n_test
 assert np.intersect1d(train_idx, test_idx).size == 0
 np.testing.assert_array_equal(
     np.sort(np.concatenate([train_idx, test_idx])), np.arange(len(portfolio))
@@ -182,7 +173,7 @@ predictors, so membership is not an adjusted causal effect.
 #| code-summary: "Summarize fitted groups and reconcile training totals"
 train_frame = portfolio.iloc[train_idx].copy()
 pd.testing.assert_index_equal(
-    train_frame.index, portfolio.index.take(glm_run.train_indices)
+    train_frame.index, portfolio.index.take(main_run.train_indices)
 )
 y_train = train_frame["claim_amount"].to_numpy()
 w_train = train_frame["exposure"].to_numpy()
@@ -190,7 +181,7 @@ w_train = train_frame["exposure"].to_numpy()
 raw_predict_columns = [*FEATURES, "exposure"]
 special_predict_columns = [*FEATURES, "exposure", "claim_amount", "claim_count"]
 
-glm_pipeline = glm_estimators["direct-tweedie-glm"]
+glm_pipeline = estimators["direct-tweedie-glm"]
 fitted_preprocessing = glm_pipeline[:-1]
 fitted_binner = glm_pipeline.named_steps["binner"]
 fitted_grouper = glm_pipeline.named_steps["grouper"]

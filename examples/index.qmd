@@ -56,7 +56,7 @@ reports and workbooks are outputs, not chapter prerequisites. A sequential book
 render checks the full sequence but cannot by itself prove that each chapter
 works with only its declared inputs.
 
-`load_portfolio`, `make_experiment_configs`, `holdout_diagnostics`, and
+`load_portfolio`, `make_experiment_config`, `holdout_diagnostics`, and
 `setup_mlflow_tracking` are **tutorial helpers**, not public Azoic functions.
 Their source and the editable sample/claim-cap constants live in
 [`examples/_shared.qmd`](https://github.com/ThomasBury/azoic/blob/main/examples/_shared.qmd).
