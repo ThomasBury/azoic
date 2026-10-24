@@ -9,6 +9,22 @@ Legend: ☐ pending · ◐ in progress · ☑ done
 
 ## Current focus
 
+- **M49 ☑ — rule ownership and maintenance baseline** completed locally.
+  The ownership map, executed/discarded extension and characterization checks
+  passed acceptance; runtime behavior is unchanged. M50–M55 remain pending.
+  This focus supersedes the historical M48 delivery handoff below.
+- **Next implementation session:** M50 / phase 2, faithful and failure-safe tariff
+  export. Read PRD sections 3/6 and the M49 completion checkpoint, trace tariff
+  export/distillation callers and then mark M50 ◐. Do not start it in this session.
+- Implementation started clean on `docs/m48-selection-target-sensitivity` at
+  `becefd8`. Git delivery was authorized on 2026-10-24 and isolated on
+  `docs/m49-rule-ownership`, based on `origin/main` at `45247ad` after PR #10 merged.
+  Its GitHub PR holds the live Codex review and CI status. Complete that delivery
+  before starting M50; no merge, release or independent maintainer validation is
+  included in this authorization.
+
+Previous focus (historical):
+
 - **M48 ☑ — selection and target sensitivity** completed 2026-10-23. The portfolio
   evidence study reproduces cohorts, Area/fixed-age missing severity shares,
   fixed-ID cap comparisons and explicitly hypothetical missing costs.
@@ -40,6 +56,111 @@ Previous focus and delivery evidence:
 - **Branch:** `feat/m46-lightgbm-preprocessing`, based on the completed WP5 branch.
 - Previous delivery: WP5 [PR #8](https://github.com/ThomasBury/azoic/pull/8)
   merged into `main` at `a99df81`; this branch was fast-forwarded to that base.
+
+## M49 — Rule ownership and maintenance baseline ☑ — 2026-10-23
+
+Kickoff: read Current focus, M48 completion/delivery evidence, the supplied
+replacement plan, architecture, portfolio/estimator/preprocessing validation,
+scoring/result assembly, reporting, logging, tuning and their test callers.
+The seven phases map to M49–M55 in PRD section 6; exactly M49 starts here.
+
+- [x] Map rule units, current owners, enforcement boundaries, exceptions and
+  runnable independent evidence in the existing architecture documentation.
+- [x] Actually add `predicted_claim_amount_test` in a disposable source copy,
+  exercise results/card/comparison/local logging, record the path and discard code.
+- [x] Add missing behavior-level characterization checks without fixing or
+  enshrining defects scheduled for later phases.
+- [x] Run focused checks, `just check`, strict docs and final diff validation.
+
+Initial findings: outcome validation is duplicated in workflow/FSM; fixed-power
+scoring lives in workflow and stability diagnostics. Metrics are dictionary-based:
+comparison and logging already accept new finite keys, while the card names its
+metrics explicitly. These are baseline observations, not refactoring in M49.
+
+### M49 checkpoint — ownership map and executed extension
+
+Added the current enforcement/units/exceptions/evidence table to PRD section 3,
+plus the extension reproduction fixture and consumer trace. Recorded the seven
+phases as M49–M55 in PRD section 6 and linked the map from AGENTS. No runtime,
+public API, configuration, dependency or architecture changed.
+
+Actually modified a disposable copy of `src/azoic`: one metrics-dictionary entry
+in `workflow._evaluate_split`, one display line in `reporting._metrics_block_md`.
+Ran ordinary and one-trial tuned Poisson models, including both ordinary return
+shapes, on the documented eight-row temporal fixture. Independent training totals
+21 currency / 9 years imply rate 7/3 and holdout predicted amount 7; observed
+holdout amount 10 gives O/P 10/7. Results, cards, comparison tables, dashboard tables
+and real local SQLite MLflow values reproduced 7 (relative tolerance 1e-8).
+Generic results, comparison/logging and tuning consumers needed no change. The
+source copy, SQLite store and exercise script were removed; retain only the log
+`/tmp/azoic-m49-exercise.log` and documented reproduction instructions.
+
+Focused `uv run pytest tests/test_metrics.py -q`: **151 passed** in 3.34 seconds.
+Four new cases cover independent tied-block Gini/scale-versus-calibration arithmetic
+and each grouped diagnostic's row-versus-segment exposure exception, including
+claim-count total seven. The existing deviance check now asserts identity with
+upstream sklearn functions. Existing tests cover other table rules; later defect
+fixes are explicitly marked pending instead of asserting current bugs as contracts.
+
+Remaining: verify all evidence selectors/local references, `just check`, strict
+docs and final diff. Independent maintainer review and the post-refactor exercise
+remain pending; this single-agent baseline cannot establish maintainability alone.
+
+### M49 completion checkpoint — 2026-10-23
+
+Acceptance complete:
+
+- `just check` exited **0**: Ruff/Ty passed; **1260 passed, 4 skipped,
+  2 expected failures**, 11 warnings, in 171.27 seconds on Python 3.12.7.
+  The four upstream array-API skips and two strict-1D-target expected failures
+  retain the existing project policy. All 29 tutorial checks passed.
+- `just docs-build` exited **0**, strict, with no issues.
+- The focused metrics suite passed **151** tests. New checks use hand-calculated
+  tied-block area, aggregate money/exposure and count totals; the deviance check
+  asserts upstream function identity rather than duplicating its formula.
+- The discarded extension passed ordinary and tuned results, both ordinary
+  return shapes, cards, comparison tables/dashboard tables and real local MLflow
+  logging with independent expected amount 7 and O/P 10/7.
+- Verified all **44** named pytest evidence selectors against current source,
+  referenced local files, exercise cleanup and an empty `src/azoic` diff.
+- `git diff --check` passed. Only AGENTS, PRD, this tracker and metric tests changed;
+  generated outputs and environment state are not part of the source diff.
+
+Logs: `/tmp/azoic-m49-check.log`, `/tmp/azoic-m49-docs.log`,
+`/tmp/azoic-m49-metrics.log`, `/tmp/azoic-m49-exercise.log`.
+The durable reproduction fixture, arithmetic and exact change path are in PRD
+section 3; temporary logs need not survive for the exercise to be repeatable.
+
+Handoff: M49 is complete locally and uncommitted on the existing branch. Stop.
+Exact next action in a new implementation session: start M50 / phase 2 by reading
+this checkpoint and the tariff/distillation implementation/callers. Unsupported
+pipeline export and non-atomic workbook saves are not repaired by this baseline;
+strict optional count-vector validation, restructuring, typing and provenance also
+remain for their listed phases. No next phase, Git delivery, release, portable
+replay or licensing provenance review started. Independent maintainer validation
+and the post-refactoring extension repeat remain pending; no maintainability claim
+is inferred from a single-agent exercise or passing tests.
+
+### M49 Git delivery checkpoint — 2026-10-24
+
+User authorized staging, a Conventional Commit, a plain-English PR and iteration
+on Codex review findings. Refreshed `origin/main`; PR #10 is merged at `45247ad`.
+Its tree matches the implementation base. Created `docs/m49-rule-ownership` from
+that main branch while preserving the four M49 files, then reviewed their complete
+diff and the connected metric implementation. No earlier milestone enters this PR.
+
+Fresh delivery acceptance: `just check` exited **0** with Ruff/Ty green and
+**1260 passed, 4 skipped, 2 expected failures**, 11 warnings, in 174.30 seconds.
+`just docs-build` exited **0**, strict, with no issues. All 44 named pytest evidence
+selectors still exist; `git diff --check` passed. Logs:
+`/tmp/azoic-m49-delivery-check.log`, `/tmp/azoic-m49-delivery-docs.log`.
+
+Stage exactly AGENTS, PRD, this tracker and metric tests; inspect the staged diff,
+commit and push this branch, and open the PR against main. Wait for Codex on the
+final head and address any findings before handoff; the PR conversation and checks
+are the authority for their latest status. This record covers the reviewed source
+and local acceptance, without claiming a remote review before it has happened.
+No runtime change, next phase, merge or release is part of delivery.
 
 ## M48 — Selection and target sensitivity ☑ — 2026-10-23
 

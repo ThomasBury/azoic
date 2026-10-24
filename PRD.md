@@ -71,6 +71,80 @@ for comprehensive configuration/CLI and generated Python API pages, and
 is a numbered book under `examples/` (`_quarto.yml` + chapter `.qmd` sources
 plus a shared `_shared.qmd` include) and is linked rather than restyled.
 
+### Rule ownership and maintenance baseline (M49)
+
+This map describes current enforcement, including duplication; it does not move
+validation into a new framework. Amounts are aggregate currency, exposure is
+policy-years, and model predictions are currency per policy-year unless a component
+unit is stated. `data.py` owns `MIN_EXPOSURE = 1/366` and `EXPOSURE_FLOOR`
+(the same floor with 0.1% day-count tolerance). Schema checks alone do not validate
+outcome values. Run an evidence node below with `uv run pytest NODE`; the full
+baseline is `just check`.
+
+| Rule and units | Current owner and enforcement boundaries | Deliberate exceptions or limits | Runnable evidence (pytest node) |
+| --- | --- | --- | --- |
+| Portfolio outcomes: finite, non-negative amounts/counts; row exposure at least one day; counts and amounts zero together | `workflow._validate_portfolio` for ordinary/tuned entry; `FrequencySeverityModel.fit` duplicates these outcome checks | `load_data` checks required columns only. Count/amount consistency applies when counts are configured. Consolidation belongs to M52. | `tests/test_workflow.py::test_run_experiment_rejects_inconsistent_claim_rows`; `tests/test_models.py::test_freq_severity_rejects_invalid_outcomes_before_components` |
+| Exposure versus explicit model weights | `models._pop_weight` strips configured exposure; validates aligned, finite, non-negative, nonzero-total weights in fit/score; applies row floor to popped exposure | Explicit `sample_weight` overrides the column and has no day floor; zero entries are legal with positive total. Prediction can omit exposure. | `tests/test_models.py::test_explicit_sample_weight_is_not_floored`; `tests/test_models.py::test_m34_scoring_weight_contract`; `tests/test_models.py::test_popped_exposure_below_one_day_raises` |
+| Pure-premium rate targets and scores | Workflow divides amount by exposure; model `_validate_target` checks finite, aligned 1D targets; FSM checks supplied rate equals amount/exposure | Aggregated amounts belong in diagnostic inputs, not estimator targets. Direct wrapper target support also depends on backend family. | `tests/test_workflow.py::test_run_records_exact_fit_and_holdout_positions`; `tests/test_models.py::test_freq_severity_fit_rejects_aggregate_or_mismatched_target`; `tests/test_models.py::test_m34_invalid_targets_rejected_before_backend` |
+| Frequency (claims/year), severity (currency/claim), product (currency/year) | `FrequencySeverityModel.fit` clones components; frequency uses count/exposure weighted by exposure; severity filters positive-count rows and uses amount/count weighted by count | Severity claim-count weights are explicit weights, never exposure. Claim-free training cannot fit severity; claim-free holdouts remain evaluable. | `tests/test_models.py::test_freq_severity_severity_fit_is_filtered`; `tests/test_models.py::test_freq_severity_rejects_portfolio_without_severity_observations`; `tests/test_tune.py::test_tuning_completes_with_claim_free_inner_and_outer_holdouts` |
+| Feature schema and exclusion of outcomes, times and protected columns | `DatasetSpec`, `ExperimentConfig.feature_columns`, workflow column selection/drop; model `_store_fit_meta` / `_check_model_features`; preprocessing `_validate_transform_input` | Standalone GLM/GBM only strip configured exposure. Other outcome columns must be removed by callers. Optional specials may be absent at prediction; predictor names/order must match. | `tests/test_models.py::test_m34_model_predictor_schema`; `tests/test_workflow.py::test_protected_audits_use_outer_test_and_never_fit_columns`; `tests/test_preprocessing.py::test_preprocessing_transform_tolerates_absent_special_columns` |
+| Supervised preprocessing outcomes and credibility floors | `preprocessing._column_array`, `_resolve_target`, `_check_controls`, `_fit_tree`; configured amount/exposure becomes a rate; counts constrain credibility, never learning weights | Explicit `y` fallback is already a rate. Tree/similarity need outcomes; quantile/rare remain alternatives. Preprocessing exposure has a row floor, unlike grouped diagnostics. | `tests/test_preprocessing.py::test_preprocessing_preserves_target_fallback_and_exposure_units`; `tests/test_preprocessing.py::test_weighted_numeric_tree_matches_replicated_exposure`; `tests/test_preprocessing.py::test_weighted_native_partitions_match_replicated_exposure` |
+| Missing predictors and mapping interpretation | GBM routes missing values natively; binner/grouper store `mapping_`, `missing_`, `closure_` and categorical vocabulary; mapping overrides validate before committing state | Tree intervals use upper-inclusive `<=`; quantile/manual intervals are lower-inclusive. Changed native mappings require an explicit missing destination. Grouper unseen levels route with missing levels; GLM has no native missing routing. | `tests/test_models.py::test_m34_gbm_keeps_native_missing_features`; `tests/test_preprocessing.py::test_native_numeric_thresholds_and_roundtrip_use_less_equal`; `tests/test_preprocessing.py::test_changed_native_mapping_requires_explicit_missing_transactionally`; `tests/test_preprocessing.py::test_native_categorical_missing_unseen_and_frozen_vocabulary` |
+| Fitted state, cloning and parameter validation | Models guard `backend_` / `freq_`; transformers guard `mapping_`; sklearn cloning and fitted metadata remain module responsibilities | Current RiskGBM constructor validates some controls; fit rechecks power/constraints. Moving validation timing is M54, not baseline behavior to freeze. | `tests/test_models.py::test_sklearn_compatible`; `tests/test_preprocessing.py::test_sklearn_compatible`; `tests/test_models.py::test_riskgbm_invalid_power_at_fit_after_set_params` |
+| Ranking versus calibration | `metrics._as_arrays` validates diagnostic vectors; `_concentration_curve` integrates tied predicted scores; `op_ratio` compares sum(amount) with sum(rate × exposure) | Ranking accepts zero/sub-day weights and returns zero Gini for zero total claims/exposure. Positive prediction scaling preserves ranking but changes O/P. | `tests/test_metrics.py::test_tied_score_gini_has_hand_calculated_area_and_separate_calibration`; `tests/test_metrics.py::test_gini_zero_total_claims_or_exposure` |
+| Grouped diagnostic exposure (years) and count totals | `calibration_table`, `one_way_table`, `double_lift_table` floor each segment's total exposure | Zero/sub-day rows can contribute to a valid segment. `stability_table` instead enforces the row floor. Optional calibration counts currently validate finite/non-negative values; strict shape/alignment is pending M52. | `tests/test_metrics.py::test_grouped_diagnostics_floor_segment_totals_instead_of_rows`; `tests/test_metrics.py::test_calibration_table_rejects_zero_exposure_segments`; `tests/test_metrics.py::test_stability_table_rejects_sub_day_exposure` |
+| Deviance and D²: weighted rates, fixed power 1.5 for experiment/stability comparisons | Workflow `_deviance_test` and `_evaluate_split`; `metrics.stability_table`; deviance functions are upstream sklearn re-exports | Estimator scores use their family/objective power. Workflow warns and yields inf/NaN for nonpositive predictions; stability rejects them. D² uses the evaluated period's observed-mean null; zero null deviance gives NaN. | `tests/test_metrics.py::test_deviances_reexported`; `tests/test_workflow.py::test_deviance_test_is_exposure_weighted_tweedie_power_1_5`; `tests/test_workflow.py::test_temporal_test_d2_matches_period_baseline`; `tests/test_workflow.py::test_run_experiment_handles_clipped_zero_predictions_and_ordered_protected_cols` |
+| Evaluation boundaries and holdout membership | `validation.temporal_split` keeps equal timestamps together; workflow records positional splits; tuning derives inner splits only from outer training and evaluates final models on outer test | Protected diagnostics are descriptive outer-test evidence. Comparison warns on incompatible data/target/exposure/holdout contexts. Distillation callers must supply disjoint observations; object identity cannot establish independence. | `tests/test_validation.py::test_temporal_split_keeps_equal_timestamps_on_one_side`; `tests/test_validation.py::test_temporal_split_rejects_missing_times_and_empty_cutoff_partitions`; `tests/test_tune.py::test_tuning_does_not_inspect_outer_test_outcomes`; `tests/test_reporting.py::test_comparison_warns_once_for_mixed_evaluation_contexts` |
+| Result snapshots and audit limits | Workflow deep-copies config and effective explicit params, fingerprints the canonical frame and records split positions; lazy package exports keep imports light | Frozen result attributes contain mutable public containers. Constructor defaults, runtime versions and tuning settings are not yet complete provenance (M55). Caller owns data, environments and fitted-model storage. | `tests/test_workflow.py::test_run_snapshots_caller_configuration_and_nested_params`; `tests/test_workflow.py::test_data_fingerprint_covers_categorical_metadata`; `tests/test_init.py::test_package_exports_are_lazy_and_discoverable` |
+| Tariff application and recalibration | `tariff.extract_tariff` requires a fitted log-link GLM; `apply_tariff` rejects unseen categories/nonfinite numerics; export recalibration checks aggregate amounts and row exposure floor | Zero observed total permits a zero recalibrated base. Library callers choose calibration data; CLI uses training positions. Generic upstream export fidelity and atomic save are pending M50: current checks do not establish either. | `tests/test_tariff.py::test_exported_intervals_independently_reproduce_boundary_premiums`; `tests/test_tariff.py::test_apply_tariff_unknown_categorical_level_raises`; `tests/test_tariff.py::test_apply_tariff_rejects_nonfinite_numeric_input`; `tests/test_tariff.py::test_zero_total_recalibration_keeps_zero_rates`; `tests/test_tutorial.py` |
+
+#### Diagnostic-extension exercise: current change path
+
+M49 actually added and then discarded `predicted_claim_amount_test` in a disposable
+copy of `src/azoic`, using the installed local environment and synthetic data only.
+Definition: `sum(predicted_rate_test * exposure_test)`, aggregate currency on the
+evaluated holdout, never a weighted mean or an observed amount. Two production
+locations changed in that copy:
+
+1. `workflow._evaluate_split`: add `float(np.dot(pred_test, exp_test))` to the
+   `metrics` dictionary. Understand rate versus aggregate units, positional
+   splits, optional training diagnostics and ordinary versus tuning evaluation.
+   Today the function also constructs estimators/pipelines and assembles `Run`;
+   trials call it with `diagnostics=False` and still build a `Run`.
+2. `reporting._metrics_block_md`: add the label and display format. The card
+   enumerates metrics; `comparison_table` expands `ModelResult.metrics`, and
+   the dashboard's table uses those columns. Its three chosen charts stay explicit.
+
+Trace, but do not change, `workflow.ModelResult.metrics` (`dict[str, float]`),
+`Run.models`, `tune._make_objective` / `_objective_value` (the objective still uses
+only deviance and O/P), final tuning assembly, `reporting.comparison_table` /
+`comparison_dashboard`, and `mlops.log_run` (finite values get `<model>.<metric>`
+keys). No config, root export, CLI, new result field or logging change is needed.
+A test asserting the entire metric dictionary, such as
+`test_run_records_exact_fit_and_holdout_positions`, needs an expected-key update
+if an extension is retained. Reporting expectations and unit labels also need review.
+
+Reproduction fixture: one constant predictor, periods 0–7, exposures
+`[1, 2, 1, 2, 1, 2, 1, 2]`, amounts `[1, 6, 1, 6, 1, 6, 2, 8]` and counts
+`[1, 2, 1, 2, 1, 2, 1, 2]`. Use a temporal 25% holdout and unpenalized Poisson
+log-link GLM (`alpha=0`, `gradient_tol=1e-10`). Training totals are 21 currency /
+9 years, giving rate 7/3; test positions `(6, 7)` have 3 years and observed amount
+10. The extension must equal **7**, and O/P must equal **10/7**. Repeat with one
+Optuna trial whose only choice is `alpha=0`.
+
+Both ordinary and tuned results reproduced those independent totals through the
+result, model card, comparison table/dashboard and real local SQLite MLflow
+logging. Ordinary `Run` and `(Run, estimators)` interfaces also passed. The
+source copy and SQLite store were deleted after execution; no exercise metric
+ships. The execution record and check results are in `PROGRESS.md` under M49.
+
+Maintenance questions for the later repeat: can a second maintainer find the
+arithmetic owner, name the units, distinguish inner from outer metrics and list
+all presentation consumers? Current friction is the mixed construction/scoring/
+assembly responsibility and exact-dictionary tests, not the generic result or
+logging containers. Record that maintainer's observations rather than claiming
+maintainability from this single-agent exercise or passing tests.
+
 ## 4. Model API conventions
 
 ### Experiment input and per-model preprocessing
@@ -142,6 +216,35 @@ declares each used param explicitly.
 ## 6. Milestones
 
 Each is independently shippable. Done-when = acceptance check.
+
+### Engineering depth and maintainability (M49–M55)
+
+The user-approved replacement plan runs one phase per implementation session in
+this order. Keep the flat architecture; no runtime dependency, validation
+framework, orchestration class or speculative upper bound is required.
+
+| Milestone / phase | Scope and acceptance |
+| --- | --- |
+| M49 / 1 (completed locally) | Current rule ownership, units, exceptions and independent runnable checks; perform/discard the diagnostic-extension exercise and record its change path. |
+| M50 / 2 | Faithful export of Azoic bins/groups, workflow column removal and passthrough; reject unsupported preprocessing before opening destinations. Preserve generic distillation transforms. Atomic sibling-workbook replacement; independent workbook arithmetic and serialization/save failure preservation. Document newly rejected pipelines. |
+| M51 / 3 | Verified `glum>=3.4.1`, `typer>=0.27.1` floors; retain locked Python 3.12 full suite, reuse wheel/sdist model/preprocessing/all-five-CLI smokes for low-version Python 3.12 metadata installs and Python 3.14 wheels; distinguish tested stacks from Python metadata support. |
+| M52 / 4 | Private shared outcome validator in `data.py` used by workflow/FSM: aligned finite vectors, row exposure floor, non-negative amounts/counts, optional count/amount consistency. Keep schema, supplied-rate, severity, explicit-weight and segment policies at their boundaries; calibration counts must be aligned 1D vectors, including valid `[3, 4]` summing to seven. |
+| M53 / 5 | Separate estimator/input construction, fixed-shape split results and final `Run` assembly within current modules; trials consume scores without final-run assembly, training diagnostics or provenance. Share fixed-power scoring with stability while retaining warning/rejection differences; replace private-patching tests with behavioral checks and preserve all public results/splits/mappings. |
+| M54 / 6 | Static root re-exports with lazy runtime imports; concrete public annotations, `Self` and `return_estimators` overloads. Document justified heterogeneous/third-party `Any` boundaries. Move RiskGBM validation to fit, including after `set_params`; update callers and exception-timing migration notes; verify downstream typing, cloning, pipelines, estimator checks and targeted FSM CV. |
+| M55 / 7 | Snapshot actual full constructor settings in defaulted `ModelResult.resolved_params`, qualified classes/sklearn component paths; record final-run `runtime_versions` and effective `tuning_settings`, including sampler/seeds. Deep-copy containers, preserve config/params, collect metadata once per final run, expose compact cards/separate MLflow prefixes; historical provenance stays explicitly unrecorded. Repeat the extension exercise and record independent maintainer review or unresolved limitations. |
+
+Public API breaks are permitted when justified, with callers/tests/docs/project
+rules and migration notes updated together; no test-only private compatibility
+aliases. Experiment/tuning return interfaces stay intact; new provenance fields
+have defaults for manually constructed results. Reproducibility here means audit
+provenance: callers retain responsibility for data, environments and fitted models.
+Focused checks and `just check` apply to every phase, strict docs to documentation/
+interface changes. Later verification includes ordinary/tuned runs, claim-free
+holdouts, missing routing, mapping overrides, upstream contracts and installed
+packages. Release publication, portable replay, licensing provenance review and
+independent maintainer validation are separate pending work. No later phase is
+started by completing M49.
+
 
 - **WP5 — ergonomics (P2) — completed 2026-10-23**: in-memory experiment/tuning input, predictor-only
   CLI profiling, per-model preprocessing, flattened MLflow preprocessing params,
