@@ -146,7 +146,7 @@ def test_in_memory_portfolio_validation(runner, invalid):
     else:
         column = "exposure" if invalid == "exposure" else "claim_amount"
         df.loc[0, column] = np.nan
-        message = invalid
+        message = column
     with pytest.raises(ValueError, match=message):
         run(cfg, df=df)
 
@@ -1018,6 +1018,15 @@ def test_run_experiment_rejects_invalid_portfolio_values(
     config = ExperimentConfig.from_yaml(_write_yaml(tmp_path, _basic_yaml(str(data))))
     with pytest.raises(ValueError, match=message):
         run_experiment(config)
+
+
+@pytest.mark.parametrize("column", ["exposure", "claim_amount", "claim_count"])
+def test_run_experiment_rejects_duplicate_outcome_columns(tmp_path, column) -> None:
+    df = make_synthetic_portfolio(n=10, seed=42)
+    df = pd.concat([df, df[[column]]], axis=1)
+    config = ExperimentConfig.from_yaml(_write_yaml(tmp_path, _basic_yaml("unused.parquet")))
+    with pytest.raises(ValueError, match="one-dimensional"):
+        run_experiment(config, df=df)
 
 
 def test_run_experiment_rejects_sub_day_exposure(tmp_path: Path) -> None:

@@ -293,11 +293,19 @@ def calibration_table(
     array-like of one segment label per row; NaN labels form their own segment
     (``dropna=False``). Columns: group, exposure, claim_amount,
     predicted_claim_amount, observed_pure_premium, predicted_pure_premium,
-    o_p_ratio; plus `claim_count` when provided.
+    o_p_ratio; plus `claim_count` when provided as a finite, non-negative 1D
+    vector with one value per input row.
     Constant predictions form one real group, including without weights.
     """
     weighted = sample_weight is not None
     y_true, y_pred, w = _as_arrays(y_true, y_pred, sample_weight)
+    if claim_count is not None:
+        claim_count = np.asarray(claim_count, dtype=float)
+        if claim_count.ndim != 1:
+            raise ValueError("claim_count must be one-dimensional")
+        check_consistent_length(y_true, claim_count)
+        if not np.isfinite(claim_count).all() or np.any(claim_count < 0):
+            raise ValueError("claim_count must contain only non-negative finite values")
     if groups is None:
         groups = make_strata(y_pred, w if weighted else None, n_strata=n_bins)
     else:
@@ -315,9 +323,6 @@ def calibration_table(
         predicted_claim_amount=("predicted_claim_amount", "sum"),
     )
     if claim_count is not None:
-        claim_count = np.asarray(claim_count, dtype=float)
-        if not np.isfinite(claim_count).all() or np.any(claim_count < 0):
-            raise ValueError("claim_count must contain only non-negative finite values")
         df["claim_count"] = claim_count
         out["claim_count"] = grouped["claim_count"].sum()
     if (out["exposure"] < EXPOSURE_FLOOR).any():

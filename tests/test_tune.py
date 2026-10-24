@@ -82,6 +82,31 @@ def _gbm() -> ModelSpec:
     )
 
 
+@pytest.mark.parametrize(
+    ("column", "value", "message"),
+    [
+        ("exposure", 0.0, "positive finite"),
+        ("exposure", 0.001, "1/366"),
+        ("exposure", np.nan, "positive finite"),
+        ("claim_amount", -1.0, "non-negative finite"),
+        ("claim_amount", np.inf, "non-negative finite"),
+        ("claim_count", -1.0, "non-negative finite"),
+        ("claim_count", np.inf, "non-negative finite"),
+        ("claim_count", 0.0, "zero or positive together"),
+    ],
+)
+def test_tuning_rejects_invalid_portfolio_before_trials(tmp_path, column, value, message):
+    cfg = _config(tmp_path, models={"glm": _glm()})
+    df = pd.DataFrame(
+        {"exposure": [1.0, 1.0], "claim_amount": [10.0, 20.0], "claim_count": [1.0, 2.0]}
+    )
+    df.loc[0, column] = value
+    original = df.copy(deep=True)
+    with pytest.raises(ValueError, match=message):
+        tune_experiment(cfg, df=df, n_trials=1)
+    pd.testing.assert_frame_equal(df, original)
+
+
 def test_tune_in_memory_matches_file_without_loading(tmp_path, monkeypatch):
     from sklearn.pipeline import Pipeline
 

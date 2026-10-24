@@ -7,8 +7,37 @@ import pandas as pd
 import pydantic
 import pytest
 
-from azoic.data import DatasetSpec, load_data
+from azoic.data import EXPOSURE_FLOOR, DatasetSpec, _validate_outcomes, load_data
 from tests.conftest import make_synthetic_portfolio
+
+
+@pytest.mark.parametrize("slot", [0, 1, 2])
+@pytest.mark.parametrize("bad", [1.0, [[1.0], [1.0]], [[[1.0, 1.0]]]])
+def test_outcomes_reject_nonvector_inputs(slot, bad) -> None:
+    outcomes = [[1.0, 1.0], [1.0, 1.0], [1.0, 1.0]]
+    outcomes[slot] = bad
+    with pytest.raises(ValueError, match="one-dimensional"):
+        _validate_outcomes(*outcomes)
+
+
+@pytest.mark.parametrize("slot", [0, 1, 2])
+def test_outcomes_reject_misaligned_vectors(slot) -> None:
+    outcomes = [[1.0, 1.0], [1.0, 1.0], [1.0, 1.0]]
+    outcomes[slot] = [1.0]
+    with pytest.raises(ValueError, match="inconsistent numbers"):
+        _validate_outcomes(*outcomes)
+
+
+def test_outcomes_accept_optional_counts_and_one_day_tolerance() -> None:
+    exposure = [EXPOSURE_FLOOR, 0.0027322404371584, 1.0]
+    amounts = [0.0, 30.0, 40.0]
+    _validate_outcomes(exposure, amounts)
+    _validate_outcomes(exposure, amounts, [0.0, 3.0, 4.0])
+    _validate_outcomes(exposure, [0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
+    with pytest.raises(ValueError, match="1/366"):
+        _validate_outcomes([np.nextafter(EXPOSURE_FLOOR, 0.0)], [0.0])
+    with pytest.raises(ValueError, match="non-negative finite"):
+        _validate_outcomes([1.0], [-1.0])
 
 
 def test_dataset_spec_requires_target_and_exposure() -> None:
@@ -112,6 +141,14 @@ def test_load_data_without_spec(tmp_path) -> None:
     p = tmp_path / "plain.parquet"
     df.to_parquet(p)
     pd.testing.assert_frame_equal(load_data(p), df)
+
+
+def test_load_data_keeps_outcome_validation_at_model_boundaries(tmp_path) -> None:
+    df = pd.DataFrame({"claim_amount": [-1.0], "exposure": [0.0], "claim_count": [np.nan]})
+    path = tmp_path / "unchecked-outcomes.parquet"
+    df.to_parquet(path)
+    spec = DatasetSpec(target="claim_amount", exposure="exposure", claim_count="claim_count")
+    pd.testing.assert_frame_equal(load_data(path, spec), df)
 
 
 # ---------------------------------------------------------------------------

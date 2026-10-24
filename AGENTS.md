@@ -49,7 +49,11 @@ transforms, preserve existing destination permission bits and replace only fully
 saved sibling workbooks. M51 verifies glum 3.4.1 and Typer 0.27.1 floors,
 retains locked Python 3.12 full checks and adds metadata-based low-version
 Python 3.12 and Python 3.14 wheel/sdist runtime smokes. Python metadata support
-does not imply every allowed stack is tested. M54's extension
+does not imply every allowed stack is tested. M52 shares portfolio outcome
+validation in `data._validate_outcomes` across workflow/tuning and FSM; retain
+schema, supplied-rate and severity checks at their boundaries. Calibration
+counts are aligned 1D vectors; their validation must not impose portfolio row
+floors or count/amount consistency on diagnostic segments. M54's extension
 contract and M55's independent maintainer exercise are planned in PRD section 6;
 do not extract results, publish a checker or widen `ModelSpec.kind` in advance.
 Independent maintainer validation remains pending for M55.
