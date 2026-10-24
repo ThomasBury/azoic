@@ -9,6 +9,24 @@ Legend: ☐ pending · ◐ in progress · ☑ done
 
 ## Current focus
 
+- **M51 ☑ — dependency floors and installed artifacts** completed locally on
+  2026-10-24. glum/Typer floors, unchanged locked Python 3.12 full validation and
+  all four low-version Python 3.12/current-wheel Python 3.14 artifact checks
+  passed. Strict docs and workflow lint passed; tested stacks are recorded below.
+- **Delivery:** user authorized staging, a conventional commit, PR creation and
+  iterative Codex review on 2026-10-24. Work is isolated on
+  `ci/m51-dependency-validation`, based on current `origin/main` at `021fd0e`.
+  [PR #13](https://github.com/ThomasBury/azoic/pull/13) is open. Its live status
+  is the authority for final-head Codex review and CI; both must pass before
+  handoff. No merge or release is included.
+- **Next implementation session:** M52 / phase 4, shared portfolio outcome
+  validation and aligned calibration counts. Read PRD sections 3/6 and M51's
+  completion checkpoint, trace the relevant callers, then mark M52 ◐. Do not
+  start it in this session. M53–M55 and independent maintainer validation remain
+  pending.
+
+Previous focus (historical):
+
 - **M50 ☑ — faithful and failure-safe tariff export** completed locally on
   2026-10-24. Supported pipelines reproduce workbook prices; unsupported
   preprocessing is rejected before writing; write failures preserve destinations.
@@ -75,6 +93,149 @@ Previous focus and delivery evidence:
 - **Branch:** `feat/m46-lightgbm-preprocessing`, based on the completed WP5 branch.
 - Previous delivery: WP5 [PR #8](https://github.com/ThomasBury/azoic/pull/8)
   merged into `main` at `a99df81`; this branch was fast-forwarded to that base.
+
+## M51 — Dependency floors and installed artifacts ☑ — 2026-10-24
+
+- [x] Read Current focus, PRD scope, M50's latest checkpoint, package metadata,
+  CI/release callers and the existing installed-distribution smoke.
+- [x] Raise verified floors and refresh lock metadata without upgrading the stack.
+- [x] Reuse installed model/preprocessing/version/all-five-CLI checks across
+  low-version Python 3.12 wheel/sdist and Python 3.14 wheel-based installs.
+- [x] Document tested stacks separately from Python metadata support.
+- [x] Run focused artifact acceptance, locked full checks and strict docs.
+
+### M51 kickoff checkpoint
+
+The user explicitly requested M51 as the next milestone. Started with a clean
+`main` checkout at `021fd0e`, which includes the merged M50 PR #12.
+
+Scope reaches `pyproject.toml`, `uv.lock`, `.github/workflows/ci.yml`, the shared
+`tests/smoke_distribution.py` used by CI/release, installation documentation and
+living project records. Runtime model code and later validation/refactoring
+phases remain outside this milestone. Raising the floors excludes older glum
+and Typer versions previously allowed by metadata. No package version change,
+release, publication or Git delivery is included.
+
+Next: implement fresh metadata-based installation checks without reading the
+checkout lock for compatibility jobs; retain the locked full-suite job.
+
+### M51 checkpoint — implementation and first acceptance
+
+Raised only `glum>=3.4.1` and `typer>=0.27.1`; `uv lock` changed only their two
+metadata declarations and retained all locked package versions. The existing
+locked Python 3.12 CI job and shared distribution smoke are unchanged. Four new
+runtime jobs cover wheel/sdist installs on Python 3.12 (low compatible direct
+versions from built wheel metadata, current transitive versions) and Python 3.14
+(current compatible dependency wheels). Only Azoic's sdist can build from source;
+each fresh environment checks dependencies, records exact versions and runs the
+existing smoke outside the checkout. No runtime code or new dependencies added.
+
+README, installation guide, AGENTS and PRD distinguish metadata support from
+the explicit tested stacks and replace the obsolete Python 3.14 decision.
+Context7's current uv documentation informed resolver and binary-policy choices.
+The initial low-version wheel model/preprocessing/all-five-CLI smoke passed.
+Independent wheel/sdist metadata inspection confirmed both floors and Python
+`>=3.12`, with identical requirements and no optional extras in low-version roots.
+The first exact CI execution caught the source-build exception also rejecting
+wheel inputs; the exception now applies only to sdist jobs. Installed actionlint
+1.7.12 passed the corrected workflow; strict `just docs-build` exited **0**, no
+issues, in 6.71 seconds. `git diff --check` passed.
+
+Remaining: complete all four corrected CI command combinations in fresh local
+environments, finish the running locked `just check`, inspect exact stacks and
+final diff, then mark complete. No M52 work, Git delivery or release started.
+
+### M51 checkpoint — installed-artifact acceptance
+
+All **four** corrected CI command combinations passed locally in fresh `/tmp`
+environments: wheel and sdist on Python **3.12.7** and **3.14.7**. The runner
+executed the shell/Python bodies directly from `.github/workflows/ci.yml`, with
+the matrix values substituted and setup-Python selection reproduced locally.
+Each ran `uv pip check`, recorded the full freeze, imported all 13 modules from
+the installed package, checked the package version, fitted/scored GLM and GBM
+including categorical influence and caller-frame preservation, exercised the
+existing preprocessing validation/mapping/missing checks and invoked top-level
+plus all five command helps. Python 3.12 asserted glum **3.4.1** and Typer
+**0.27.1** exactly. Wheel/sdist runtime versions match within each Python stack.
+All registry runtime dependencies were installed as wheels; Azoic's own sdist
+was the only permitted source build. The shared smoke remains unchanged.
+
+| Core dependency | Locked Python 3.12.7 | Low Python 3.12.7 | Current wheels Python 3.14.7 |
+| --- | --- | --- | --- |
+| NumPy | 2.5.2 | 2.0.0 | 2.5.4 |
+| pandas | 3.0.6 | 3.0.0 | 3.1.0 |
+| scikit-learn | 1.9.0 | 1.6.0 | 1.9.1 |
+| glum | 3.4.1 | 3.4.1 | 3.4.1 |
+| LightGBM | 4.7.0 | 4.3.0 | 4.7.0 |
+| PyArrow | 25.0.1 | 16.0.0 | 26.0.0 |
+| Pydantic | 2.13.4 | 2.7.0 | 2.14.1 |
+| PyYAML | 6.0.3 | 6.0.1 | 6.0.3 |
+| Typer | 0.27.1 | 0.27.1 | 0.27.3 |
+| matplotlib | 3.11.1 | 3.8.4 | 3.11.2 |
+| openpyxl | 3.1.5 | 3.1.0 | 3.1.5 |
+
+These are explicit tested stacks, not every metadata-permitted combination.
+The low resolver selects compatible available wheels rather than forcing every
+declared lower bound independently. Both built metadata files carry identical
+requirements and Python `>=3.12`; all **225** locked package versions are
+unchanged. The README installation target and rendered `tested-environments`
+anchor were verified against the working tree and strict site output.
+
+Logs: `/tmp/azoic-m51-final-matrix.log`,
+`/tmp/azoic-m51-final-{3.12,3.14}-{whl,tar.gz}.log`,
+`/tmp/azoic-m51-actionlint.log`, `/tmp/azoic-m51-docs.log`.
+Remaining: finish the running locked full gate, final diff/status review and
+completion handoff. Hosted Actions, other platforms, Python 3.14 full-suite/
+optional-integration validation and publication were not run.
+
+### M51 completion checkpoint — 2026-10-24
+
+Acceptance complete:
+
+- `uv sync --locked --all-extras --all-groups` exited **0**; every locked package
+  version is preserved, with only the glum/Typer floor metadata refreshed.
+- `just check` exited **0**: Ruff/Ty passed; **1284 passed, 4 skipped,
+  2 expected failures**, 11 warnings, in **285.42 seconds**. All 29 synthetic
+  tutorial checks passed. The existing array-API skips and strict-1D target
+  expected failures are unchanged. Log: `/tmp/azoic-m51-check.log`.
+- All **four** exact installed-artifact CI command combinations passed locally,
+  including independent dependency checks and exact glum/Typer floor assertions.
+  The installed-artifact checkpoint above records the tested versions and logs.
+- Strict `just docs-build` exited **0**, no issues, in **6.71 seconds**.
+  Actionlint **1.7.12** passed the final workflow; the documentation file/link
+  and generated anchor checks passed. `git diff --check` passed.
+- Reviewed the complete diff and CI/release smoke callers. Only the eight
+  intended metadata, CI and documentation files changed. The shared smoke,
+  runtime implementations, release workflow and package version are unchanged;
+  generated environments, distributions and reports remain outside tracked files.
+
+Handoff: M51 is complete locally and uncommitted on `main`. Hosted Actions were
+not triggered; Python 3.14 optional integrations/full-suite checks and other
+platforms are outside the verified coverage. No Git delivery, release or M52
+implementation was performed. Exact next action in a new implementation session:
+read Current focus and PRD M52, trace outcome validation in `data.py`, workflow,
+FSM and calibration counts, then mark M52 ◐ and implement that phase only.
+
+### M51 Git delivery checkpoint — 2026-10-24
+
+The user authorized staging, a conventional commit, a plain-English PR and
+waiting for Codex review, fixing findings and repeating review as needed.
+Fetched `origin/main`; it still matches the implementation base at `021fd0e`.
+Created `ci/m51-dependency-validation` and reviewed all eight changed files.
+The prior full checks and all four artifact smoke results remain applicable;
+no implementation changed during delivery preparation. Fresh Ruff, actionlint
+and whitespace checks passed. Next: stage only these eight files, validate the
+staged diff, commit/push, open the PR and wait for Codex review plus hosted CI.
+M52 remains pending; no merge or release is authorized.
+
+Opened [PR #13](https://github.com/ThomasBury/azoic/pull/13) with implementation
+commit `63021de` (`chore: verify dependency floors and installed packages`).
+Its plain-English description covers the dependency floors, four runtime stacks,
+locked full-suite coverage and Python 3.14 limits. Requested `@codex review`;
+hosted CI was queued at creation. This documentation follow-up records the PR
+before waiting. Next: inspect Codex comments and CI on the final branch head,
+address findings with appropriate checks and repeat review until clear. The PR
+holds the live final-review/CI evidence; M52, merging and publication stay pending.
 
 ## M50 — Faithful and failure-safe tariff export ☑ — 2026-10-24
 

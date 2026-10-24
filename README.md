@@ -20,6 +20,10 @@ uv add azoic==0.5.0
 uv run azoic --help
 ```
 
+The full suite runs on locked Python 3.12 dependencies. Separate installed-package
+checks cover low-version Python 3.12 dependencies and Python 3.14 wheels; see
+[tested environments](docs/getting-started/installation.md#tested-environments).
+
 For development or the executable tutorial, clone this repository and run:
 
 ```bash

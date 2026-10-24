@@ -42,3 +42,72 @@ jobs:
           cd "$RUNNER_TEMP"
           uv run --isolated --no-project --with "${sdist[0]}" python smoke_distribution.py
           uv run --isolated --no-project --with "${sdist[0]}" azoic --help
+
+  installed-artifacts:
+    name: Installed ${{ matrix.distribution }} / Python ${{ matrix.python }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.14"]
+        distribution: ["whl", "tar.gz"]
+        include:
+          - python: "3.12"
+            resolution: lowest-direct
+          - python: "3.14"
+            resolution: highest
+    env:
+      OMP_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      - name: Build distributions without the project lock
+        run: uv build --python "${{ matrix.python }}" --out-dir "$RUNNER_TEMP/dist"
+      - name: Read direct runtime requirements from wheel metadata
+        if: matrix.resolution == 'lowest-direct'
+        run: |
+          python - <<'PY'
+          import os
+          from email.parser import BytesParser
+          from pathlib import Path
+          from zipfile import ZipFile
+
+          root = Path(os.environ["RUNNER_TEMP"])
+          wheel, = (root / "dist").glob("*.whl")
+          with ZipFile(wheel) as archive:
+              metadata, = [n for n in archive.namelist() if n.endswith(".dist-info/METADATA")]
+              requirements = BytesParser().parsebytes(archive.read(metadata)).get_all("Requires-Dist")
+          core = [requirement for requirement in requirements if "extra ==" not in requirement]
+          (root / "runtime-requirements.txt").write_text("\n".join(core) + "\n")
+          PY
+      - name: Install and check runtime dependencies
+        run: |
+          uv venv --python "${{ matrix.python }}" "$RUNNER_TEMP/runtime"
+          artifact=("$RUNNER_TEMP"/dist/*.${{ matrix.distribution }})
+          requirements=()
+          if [[ "${{ matrix.resolution }}" == lowest-direct ]]; then
+            requirements=(--requirements "$RUNNER_TEMP/runtime-requirements.txt")
+          fi
+          source_build=()
+          if [[ "${{ matrix.distribution }}" == tar.gz ]]; then
+            source_build=(--no-binary azoic)
+          fi
+          uv pip install --python "$RUNNER_TEMP/runtime/bin/python" \
+            --resolution "${{ matrix.resolution }}" "${requirements[@]}" \
+            --only-binary :all: "${source_build[@]}" "${artifact[0]}"
+          uv pip check --python "$RUNNER_TEMP/runtime/bin/python"
+          uv pip freeze --python "$RUNNER_TEMP/runtime/bin/python"
+      - name: Smoke-test installed artifact outside the checkout
+        run: |
+          cp tests/smoke_distribution.py "$RUNNER_TEMP/smoke_distribution.py"
+          export PATH="$RUNNER_TEMP/runtime/bin:$PATH"
+          cd "$RUNNER_TEMP"
+          if [[ "${{ matrix.resolution }}" == lowest-direct ]]; then
+            python -c 'from importlib.metadata import version; assert version("glum") == "3.4.1"; assert version("typer") == "0.27.1"'
+          fi
+          python smoke_distribution.py
+          azoic --help
