@@ -9,21 +9,21 @@ Legend: ☐ pending · ◐ in progress · ☑ done
 
 ## Current focus
 
-- **M53 ☑ — separate split evaluation from final run assembly** completed
-  locally on 2026-10-24. Trials use internal split scores; final public snapshots
-  and fingerprinting happen once. Workflow/stability share fixed-power scoring.
-- M53 was implemented alone: its acceptance does not require M54 typing/
-  composition or M55 provenance. Public results, splits and learned mappings
-  remain intact. Full checks and strict docs passed; see the checkpoint below.
-- Git delivery is authorized on `chore/m53-split-evaluation`, based on merged
-  M52 PR #14 at `3b32a4a`. The PR must receive final-head Codex review and green
-  CI before handoff. [PR #15](https://github.com/ThomasBury/azoic/pull/15) is open;
+- **M54 ☑ — public typing and composition contract** completed locally on
+  2026-10-25. Static lazy exports, concrete annotations/overloads, fit-time GBM
+  validation and documented component/state/0.x boundaries passed acceptance.
+- M54 stands alone: full checks, strict docs, downstream typing and all four
+  wheel/sdist runtime smokes are green. Results remain in workflow;
+  `ModelSpec.kind`, result identities and runtime container validation are intact.
+- Git delivery is authorized on `feat/m54-public-contract`, based on merged
+  M53 PR #15 at `71aaf2c`. The PR must receive final-head Codex review and green
+  CI before handoff. [PR #16](https://github.com/ThomasBury/azoic/pull/16) is open;
   its live status is the authority for final review/CI. No merge or release is included.
-- **Next implementation session:** M54 / phase 6, public typing and composition
-  contract. Read PRD sections 3/6 and M53's completion checkpoint; trace root
-  re-exports, public annotations, reporting/logging imports and RiskGBM validation
-  timing before marking M54 ◐. Do not start it in this session. M55 and
-  independent maintainer validation remain pending.
+- **Next implementation session:** M55 / phase 7, final-run provenance and
+  external evidence. Read PRD sections 3/6 and M54's completion checkpoint;
+  trace final assembly, tuning settings, reporting and logging before marking
+  M55 ◐. Independent maintainer observations must remain explicitly pending if
+  unavailable. Do not start M55 or release automatically in this session.
 
 Previous focus (historical):
 
@@ -111,6 +111,138 @@ Previous focus and delivery evidence:
 - **Branch:** `feat/m46-lightgbm-preprocessing`, based on the completed WP5 branch.
 - Previous delivery: WP5 [PR #8](https://github.com/ThomasBury/azoic/pull/8)
   merged into `main` at `a99df81`; this branch was fast-forwarded to that base.
+
+## M54 — Public typing and composition contract ☑ — 2026-10-25
+
+- [x] Read Current focus, PRD sections 3/6, latest M53 checkpoint and callers.
+- [x] Assess grouping: M54 stands alone; retain M55 as a separate phase.
+- [x] Implement static exports, public annotations and fit-time GBM validation.
+- [x] Publish component/state boundaries, 0.x policy and migration notes.
+- [x] Verify independent composition oracles and broken component variants.
+- [x] Run downstream typing, installed wheel/sdist smokes, full checks and docs.
+
+### M54 kickoff checkpoint
+
+Clean `main` at `71aaf2c` includes merged M53 PR #15. Traced all root exports,
+model/preprocessing public methods, workflow construction/results and consumers,
+reporting/logging annotation imports, distribution smoke and CI. Changes reach
+those modules, focused tests, documentation and project records; no result
+extraction, new public checker, model kind, dependency or provenance field.
+RiskGBM constructor checks move to existing fit/backend guards, so callers must
+catch invalid controls around fitting. Next: implement this scope and verify it.
+
+### M54 checkpoint — implementation and focused acceptance
+
+Static root re-exports preserve the lazy runtime inventory and class identities;
+the existing `py.typed` marker is retained in installed artifacts. Public
+model/transformer methods have concrete inputs/results and `Self`; transform and `return_estimators` overloads
+preserve downstream shapes. Workflow/tuning use concrete estimator unions.
+Reporting/logging retain resolvable postponed `azoic.Run` annotations without
+loading workflow/glum/LightGBM at import. RiskGBM constructor checks moved to
+existing fit guards; CLI export explicitly narrows model/pipeline types.
+
+Published the component/state contract, deliberate dynamic typing boundaries,
+Azoic 0.x policy and unreleased validation-timing migration in the compatibility
+reference. No workflow result extraction, new kind/checker or M55 fields.
+Independent recorder/DummyRegressor checks cover rates, weights, category/schema
+preservation, prototypes, nested params, clone, pipeline and targeted CV. Broken
+weight, aggregate, shape and cloning variants fail the intended oracle.
+
+Focused model/init/composition checks: **317 passed, 2 skipped, 2 expected
+failures**, one existing warning, **40.58s** (`/tmp/azoic-m54-focused.log`).
+Additional lazy annotation/positive-and-negative downstream typing/composition
+checks: **11 passed**, **14.10s** (`/tmp/azoic-m54-contract.log`). Production Ty
+and Ruff passed; strict docs passed in **3.79s**. Locked all-extras/groups sync
+exited **0**, no lock changes. Remaining: final full checks, fresh wheel/sdist
+runtime smokes (including public composition), final docs/diff/reference review.
+
+### M54 checkpoint — final artifact and typing acceptance
+
+Final source retains the original merged-special-column constructor behavior;
+`TuneResult.estimators` has a concrete static type while Pydantic skips value
+validation as at the former `Any` boundary. A regression preserves manually
+constructed estimator dictionaries, mutation and container/config validation.
+The published recipe is executed by a source test and the runtime-only smoke.
+
+All four final CI-equivalent installed-artifact cases passed outside the
+checkout: wheel and sdist on low-direct Python 3.12 and current-wheel Python 3.14.
+Both artifacts also passed the copied downstream typing consumer, with Ty pointed
+at their isolated runtime interpreter. Logs: `/tmp/azoic-m54-final-matrix.log`,
+`/tmp/azoic-m54-final-{3.12,3.14}-{whl,tar.gz}.log`, and
+`/tmp/azoic-m54-installed-types.log`. Tested direct stack highlights (both artifact
+formats used the same versions):
+
+| Python | NumPy | pandas | sklearn | glum | LightGBM | Pydantic | Typer |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 3.12.7 | 2.0.0 | 3.0.0 | 1.6.0 | 3.4.1 | 4.3.0 | 2.7.0 | 0.27.1 |
+| 3.14.7 | 2.5.4 | 3.1.0 | 1.9.1 | 3.4.1 | 4.7.0 | 2.14.1 | 0.27.3 |
+
+These checks resolve without the checkout lock, check dependencies and retain
+full version lists. They do not establish every metadata-permitted stack.
+Final strict docs passed in **7.72s**; all **51** ownership-map references and
+changed documentation links resolve. A preliminary full run was stopped after
+source review corrections; it is not acceptance evidence. The final `just check`
+is running on the complete source, including preserved container validation.
+Remaining: its result, final diff review and milestone handoff. No M55, Git
+delivery, publication or independent maintainer validation has started.
+
+### M54 completion checkpoint — 2026-10-25
+
+Acceptance complete:
+
+- Locked all-extras/groups sync exited **0**, no dependency/lock changes.
+- Final `just check` exited **0**: Ruff/Ty passed; **1343 passed, 4 skipped,
+  2 expected failures**, 11 warnings, in **309.58s**. The skips remain sklearn's
+  disabled array-API checks; expected failures remain strict-1D-target checks.
+  Log: `/tmp/azoic-m54-final-check.log`. This is the complete final-source run.
+- Final strict `just docs-build` exited **0**, no issues, **7.72s**; log
+  `/tmp/azoic-m54-final-docs.log`. The published component recipe runs in the
+  source suite and installed smoke. All 51 rule-map references and changed
+  documentation links resolve; changed Python formatting/whitespace pass.
+- Both final wheel and sdist passed outside-checkout runtime-only imports,
+  GLM/GBM/preprocessing, all-five-command CLI and component composition/CV
+  smokes on both recorded stacks. Installs resolve without `uv.lock`, dependency
+  checks pass and exact version lists are retained. Copied downstream typing
+  also passed on all four installed environments. See the preceding checkpoint
+  for paths and tested stacks; no broader environment claim is made.
+- Final source/diff review preserves root export inventory/class identities,
+  `Run.config` validation, public containers, special-column overrides, explicit
+  weight exceptions and existing actuarial/split/mapping behavior. Exactly 24
+  intended source/test/documentation/configuration files changed; no new runtime
+  dependency, source module, public checker, result extraction, workflow kind,
+  provenance field, package version or generated artifact.
+
+Handoff: M54 is complete locally and uncommitted on `main`; implement it alone.
+The intentional compatibility change is RiskGBM rejecting invalid power/dict
+constraint values at fit rather than construction; the unreleased migration
+notes require a minor release before publication. Hosted CI and real-data
+Quarto rendering were not run; no Git delivery, release, M55 or independent
+maintainer validation started. Exact next action in a new implementation
+session: read Current focus, PRD M55 and this checkpoint, trace final-run
+constructor snapshots/runtime versions/effective tuning settings plus card/log
+consumers, then mark M55 ◐ and implement only that phase. Repeat M49's discarded
+diagnostic exercise and record external maintainer observations honestly;
+leave independent validation pending if unavailable.
+
+### M54 Git delivery checkpoint — 2026-10-25
+
+The user authorized staging, a conventional commit, a plain-English PR and
+iterative Codex bot review until actionable findings are resolved. Fetched
+`origin/main`; it matches the implementation base at `71aaf2c`. Isolated all
+24 intended M54 files on `feat/m54-public-contract` and reviewed the connected
+implementation/callers and recorded full acceptance. No source changed during
+this delivery; fresh Ruff and staged whitespace checks apply before committing.
+Next: commit/push, open the PR, record its URL, then obtain Codex review and
+hosted CI on the final head. M55, merging and publication remain outside scope.
+
+Opened [PR #16](https://github.com/ThomasBury/azoic/pull/16) with implementation
+commit `74fee06` (`feat: type public APIs and define model component requirements`).
+The PR explains concrete typing, lazy imports, component requirements, the
+intentional fit-time exception change and independent acceptance. Fresh Ruff
+and staged whitespace checks passed. This follow-up records the PR before
+requesting Codex review on the final branch head. Next: wait for Codex and CI,
+fix actionable findings and repeat review until clear. M55, merging and release
+remain pending; the PR holds the live final-head review and CI evidence.
 
 ## M53 — Workflow evaluation and assembly separation ☑ — 2026-10-24
 

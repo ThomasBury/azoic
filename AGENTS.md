@@ -58,9 +58,13 @@ estimator/input construction, fixed-shape split evaluation and final run
 assembly. Trials consume split scores without public result snapshots,
 training diagnostics or provenance; workflow and stability share fixed-power
 Tweedie arithmetic while retaining their warning/rejection policies.
-M54's extension contract and M55's independent maintainer exercise are planned
-in PRD section 6; do not extract results, publish a checker or widen
-`ModelSpec.kind` in advance.
+M54 defines static lazy exports and the public composition contract in
+`docs/reference/compatibility.md`; keep root/workflow result identities and
+concrete `Run.config`. Reporting/logging use postponed `azoic.Run` annotations.
+Constructors store parameters unchanged; RiskGBM validates power/constraints
+during fit, including after `set_params`. Keep the runtime-only public composition
+recipe in the distribution smoke. Do not extract results, publish a checker or
+widen `ModelSpec.kind` without a concrete consumer. M55 provenance remains separate.
 Independent maintainer validation remains pending for M55.
 Current focus is the authority for the active/next milestone. Read
 `PREPROCESSING_FIX_PLAN.md` for the verified bugs, regression scope, PR delivery,
@@ -170,8 +174,8 @@ examples/_quarto.yml  # main path and optional recipes; only sources committed, 
 2. Frequency: `y = claim_count / exposure`, `sample_weight=exposure`, Poisson.
 3. Severity: fit on `claim_count > 0` only (Gamma needs `y > 0`). The filter
    lives INSIDE `FrequencySeverityModel.fit`.
-4. LightGBM `tweedie_variance_power`: `1.0 <= p < 2.0` — validate in
-   `__init__`.
+4. LightGBM `tweedie_variance_power`: `1.0 <= p < 2.0` — validate during
+   `fit`, including after `set_params`.
 5. **Don't reimplement deviances** — `sklearn.metrics.mean_{tweedie,poisson,gamma}_deviance`
    accept `sample_weight`. Re-export/wrap only. `deviance_test` is exposure-
    weighted mean Tweedie deviance with fixed `power=1.5`.

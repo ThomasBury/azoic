@@ -10,11 +10,12 @@ ponytail: deliberately tiny -- md only.
 from __future__ import annotations
 
 import warnings
+from collections.abc import Iterable
 from typing import Any
 
 import pandas as pd
 
-from azoic.workflow import Run
+import azoic
 
 __all__ = ["model_card", "comparison_table", "comparison_dashboard"]
 
@@ -64,7 +65,7 @@ def _metrics_block_md(name: str, kind: str, params: dict, metrics: dict) -> str:
     return "\n".join(lines)
 
 
-def model_card(run: Run) -> str:
+def model_card(run: azoic.Run) -> str:
     """Return the model card for ``run`` as markdown.
 
     Calibration tables are truncated to their first 12 rows -- a preview, not
@@ -109,7 +110,7 @@ def model_card(run: Run) -> str:
     return "\n".join(lines)
 
 
-def comparison_table(runs) -> pd.DataFrame:
+def comparison_table(runs: Iterable[azoic.Run]) -> pd.DataFrame:
     """Return all model metrics, warning once for mixed evaluation contexts.
 
     Dataset fingerprints, target/exposure columns, and holdout membership must
@@ -157,7 +158,7 @@ def comparison_table(runs) -> pd.DataFrame:
     return pd.DataFrame(rows) if rows else pd.DataFrame(columns=pd.Index(columns))
 
 
-def comparison_dashboard(runs) -> str:
+def comparison_dashboard(runs: Iterable[azoic.Run]) -> str:
     """Return standalone Plotly HTML with the same context warning as the table."""
     try:
         import plotly.graph_objects as go

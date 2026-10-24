@@ -122,14 +122,14 @@ def test_riskgbm_tweedie_fit_predict_score() -> None:
     assert np.isfinite(s)
 
 
-def test_riskgbm_tweedie_variance_power_validated_in_init() -> None:
+@pytest.mark.parametrize("power", [0.5, 2.0, np.nan, np.inf])
+def test_riskgbm_tweedie_variance_power_validated_at_fit(power) -> None:
+    from sklearn.base import clone
+
+    model = RiskGBM(tweedie_variance_power=power)
+    copied = clone(model)
     with pytest.raises(ValueError, match="tweedie_variance_power"):
-        RiskGBM(objective="tweedie", tweedie_variance_power=0.5)
-    with pytest.raises(ValueError, match="tweedie_variance_power"):
-        RiskGBM(objective="tweedie", tweedie_variance_power=2.0)
-    # Powered within valid range doesn't raise.
-    RiskGBM(objective="tweedie", tweedie_variance_power=1.0)
-    RiskGBM(objective="tweedie", tweedie_variance_power=1.99)
+        copied.fit(np.arange(20).reshape(-1, 1), np.arange(20, dtype=float))
 
 
 def test_riskgbm_invalid_power_at_fit_after_set_params() -> None:
@@ -193,9 +193,13 @@ def test_riskgbm_monotone_constraints_none_default_unchanged() -> None:
     np.testing.assert_allclose(gbm_a.predict(X), gbm_b.predict(X))
 
 
-def test_riskgbm_monotone_constraints_invalid_dict_value_in_init() -> None:
+@pytest.mark.parametrize("via_set_params", [False, True])
+def test_riskgbm_monotone_constraints_invalid_dict_value_at_fit(via_set_params) -> None:
+    model = RiskGBM(monotone_constraints=None if via_set_params else {"x": 2})
+    if via_set_params:
+        model.set_params(monotone_constraints={"x": 2})
     with pytest.raises(ValueError, match="monotone_constraints"):
-        RiskGBM(objective="tweedie", monotone_constraints={"x": 2})
+        model.fit(pd.DataFrame({"x": np.arange(20)}), np.arange(20, dtype=float))
 
 
 def test_riskgbm_monotone_constraints_unknown_col_raises_at_fit() -> None:

@@ -18,10 +18,11 @@ exposure-weighted pairwise inequality Gini.
 
 from __future__ import annotations
 
-from collections import namedtuple
+from typing import NamedTuple
 
 import numpy as np
 import pandas as pd
+from numpy.typing import ArrayLike
 from sklearn.metrics import (
     auc,
     mean_gamma_deviance,
@@ -103,7 +104,7 @@ def _concentration_curve(y_true, y_pred, sample_weight):
     )
 
 
-def gini(y_true, y_pred, sample_weight=None) -> float:
+def gini(y_true: ArrayLike, y_pred: ArrayLike, sample_weight: ArrayLike | None = None) -> float:
     """Exposure-weighted concentration Gini (actuarial low-to-high convention).
 
     ``y_true`` is aggregate claim amount, ``y_pred`` is predicted rate, and
@@ -127,11 +128,15 @@ def gini(y_true, y_pred, sample_weight=None) -> float:
     return float(1.0 - 2.0 * auc(cum_w, cum_o))
 
 
-Lorenz = namedtuple("Lorenz", ["exposure_pct", "claims_pct", "gini"])
-"""Exposure-vs-claims concentration curve (actuarial ascending y_pred)."""
+class Lorenz(NamedTuple):
+    """Exposure-vs-claims concentration curve (actuarial ascending y_pred)."""
+
+    exposure_pct: np.ndarray
+    claims_pct: np.ndarray
+    gini: float
 
 
-def lorenz(y_true, y_pred, sample_weight=None) -> Lorenz:
+def lorenz(y_true: ArrayLike, y_pred: ArrayLike, sample_weight: ArrayLike | None = None) -> Lorenz:
     """Return the ascending concentration curve plus the Gini.
 
     ``exposure_pct`` and ``claims_pct`` both start at 0.0 and end at 1.0,
@@ -149,7 +154,7 @@ def lorenz(y_true, y_pred, sample_weight=None) -> Lorenz:
     )
 
 
-def op_ratio(y_true, y_pred, sample_weight=None) -> float:
+def op_ratio(y_true: ArrayLike, y_pred: ArrayLike, sample_weight: ArrayLike | None = None) -> float:
     """Portfolio observed/predicted pure-premium ratio (1.0 = perfect level).
 
     observed  = sum(claim_amount) / sum(exposure)
@@ -186,7 +191,9 @@ def _tweedie_scores(
     return deviance, 1.0 - deviance / null_deviance if null_deviance > 0 else float("nan")
 
 
-def stability_table(y_true, y_pred, sample_weight, *, periods) -> pd.DataFrame:
+def stability_table(
+    y_true: ArrayLike, y_pred: ArrayLike, sample_weight: ArrayLike | None, *, periods: ArrayLike
+) -> pd.DataFrame:
     """Return exposure-weighted diagnostics for each naturally sorted period.
 
     ``y_true`` is aggregate claim amount, ``y_pred`` is predicted pure premium,
@@ -278,13 +285,13 @@ def stability_table(y_true, y_pred, sample_weight, *, periods) -> pd.DataFrame:
 
 
 def calibration_table(
-    y_true,
-    y_pred,
-    sample_weight=None,
+    y_true: ArrayLike,
+    y_pred: ArrayLike,
+    sample_weight: ArrayLike | None = None,
     *,
-    groups=None,
+    groups: ArrayLike | None = None,
     n_bins: int = 10,
-    claim_count=None,
+    claim_count: ArrayLike | None = None,
 ) -> pd.DataFrame:
     """Per-segment observed vs predicted pure premium, exposure, and O/P ratio.
 
@@ -341,9 +348,9 @@ def calibration_table(
 def one_way_table(
     X: pd.DataFrame,
     feature: str,
-    y_true,
-    y_pred,
-    sample_weight=None,
+    y_true: ArrayLike,
+    y_pred: ArrayLike,
+    sample_weight: ArrayLike | None = None,
     *,
     n_bins: int | None = 10,
 ) -> pd.DataFrame:
@@ -464,10 +471,10 @@ _RATIO_EPS = 1e-12
 
 
 def double_lift_table(
-    y_true,
-    pred_a,
-    pred_b,
-    sample_weight=None,
+    y_true: ArrayLike,
+    pred_a: ArrayLike,
+    pred_b: ArrayLike,
+    sample_weight: ArrayLike | None = None,
     *,
     n_bins: int = 10,
     label_a: str = "model A",

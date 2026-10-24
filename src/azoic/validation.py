@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+from numpy.typing import ArrayLike
 
 __all__ = ["make_strata", "temporal_split"]
 
@@ -33,7 +34,9 @@ def _weighted_quantile_edges(y, sample_weight, *, n_quantiles: int) -> np.ndarra
     return np.unique(ys[idx])
 
 
-def make_strata(y, sample_weight=None, *, n_strata: int = 10) -> np.ndarray:
+def make_strata(
+    y: ArrayLike, sample_weight: ArrayLike | None = None, *, n_strata: int = 10
+) -> np.ndarray:
     """Integer stratum labels for a continuous y, for sklearn's stratifiers.
 
     sklearn's ``StratifiedKFold`` / ``StratifiedGroupKFold`` stratify on
@@ -76,7 +79,7 @@ def temporal_split(
     time_col: str,
     *,
     test_size: int | float | None = None,
-    cutoff=None,
+    cutoff: str | pd.Timestamp | np.datetime64 | int | float | None = None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Return positional ``(train_idx, test_idx)`` for a single temporal holdout.
 

@@ -26,9 +26,11 @@ from math import isfinite
 from typing import Any
 
 import pandas as pd
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, SkipValidation
+from sklearn.pipeline import Pipeline
 
 from azoic.data import load_data
+from azoic.models import FrequencySeverityModel, RiskGBM, RiskGLM
 from azoic.workflow import (
     CategoricalDistribution,
     ExperimentConfig,
@@ -146,7 +148,10 @@ class TuneResult(BaseModel):
     best_values: dict[str, float]
     n_trials: int
     run: Run
-    estimators: dict[str, Any] | None = None
+    # Keep runtime value validation unchanged from the former Any boundary.
+    estimators: (
+        dict[str, SkipValidation[RiskGLM | RiskGBM | FrequencySeverityModel | Pipeline]] | None
+    ) = None
 
 
 def tune_experiment(

@@ -225,3 +225,6 @@ supplied, it is checked against `claim_amount / exposure`.
 
 [Configure reproducible experiments](experiment-configuration.md){ .md-button .md-button--primary }
 [Interpret the diagnostics](actuarial-workflow.md){ .md-button }
+
+See [compatibility and component composition](../reference/compatibility.md) for
+third-party component requirements, a runnable arithmetic check and the 0.x policy.

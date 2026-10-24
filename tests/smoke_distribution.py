@@ -9,8 +9,14 @@ from unittest import TestCase
 
 import numpy as np
 import pandas as pd
+from sklearn.base import clone
+from sklearn.dummy import DummyRegressor
+from sklearn.model_selection import KFold, cross_val_score
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import FunctionTransformer
 
 import azoic
+from azoic import FrequencySeverityModel, op_ratio
 from azoic.models import RiskGBM, RiskGLM
 from azoic.preprocessing import AutoBinner, AutoGrouper
 
@@ -105,3 +111,46 @@ for command in ("profile", "fit", "compare", "export-tariff", "tune"):
     )
     assert "Usage:" in result.stdout, command
 print("Preprocessing outcome/column contracts, constant bins, and all five CLI helps passed")
+
+# Public, runtime-only composition recipe; also published in the compatibility guide.
+X = pd.DataFrame(
+    {
+        "constant": [1.0, 1.0, 1.0],
+        "exposure": [1.0, 3.0, 2.0],
+        "claim_count": [1, 2, 0],
+        "claim_amount": [10.0, 60.0, 0.0],
+    }
+)
+original = X.copy(deep=True)
+freq, sev = DummyRegressor(), DummyRegressor()
+model = FrequencySeverityModel(freq=freq, sev=sev)
+assert model.get_params()["freq__strategy"] == "mean"
+model.set_params(freq__strategy="mean", sev__strategy="mean")
+assert model.fit(X) is model
+assert not hasattr(freq, "constant_") and not hasattr(sev, "constant_")
+assert not hasattr(clone(model), "freq_")
+
+# Independent weighted means: frequency = 3/6; severity = 70/3.
+np.testing.assert_allclose(model.freq_.predict(X[["constant"]]), 0.5)
+np.testing.assert_allclose(model.sev_.predict(X[["constant"]]), 70 / 3)
+prediction = model.predict(X[["constant"]])
+assert prediction.shape == (3,) and np.isfinite(prediction).all()
+np.testing.assert_allclose(prediction, 35 / 3)
+np.testing.assert_allclose(np.dot(prediction, X.exposure), 70)
+np.testing.assert_allclose(op_ratio(X.claim_amount, prediction, X.exposure), 1)
+
+pipeline = Pipeline(
+    [
+        ("identity", FunctionTransformer()),
+        ("model", clone(model)),
+    ]
+)
+assert pipeline.fit(X) is pipeline
+np.testing.assert_allclose(pipeline.predict(X), prediction)
+repeated = pd.concat([X, X], ignore_index=True)
+scores = cross_val_score(pipeline, repeated, repeated.claim_amount / repeated.exposure, cv=KFold(2))
+assert scores.shape == (2,) and np.isfinite(scores).all()
+pd.testing.assert_frame_equal(X, original)
+
+assert (package_path.parent / "py.typed").is_file()
+print("Public component composition, cloning, nested parameters, pipeline and CV passed")

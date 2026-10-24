@@ -43,3 +43,63 @@ def test_package_reexports_module_public_apis():
         for name in names:
             assert name in azoic.__all__
             assert getattr(azoic, name) is getattr(module, name)
+
+
+def test_reporting_annotations_resolve_without_eager_workflow_imports():
+    for module_name, functions in (
+        ("reporting", ["model_card", "comparison_table", "comparison_dashboard"]),
+        ("mlops", ["log_run"]),
+    ):
+        subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                f"""
+import sys
+import typing
+import azoic
+from azoic import {module_name} as module
+assert not {{"azoic.workflow", "glum", "lightgbm"}} & sys.modules.keys()
+for name in {functions!r}:
+    hints = typing.get_type_hints(getattr(module, name))
+    annotation = hints.get("run")
+    if annotation is not None:
+        assert annotation is azoic.Run
+    else:
+        assert typing.get_args(hints["runs"]) == (azoic.Run,)
+from azoic.workflow import Run, ModelResult
+assert azoic.Run is Run and azoic.ModelResult is ModelResult
+assert Run.model_fields["config"].annotation is azoic.ExperimentConfig
+""",
+            ],
+            check=True,
+        )
+
+
+def test_downstream_public_typing(tmp_path):
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    fixture = root / "tests/typing_public_api.py"
+    result = subprocess.run(
+        [sys.executable, "-m", "ty", "check", str(fixture)],
+        cwd=root,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    invalid = tmp_path / "invalid_consumer.py"
+    invalid.write_text(
+        "from azoic import ExperimentConfig, Run, run_experiment\n"
+        "def invalid(config: ExperimentConfig):\n"
+        "    result: Run = run_experiment(config, return_estimators=True)\n"
+        "    return result\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-m", "ty", "check", str(invalid)],
+        cwd=root,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    assert "invalid-assignment" in result.stdout, result.stdout + result.stderr

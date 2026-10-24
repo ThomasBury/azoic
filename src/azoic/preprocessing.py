@@ -14,11 +14,14 @@ Both follow the scikit-learn transformer API and survive
 from __future__ import annotations
 
 import warnings
+from collections.abc import Hashable, Mapping, Sequence
 from numbers import Integral, Real
+from typing import Self, overload
 
 import lightgbm as lgb
 import numpy as np
 import pandas as pd
+from numpy.typing import ArrayLike
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.isotonic import isotonic_regression
 from sklearn.utils.validation import (
@@ -295,19 +298,25 @@ class AutoBinner(TransformerMixin, BaseEstimator):
     feature_names_in_ : list[str] | None
     """
 
+    mapping_: dict[str, np.ndarray]
+    missing_: dict[str, int]
+    category_dtypes_: dict[str, pd.CategoricalDtype]
+    feature_names_in_: np.ndarray
+    n_features_in_: int
+
     def __init__(
         self,
-        cols=None,
-        strategy="tree",
-        max_bins=8,
-        min_exposure=None,
-        min_claims=None,
-        exposure_col=None,
-        claim_count_col=None,
-        target_col=None,
-        monotonic=False,
-        random_state=42,
-    ):
+        cols: Sequence[str] | None = None,
+        strategy: str = "tree",
+        max_bins: int = 8,
+        min_exposure: float | None = None,
+        min_claims: float | None = None,
+        exposure_col: str | None = None,
+        claim_count_col: str | None = None,
+        target_col: str | None = None,
+        monotonic: bool | str = False,
+        random_state: int | None = 42,
+    ) -> None:
         self.cols = cols
         self.strategy = strategy
         self.max_bins = max_bins
@@ -325,7 +334,7 @@ class AutoBinner(TransformerMixin, BaseEstimator):
         tags.input_tags.string = True
         return tags
 
-    def fit(self, X, y=None):
+    def fit(self, X: pd.DataFrame | ArrayLike, y: ArrayLike | None = None) -> Self:
         if self.strategy not in ("quantile", "tree"):
             raise ValueError(f"strategy must be 'quantile' or 'tree'; got {self.strategy!r}")
         if (
@@ -473,7 +482,13 @@ class AutoBinner(TransformerMixin, BaseEstimator):
             edges = _weighted_quantile_edges(v, w, n_quantiles=self.max_bins)
         return edges[edges > v.min()]
 
-    def transform(self, X):
+    @overload
+    def transform(self, X: pd.DataFrame) -> pd.DataFrame: ...
+
+    @overload
+    def transform(self, X: ArrayLike) -> np.ndarray: ...
+
+    def transform(self, X: pd.DataFrame | ArrayLike) -> pd.DataFrame | np.ndarray:
         _validate_transform_input(self, X)
         X_df, was_df = _to_frame(X, required_columns=self.mapping_)
         out = X_df.copy()
@@ -535,10 +550,14 @@ class AutoBinner(TransformerMixin, BaseEstimator):
         ).tolist()
         return pd.CategoricalDtype(categories, ordered=True)
 
-    def get_feature_names_out(self, input_features=None):
+    def get_feature_names_out(
+        self, input_features: Sequence[str] | np.ndarray | None = None
+    ) -> np.ndarray:
         return _feature_names(self, input_features)
 
-    def set_mapping(self, mapping, *, missing=None):
+    def set_mapping(
+        self, mapping: Mapping[str, ArrayLike], *, missing: Mapping[str, int] | None = None
+    ) -> None:
         """Replace fitted bin mappings with finite, strictly increasing edge vectors.
 
         Keys must name currently binned columns. Omitted columns pass through.
@@ -637,18 +656,24 @@ class AutoGrouper(TransformerMixin, BaseEstimator):
         Fitted group label used for missing and unseen levels.
     """
 
+    mapping_: dict[str, dict[Hashable, Hashable]]
+    missing_: dict[str, Hashable]
+    category_dtypes_: dict[str, pd.CategoricalDtype]
+    feature_names_in_: np.ndarray
+    n_features_in_: int
+
     def __init__(
         self,
-        cols=None,
-        strategy="similarity",
-        max_groups=10,
-        min_exposure=None,
-        min_claims=None,
-        exposure_col=None,
-        claim_count_col=None,
-        target_col=None,
-        other_label="Other",
-    ):
+        cols: Sequence[str] | None = None,
+        strategy: str = "similarity",
+        max_groups: int = 10,
+        min_exposure: float | None = None,
+        min_claims: float | None = None,
+        exposure_col: str | None = None,
+        claim_count_col: str | None = None,
+        target_col: str | None = None,
+        other_label: str = "Other",
+    ) -> None:
         self.cols = cols
         self.strategy = strategy
         self.max_groups = max_groups
@@ -665,7 +690,7 @@ class AutoGrouper(TransformerMixin, BaseEstimator):
         tags.input_tags.string = True
         return tags
 
-    def fit(self, X, y=None):
+    def fit(self, X: pd.DataFrame | ArrayLike, y: ArrayLike | None = None) -> Self:
         if self.strategy not in ("rare", "similarity"):
             raise ValueError(f"strategy must be 'rare' or 'similarity'; got {self.strategy!r}")
         if (
@@ -813,7 +838,13 @@ class AutoGrouper(TransformerMixin, BaseEstimator):
         ]
         return pd.CategoricalDtype([*categories, self.other_label], ordered=ordered)
 
-    def transform(self, X):
+    @overload
+    def transform(self, X: pd.DataFrame) -> pd.DataFrame: ...
+
+    @overload
+    def transform(self, X: ArrayLike) -> np.ndarray: ...
+
+    def transform(self, X: pd.DataFrame | ArrayLike) -> pd.DataFrame | np.ndarray:
         _validate_transform_input(self, X)
         X_df, was_df = _to_frame(X, required_columns=self.mapping_)
         out = X_df.copy()
@@ -851,10 +882,17 @@ class AutoGrouper(TransformerMixin, BaseEstimator):
             )
         return out if was_df else out.to_numpy()
 
-    def get_feature_names_out(self, input_features=None):
+    def get_feature_names_out(
+        self, input_features: Sequence[str] | np.ndarray | None = None
+    ) -> np.ndarray:
         return _feature_names(self, input_features)
 
-    def set_mapping(self, mapping, *, missing=None):
+    def set_mapping(
+        self,
+        mapping: Mapping[str, Mapping[Hashable, Hashable]],
+        *,
+        missing: Mapping[str, Hashable] | None = None,
+    ) -> None:
         """Replace fitted groups: ``{col: {level: group_label}}``.
 
         Keys must name currently grouped columns. Omitted columns pass through.

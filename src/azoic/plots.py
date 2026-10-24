@@ -13,7 +13,7 @@ keeps one color across all charts via :func:`model_colors`.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Iterator, Mapping
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Literal
@@ -23,6 +23,7 @@ import numpy as np
 import pandas as pd
 from cycler import cycler
 from matplotlib.figure import Figure, SubFigure
+from numpy.typing import ArrayLike
 
 from azoic.metrics import _as_arrays, lorenz
 
@@ -85,13 +86,13 @@ AZOIC_STYLE: dict[str, Any] = {
 
 
 @contextmanager
-def azoic_style():
+def azoic_style() -> Iterator[None]:
     """Apply the azoic chart style (fivethirtyeight base + CVD-safe overrides)."""
     with plt.style.context(["fivethirtyeight", AZOIC_STYLE]):
         yield
 
 
-def model_colors(names) -> dict[str, str]:
+def model_colors(names: Iterable[object]) -> dict[str, str]:
     """Stable Okabe-Ito color per model name, consistent across all charts."""
     return {str(name): OKABE_ITO[i % len(OKABE_ITO)] for i, name in enumerate(names)}
 
@@ -174,9 +175,9 @@ def _draw_exposure_panel(panel: plt.Axes, x: np.ndarray, share: np.ndarray) -> N
 
 
 def plot_lorenz(
-    y_true,
-    y_pred,
-    sample_weight=None,
+    y_true: ArrayLike,
+    y_pred: ArrayLike | Mapping[str, ArrayLike],
+    sample_weight: ArrayLike | None = None,
     *,
     ax: plt.Axes | None = None,
     path: str | Path | None = None,
@@ -279,7 +280,7 @@ def plot_lorenz(
 
 
 def plot_lift(
-    table,
+    table: pd.DataFrame,
     *,
     color: str | None = None,
     label: str = "predicted",
@@ -348,7 +349,7 @@ def _calibration_scatter(ax: plt.Axes, table: pd.DataFrame) -> None:
 
 
 def plot_calibration(
-    table,
+    table: pd.DataFrame,
     *,
     ax: plt.Axes | None = None,
     path: str | Path | None = None,
@@ -379,7 +380,7 @@ def plot_calibration(
 
 
 def plot_one_way(
-    table,
+    table: pd.DataFrame,
     *,
     color: str | None = None,
     label: str = "predicted",
@@ -448,7 +449,7 @@ def plot_one_way(
 
 
 def plot_double_lift(
-    table,
+    table: pd.DataFrame,
     *,
     ax: plt.Axes | None = None,
     path: str | Path | None = None,
@@ -529,9 +530,9 @@ def plot_double_lift(
 
 
 def plot_actual_vs_predicted(
-    y_true,
-    y_pred,
-    sample_weight=None,
+    y_true: ArrayLike,
+    y_pred: ArrayLike,
+    sample_weight: ArrayLike | None = None,
     *,
     bins: Literal["log"] | int | None = "log",
     gridsize: int = 50,
