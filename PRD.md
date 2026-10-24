@@ -96,7 +96,7 @@ baseline is `just check`.
 | Deviance and D²: weighted rates, fixed power 1.5 for experiment/stability comparisons | Workflow `_deviance_test` and `_evaluate_split`; `metrics.stability_table`; deviance functions are upstream sklearn re-exports | Estimator scores use their family/objective power. Workflow warns and yields inf/NaN for nonpositive predictions; stability rejects them. D² uses the evaluated period's observed-mean null; zero null deviance gives NaN. | `tests/test_metrics.py::test_deviances_reexported`; `tests/test_workflow.py::test_deviance_test_is_exposure_weighted_tweedie_power_1_5`; `tests/test_workflow.py::test_temporal_test_d2_matches_period_baseline`; `tests/test_workflow.py::test_run_experiment_handles_clipped_zero_predictions_and_ordered_protected_cols` |
 | Evaluation boundaries and holdout membership | `validation.temporal_split` keeps equal timestamps together; workflow records positional splits; tuning derives inner splits only from outer training and evaluates final models on outer test | Protected diagnostics are descriptive outer-test evidence. Comparison warns on incompatible data/target/exposure/holdout contexts. Distillation callers must supply disjoint observations; object identity cannot establish independence. | `tests/test_validation.py::test_temporal_split_keeps_equal_timestamps_on_one_side`; `tests/test_validation.py::test_temporal_split_rejects_missing_times_and_empty_cutoff_partitions`; `tests/test_tune.py::test_tuning_does_not_inspect_outer_test_outcomes`; `tests/test_reporting.py::test_comparison_warns_once_for_mixed_evaluation_contexts` |
 | Result snapshots and audit limits | Workflow deep-copies config and effective explicit params, fingerprints the canonical frame and records split positions; lazy package exports keep imports light | Frozen result attributes contain mutable public containers. Constructor defaults, runtime versions and tuning settings are not yet complete provenance (M55). Caller owns data, environments and fitted-model storage. | `tests/test_workflow.py::test_run_snapshots_caller_configuration_and_nested_params`; `tests/test_workflow.py::test_data_fingerprint_covers_categorical_metadata`; `tests/test_init.py::test_package_exports_are_lazy_and_discoverable` |
-| Tariff application and recalibration | `tariff.extract_tariff` requires a fitted log-link GLM; `apply_tariff` rejects unseen categories/nonfinite numerics; export recalibration checks aggregate amounts and row exposure floor | Zero observed total permits a zero recalibrated base. Library callers choose calibration data; CLI uses training positions. Generic upstream export fidelity and atomic save are pending M50: current checks do not establish either. | `tests/test_tariff.py::test_exported_intervals_independently_reproduce_boundary_premiums`; `tests/test_tariff.py::test_apply_tariff_unknown_categorical_level_raises`; `tests/test_tariff.py::test_apply_tariff_rejects_nonfinite_numeric_input`; `tests/test_tariff.py::test_zero_total_recalibration_keeps_zero_rates`; `tests/test_tutorial.py` |
+| Tariff application and recalibration | `tariff.extract_tariff` requires a fitted log-link GLM; `apply_tariff` rejects unseen categories/nonfinite numerics; export recalibration checks aggregate amounts and row exposure floor. M50 restricts export to representable preprocessing and atomically replaces completed workbooks. | Zero observed total permits a zero recalibrated base. Library callers choose calibration data; CLI uses training positions. Generic transforms remain available to distillation but are rejected by export. M49 did not establish export fidelity or failure safety; M50 adds that evidence. | `tests/test_tariff.py::test_exported_intervals_independently_reproduce_boundary_premiums`; `tests/test_tariff.py::test_apply_tariff_unknown_categorical_level_raises`; `tests/test_tariff.py::test_apply_tariff_rejects_nonfinite_numeric_input`; `tests/test_tariff.py::test_zero_total_recalibration_keeps_zero_rates`; `tests/test_tariff.py::test_export_supported_pipeline_has_independent_workbook_prices`; `tests/test_tariff.py::test_export_rejects_unsupported_preprocessing_before_writing`; `tests/test_tariff.py::test_export_failures_preserve_destination_and_remove_temporary_files`; `tests/test_tariff.py::test_distillation_preserves_generic_transforms_and_passthrough`; `tests/test_tutorial.py` |
 
 #### Diagnostic-extension exercise: current change path
 
@@ -226,12 +226,12 @@ framework, orchestration class or speculative upper bound is required.
 | Milestone / phase | Scope and acceptance |
 | --- | --- |
 | M49 / 1 (completed locally) | Current rule ownership, units, exceptions and independent runnable checks; perform/discard the diagnostic-extension exercise and record its change path. |
-| M50 / 2 | Faithful export of Azoic bins/groups, workflow column removal and passthrough; reject unsupported preprocessing before opening destinations. Preserve generic distillation transforms. Atomic sibling-workbook replacement; independent workbook arithmetic and serialization/save failure preservation. Document newly rejected pipelines. |
+| M50 / 2 (completed locally) | Faithful export of Azoic bins/groups, workflow column removal and passthrough; reject unsupported preprocessing before opening destinations. Preserve generic distillation transforms. Atomic sibling-workbook replacement preserving existing permission bits; independent workbook arithmetic and serialization/save/permission failure preservation. Document newly rejected pipelines. |
 | M51 / 3 | Verified `glum>=3.4.1`, `typer>=0.27.1` floors; retain locked Python 3.12 full suite, reuse wheel/sdist model/preprocessing/all-five-CLI smokes for low-version Python 3.12 metadata installs and Python 3.14 wheels; distinguish tested stacks from Python metadata support. |
 | M52 / 4 | Private shared outcome validator in `data.py` used by workflow/FSM: aligned finite vectors, row exposure floor, non-negative amounts/counts, optional count/amount consistency. Keep schema, supplied-rate, severity, explicit-weight and segment policies at their boundaries; calibration counts must be aligned 1D vectors, including valid `[3, 4]` summing to seven. |
 | M53 / 5 | Separate estimator/input construction, fixed-shape split results and final `Run` assembly within current modules; trials consume scores without final-run assembly, training diagnostics or provenance. Share fixed-power scoring with stability while retaining warning/rejection differences; replace private-patching tests with behavioral checks and preserve all public results/splits/mappings. |
-| M54 / 6 | Static root re-exports with lazy runtime imports; concrete public annotations, `Self` and `return_estimators` overloads. Document justified heterogeneous/third-party `Any` boundaries. Move RiskGBM validation to fit, including after `set_params`; update callers and exception-timing migration notes; verify downstream typing, cloning, pipelines, estimator checks and targeted FSM CV. |
-| M55 / 7 | Snapshot actual full constructor settings in defaulted `ModelResult.resolved_params`, qualified classes/sklearn component paths; record final-run `runtime_versions` and effective `tuning_settings`, including sampler/seeds. Deep-copy containers, preserve config/params, collect metadata once per final run, expose compact cards/separate MLflow prefixes; historical provenance stays explicitly unrecorded. Repeat the extension exercise and record independent maintainer review or unresolved limitations. |
+| M54 / 6 | Static root re-exports with lazy runtime imports; concrete public annotations, `Self` and `return_estimators` overloads. Document justified heterogeneous/third-party `Any` boundaries. Move RiskGBM validation to fit, including after `set_params`; update callers and exception-timing migration notes. Publish the composition contract and Azoic 0.x policy below; remove annotation-only workflow imports from reporting/logging through the lazy root. Verify downstream typing, import identities, cloning, pipelines, estimator checks, targeted FSM CV and installed wheel/sdist composition. |
+| M55 / 7 | Snapshot actual full constructor settings in defaulted `ModelResult.resolved_params`, qualified classes/sklearn component paths; record final-run `runtime_versions` and effective `tuning_settings`, including sampler/seeds. Deep-copy containers, preserve config/params, collect metadata once per final run, expose compact cards/separate MLflow prefixes; historical provenance stays explicitly unrecorded. Repeat the M49 diagnostic exercise and obtain independent maintainer observations for M54's documented component exercise, or explicitly leave that validation pending. |
 
 Public API breaks are permitted when justified, with callers/tests/docs/project
 rules and migration notes updated together; no test-only private compatibility
@@ -244,6 +244,104 @@ holdouts, missing routing, mapping overrides, upstream contracts and installed
 packages. Release publication, portable replay, licensing provenance review and
 independent maintainer validation are separate pending work. No later phase is
 started by completing M49.
+
+#### M54 extension boundary — approved plan, implementation pending
+
+Support Python component composition without expanding workflow construction,
+serialization or tuning: keep `ModelSpec.kind` unchanged. Keep `Run` and
+`ModelResult` in `workflow.py`, including the concrete, runtime-validated
+`Run.config: ExperimentConfig`. Extraction is deferred until a concrete consumer
+needs results independently of workflow configuration. Do not publish
+`azoic.testing.check_estimator`; reconsider only if adopters repeatedly need the
+same narrowly defined Azoic-specific checks.
+
+Preserve the existing root `__all__` inventory and documented defining-module
+imports. Root and workflow `Run` / `ModelResult` must remain identical classes.
+Reporting/logging should use `import azoic` and `run: azoic.Run` with postponed
+annotations: fresh-process imports must avoid workflow, glum and LightGBM, while
+`get_type_hints()` must still resolve the same `Run` on demand. Type-only imports
+alone are insufficient for runtime annotation inspection. Result validation,
+container mutability and experiment/tuning return interfaces must remain intact.
+
+The published compatibility scope will cover declared exports and explicitly
+documented constructors, methods and attributes; incidental imports and
+undocumented implementation state gain no promise. During `0.y.z`, patches
+preserve this documented contract; justified incompatible changes require a
+minor release and migration notes, without a mandatory warning period. This is
+an Azoic policy, stronger than [SemVer's 0.x baseline](https://semver.org/spec/v2.0.0.html#spec-item-4).
+It must not freeze defects scheduled for M50–M55 or turn M49 observations into
+permanent guarantees.
+
+Document the following supported component and state boundaries:
+
+- `FrequencySeverityModel(freq=..., sev=...)` components support sklearn cloning,
+  parameter inspection and nested `get_params` / `set_params`. They accept
+  `fit(X, y, sample_weight=...)` directly, return themselves, accept the supplied
+  feature DataFrame and categorical representation, and predict one finite value
+  per row. No Azoic inheritance or component `score` method is required.
+- Frequency predictions are claims per exposure unit; severity predictions are
+  currency per claim. FSM clones prototypes (which remain unfitted), removes
+  special columns, uses count/exposure with exposure weights for frequency, and
+  fits positive-count rows with amount/count and claim-count weights for severity.
+- Azoic regressors cover documented constructor parameters, `fit`, `predict`,
+  `score`, `get_params`, `set_params` and sklearn protocol behavior. Documented
+  fitted state covers feature metadata, GLM `backend_` / `coef_` / `intercept_`,
+  GBM `backend_`, and FSM `freq_` / `sev_`. Backend access does not extend Azoic's
+  compatibility promise to third-party internals.
+- Preprocessing covers documented fitting, transformation, feature-name and
+  mapping APIs, including fitted mappings and missing destinations. `Run` covers
+  `config`, `data_fingerprint`, row counts, split indices, `feature_names` and
+  `models`; `ModelResult` covers `kind`, `params`, `metrics`, `calibration_table`
+  and `protected_calibration`. Frozen attributes do not imply deep immutability
+  of their public dictionaries, lists or DataFrames.
+- No Azoic-specific subclass override hooks or internal call order are promised:
+  `_make_backend`, `_pop_weight`, `_strip_specials` and orchestration helpers stay
+  internal. Subclass authors maintain the public estimator contract; refer to
+  sklearn's estimator protocol rather than instructing everyone to subclass Azoic.
+- Portfolio/configured exposure keeps its one-day floor. Explicit model weights
+  stay aligned, finite, non-negative and positive in total; individual zero and
+  sub-day-sized weights remain legal. Severity count weights, ranking weights
+  and diagnostic segment totals retain their separate policies.
+
+The bounded conformance recipe uses mean `DummyRegressor` components and a
+constant feature, with exposure `[1, 3, 2]`, count `[1, 2, 0]` and amount
+`[10, 60, 0]`. Independent frequency is `3/6 = 0.5`; severity is `70/3` from
+targets `[10, 30]` weighted `[1, 2]`; pure premium is `35/3`; predicted aggregate
+amount is 70 and O/P is 1. Test-only recorders verify received targets, weights
+and feature columns. Assert prediction shape, unchanged caller inputs, unfitted
+prototypes, prediction without specials, cloning, nested parameters and an outer
+sklearn pipeline. Two-fold CV uses two copies of the fixture so each training
+fold contains severity observations; it tests integration, not generalization.
+
+Require broken variants to fail the intended assertions: ignoring frequency
+weights gives `350/27`, ignoring severity weights gives 10, aggregate severity
+gives 35, a component column-vector prediction produces an invalid `(3, 3)`
+product, and missing cloning support prevents construction/fitting. Existing
+explicit-weight regression must detect an incorrectly imposed exposure floor.
+These are requirements on the test exercise; current FSM does not validate
+component prediction shapes at runtime. Aggregate balance is an oracle for this
+mean predictor only, not a universal GLM/GBM/regularization requirement.
+
+Document upstream `check_estimator` alongside the recipe; retain Azoic's explicit
+strict-1D-target expected failure and do not suppress unrelated failures. Passing
+checks establish only the tested conventions/integration, not statistical validity,
+calibration, absence of leakage or correct business units in arbitrary components.
+Acceptance includes focused tests, `just check`, strict docs, downstream typing
+and the runtime-only consumer outside the checkout against both wheel and sdist,
+using public imports. Extend the existing distribution smoke; report the tested
+dependency stacks without claiming every metadata-permitted combination works.
+
+#### M55 external evidence — pending
+
+Repeat M49's diagnostic through ordinary/tuned results, reporting, comparisons
+and local logging after the refactoring. Preserve its independent predicted amount
+7 and O/P `10/7`; that baseline does not establish third-party compatibility,
+subclass hooks or independent maintainability. An independent maintainer must
+reproduce the installed-package component recipe from the documentation without
+private imports or coaching and report ambiguities. No independent validation
+has occurred; record unavailable observations as pending, never as acceptance.
+Reconsider widening `kind` only for a concrete construction request covering
+configuration, tuning and downstream consumers.
 
 
 - **WP5 — ergonomics (P2) — completed 2026-10-23**: in-memory experiment/tuning input, predictor-only

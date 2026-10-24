@@ -42,7 +42,14 @@ The rule ownership/evidence map and diagnostic-extension baseline live in PRD
 section 3; phase scope is in section 6 and execution evidence in PROGRESS.
 Keep row exposure floors, explicit model weights (including severity counts),
 ranking weights and diagnostic segment totals as separate policies. M49 records
-current behavior; later refactoring, API changes and audit provenance stay pending.
+the baseline; M50 completed faithful and failure-safe tariff export. Export
+supports native bins/groups, workflow column removal and passthrough; other
+transforms must fail before opening workbooks. Preserve generic distillation
+transforms, preserve existing destination permission bits and replace only fully
+saved sibling workbooks. M54's extension
+contract and M55's independent maintainer exercise are planned in PRD section 6;
+do not extract results, publish a checker or widen `ModelSpec.kind` in advance.
+Independent maintainer validation remains pending for M55.
 Current focus is the authority for the active/next milestone. Read
 `PREPROCESSING_FIX_PLAN.md` for the verified bugs, regression scope, PR delivery,
 and release reconciliation. The scope is mirrored in `PRD.md` section 6.

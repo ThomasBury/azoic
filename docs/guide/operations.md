@@ -149,6 +149,22 @@ azoic export-tariff \
 | `factors` | Numeric per-unit factors and categorical level relativities |
 | `mappings` | Feature roles, levels, references, and fitted bin/group mappings |
 
+Pipeline export supports native `AutoBinner` and `AutoGrouper` steps, the
+workflow's column removal, and `None` / `"passthrough"` steps. Preprocessing
+mapping rows follow pipeline order; removed columns have role `dropped`.
+Scalers, arbitrary function transforms, `ColumnTransformer`, nested pipelines
+and custom transformer subclasses are rejected before a workbook is opened.
+Earlier exports could silently omit these transforms and misdescribe the fitted
+model. Keep those pipelines in Python for scoring, or use the supported
+preprocessing when a workbook is required.
+
+Export writes and closes a temporary workbook beside the destination, then
+atomically replaces the destination. A serialization, save or replacement error
+preserves an existing workbook and removes the temporary file. Existing
+destination permission bits are copied before replacement; a permission-setting
+error also preserves the original file. This protects against failed writes;
+it is not a power-loss durability guarantee.
+
 Application sums the linear predictor before exponentiating. Invalid or
 unrepresentable factors and rates raise `ValueError`; export also rejects
 unrepresentable numeric per-unit factors. Zero observed claims can recalibrate
@@ -189,6 +205,8 @@ agreement with teacher predictions, not accuracy against claims. The CLI uses
 the run's stored training and test positions. Direct `distill_gbm` callers must
 supply disjoint observations: the object-identity guard rejects the same frame
 object, but separate objects or copies do not prove row independence. The
+Python distillation API also preserves generic fitted upstream transforms;
+exporting its student still requires the supported preprocessing above. The
 [freMTPL2 tutorial](fremtpl2.md) applies the workbook
 after fitted preprocessing and compares it with the direct GLM, raw GBM, and
 structured teacher on the same held-out claims. It exports with
