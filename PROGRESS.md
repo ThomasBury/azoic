@@ -17,7 +17,8 @@ Legend: ☐ pending · ◐ in progress · ☑ done
   remain intact. Full checks and strict docs passed; see the checkpoint below.
 - Git delivery is authorized on `chore/m53-split-evaluation`, based on merged
   M52 PR #14 at `3b32a4a`. The PR must receive final-head Codex review and green
-  CI before handoff. No merge or release is included.
+  CI before handoff. [PR #15](https://github.com/ThomasBury/azoic/pull/15) is open;
+  its live status is the authority for final review/CI. No merge or release is included.
 - **Next implementation session:** M54 / phase 6, public typing and composition
   contract. Read PRD sections 3/6 and M53's completion checkpoint; trace root
   re-exports, public annotations, reporting/logging imports and RiskGBM validation
@@ -198,6 +199,15 @@ checks and strict docs remain applicable because delivery changes only this
 record. Next: stage/check/commit/push, open the PR, then obtain Codex review and
 hosted CI on the final branch head. M54/M55, merging and publication remain
 outside this delivery.
+
+Opened [PR #15](https://github.com/ThomasBury/azoic/pull/15) with implementation
+commit `e5f9882` (`chore: separate model evaluation from final run assembly`).
+The title and description explain the unnecessary trial result construction,
+the shared scoring arithmetic, unchanged public behavior and acceptance checks.
+Fresh Ruff and staged whitespace checks passed. This follow-up records the PR
+before requesting Codex review on the final branch head; the live PR holds final
+review/CI evidence. Next: wait for Codex and CI, address actionable findings and
+repeat review until clear. M54/M55, merging and publication remain pending.
 
 ## M52 — Shared outcome validation and calibration counts ☑ — 2026-10-24
 
