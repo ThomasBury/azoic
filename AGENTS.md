@@ -46,7 +46,10 @@ the baseline; M50 completed faithful and failure-safe tariff export. Export
 supports native bins/groups, workflow column removal and passthrough; other
 transforms must fail before opening workbooks. Preserve generic distillation
 transforms, preserve existing destination permission bits and replace only fully
-saved sibling workbooks. M54's extension
+saved sibling workbooks. M51 verifies glum 3.4.1 and Typer 0.27.1 floors,
+retains locked Python 3.12 full checks and adds metadata-based low-version
+Python 3.12 and Python 3.14 wheel/sdist runtime smokes. Python metadata support
+does not imply every allowed stack is tested. M54's extension
 contract and M55's independent maintainer exercise are planned in PRD section 6;
 do not extract results, publish a checker or widen `ModelSpec.kind` in advance.
 Independent maintainer validation remains pending for M55.
@@ -215,6 +218,11 @@ examples/_quarto.yml  # main path and optional recipes; only sources committed, 
   read-only contents permissions: locked all-extras/groups sync, Ruff, Ty,
   pytest, strict docs, distributions, and installed wheel/sdist model,
   preprocessing, version, and all-five-command CLI smokes.
+  Separate runtime-only jobs reuse that smoke outside the checkout for wheel
+  and sdist: low compatible direct dependencies from wheel metadata on Python
+  3.12 (`lowest-direct`, asserting exact glum/Typer floors), current compatible
+  dependency wheels on Python 3.14. Only Azoic's own sdist may build from source;
+  installs resolve without `uv.lock`, run `uv pip check` and print their versions.
 - `.github/workflows/docs.yml` renders the real-data tutorial and deploys Pages
   on main pushes with locked sync; the fixed `pages` concurrency group cancels
   superseded runs. Real-data rendering stays outside PR validation.
