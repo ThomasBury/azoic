@@ -16,8 +16,9 @@ Legend: ☐ pending · ◐ in progress · ☑ done
 - **Delivery:** user authorized staging, a conventional commit, PR creation and
   iterative Codex review on 2026-10-24. Work is isolated on
   `ci/m51-dependency-validation`, based on current `origin/main` at `021fd0e`.
-  Obtain Codex review and green CI on the final head before handoff; no merge
-  or release is included.
+  [PR #13](https://github.com/ThomasBury/azoic/pull/13) is open. Its live status
+  is the authority for final-head Codex review and CI; both must pass before
+  handoff. No merge or release is included.
 - **Next implementation session:** M52 / phase 4, shared portfolio outcome
   validation and aligned calibration counts. Read PRD sections 3/6 and M51's
   completion checkpoint, trace the relevant callers, then mark M52 ◐. Do not
@@ -226,6 +227,15 @@ no implementation changed during delivery preparation. Fresh Ruff, actionlint
 and whitespace checks passed. Next: stage only these eight files, validate the
 staged diff, commit/push, open the PR and wait for Codex review plus hosted CI.
 M52 remains pending; no merge or release is authorized.
+
+Opened [PR #13](https://github.com/ThomasBury/azoic/pull/13) with implementation
+commit `63021de` (`chore: verify dependency floors and installed packages`).
+Its plain-English description covers the dependency floors, four runtime stacks,
+locked full-suite coverage and Python 3.14 limits. Requested `@codex review`;
+hosted CI was queued at creation. This documentation follow-up records the PR
+before waiting. Next: inspect Codex comments and CI on the final branch head,
+address findings with appropriate checks and repeat review until clear. The PR
+holds the live final-review/CI evidence; M52, merging and publication stay pending.
 
 ## M50 — Faithful and failure-safe tariff export ☑ — 2026-10-24
 
