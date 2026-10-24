@@ -18,6 +18,7 @@ from __future__ import annotations
 import hashlib
 import warnings
 from copy import deepcopy
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
@@ -30,9 +31,9 @@ from sklearn.preprocessing import FunctionTransformer
 
 from azoic.data import DatasetSpec, _validate_outcomes, load_data
 from azoic.metrics import (
+    _tweedie_scores,
     calibration_table,
     gini,
-    mean_tweedie_deviance,
     op_ratio,
 )
 from azoic.models import FrequencySeverityModel, RiskGBM, RiskGLM
@@ -473,23 +474,6 @@ def _data_fingerprint(df: pd.DataFrame) -> str:
     return digest.hexdigest()
 
 
-def _deviance_test(
-    *,
-    obs_rate: np.ndarray,
-    pred_rate: np.ndarray,
-    exposure: np.ndarray,
-) -> float:
-    """Exposure-weighted mean Tweedie deviance with fixed pure-premium power 1.5."""
-    return float(
-        mean_tweedie_deviance(
-            obs_rate,
-            pred_rate,
-            sample_weight=exposure,
-            power=1.5,
-        )
-    )
-
-
 def _validate_portfolio(config: ExperimentConfig, df: pd.DataFrame) -> None:
     missing = [column for column in config.spec.required_columns() if column not in df.columns]
     if missing:
@@ -505,17 +489,45 @@ def _drop_columns(X: pd.DataFrame, *, columns: list[str]) -> pd.DataFrame:
     return X.drop(columns=columns, errors="ignore")
 
 
+def _build_model(
+    config: ExperimentConfig, spec: ModelSpec, feature_names: list[str]
+) -> tuple[Any, list[str]]:
+    preprocessing = config.preprocessing if spec.preprocess else None
+    columns = [*feature_names, config.spec.exposure]
+    specials = [config.spec.target]
+    if config.spec.claim_count is not None:
+        specials.append(config.spec.claim_count)
+    if preprocessing is not None or spec.kind == "frequency_severity":
+        columns.extend(specials)
+
+    estimator = spec.build(config.spec)
+    if preprocessing is not None:
+        steps = preprocessing.build_steps(config.spec)
+        if spec.kind != "frequency_severity":
+            steps.append(
+                ("drop_specials", FunctionTransformer(_drop_columns, kw_args={"columns": specials}))
+            )
+        estimator = Pipeline([*steps, ("model", estimator)])
+    return estimator, list(dict.fromkeys(columns))
+
+
+@dataclass
+class _SplitResult:
+    estimator: Any
+    metrics: dict[str, float]
+    calibration_table: pd.DataFrame
+    protected_calibration: dict[str, pd.DataFrame]
+
+
 def _evaluate_split(
     config: ExperimentConfig,
     df: pd.DataFrame,
     train_idx: np.ndarray,
     test_idx: np.ndarray,
     *,
-    return_estimators: bool = False,
-    data_fingerprint: str | None = None,
     diagnostics: bool = True,
-):
-    """Fit and score one explicit train/test partition."""
+) -> tuple[list[str], dict[str, _SplitResult]]:
+    """Fit and score one partition without final result snapshots or provenance."""
     feature_names = config.feature_columns(df)
     if not feature_names:
         raise ValueError("no feature columns resolved; check `features` / `spec`")
@@ -533,37 +545,13 @@ def _evaluate_split(
         obs_train_agg = train_df[target].to_numpy(dtype=float)
         exp_train = train_df[exposure_col].to_numpy(dtype=float)
 
-    results: dict[str, ModelResult] = {}
-    estimators: dict[str, Any] = {}
+    results: dict[str, _SplitResult] = {}
     for name, spec in config.models.items():
-        preprocessing = config.preprocessing if spec.preprocess else None
-        columns = [*feature_names, exposure_col]
-        if preprocessing is not None or spec.kind == "frequency_severity":
-            columns.append(target)
-            if config.spec.claim_count is not None:
-                columns.append(config.spec.claim_count)
-        columns = list(dict.fromkeys(columns))
-        X_train = train_df[columns]
-        X_test = test_df[columns]
-
-        estimator = spec.build(config.spec)
-        if preprocessing is not None:
-            steps = preprocessing.build_steps(config.spec)
-            if spec.kind != "frequency_severity":
-                specials = [target]
-                if config.spec.claim_count is not None:
-                    specials.append(config.spec.claim_count)
-                steps.append(
-                    (
-                        "drop_specials",
-                        FunctionTransformer(_drop_columns, kw_args={"columns": specials}),
-                    )
-                )
-            estimator = Pipeline([*steps, ("model", estimator)])
+        estimator, columns = _build_model(config, spec, feature_names)
+        X_train, X_test = train_df[columns], test_df[columns]
         estimator.fit(X_train, y_train)
         pred_test = np.asarray(estimator.predict(X_test), dtype=float)
 
-        obs_test_rate = obs_test_agg / exp_test
         if np.any(pred_test <= 0):
             warnings.warn(
                 f"model {name!r} emitted non-positive predictions on test "
@@ -575,18 +563,7 @@ def _evaluate_split(
             deviance_test = float("inf")
             d2_test = float("nan")
         else:
-            deviance_test = _deviance_test(
-                obs_rate=obs_test_rate,
-                pred_rate=pred_test,
-                exposure=exp_test,
-            )
-            null_dev = 0.0
-            if obs_test_agg.sum() > 0:
-                null_pred = np.full_like(obs_test_agg, obs_test_agg.sum() / exp_test.sum())
-                null_dev = mean_tweedie_deviance(
-                    obs_test_rate, null_pred, sample_weight=exp_test, power=1.5
-                )
-            d2_test = 1.0 - deviance_test / null_dev if null_dev > 0 else float("nan")
+            deviance_test, d2_test = _tweedie_scores(obs_test_agg, pred_test, exp_test)
         metrics = {
             "gini_test": float(gini(obs_test_agg, pred_test, sample_weight=exp_test)),
             "op_ratio_test": float(op_ratio(obs_test_agg, pred_test, sample_weight=exp_test)),
@@ -612,29 +589,39 @@ def _evaluate_split(
         else:
             cal = pd.DataFrame()
             protected_calibration = {}
-        results[name] = ModelResult(
-            kind=spec.kind,
-            params=deepcopy(spec.effective_params(config.spec)),
-            metrics=metrics,
-            calibration_table=cal,
-            protected_calibration=protected_calibration,
-        )
-        estimators[name] = estimator
+        results[name] = _SplitResult(estimator, metrics, cal, protected_calibration)
+    return feature_names, results
 
-    run = Run(
+
+def _assemble_run(
+    config: ExperimentConfig,
+    df: pd.DataFrame,
+    train_idx: np.ndarray,
+    test_idx: np.ndarray,
+    feature_names: list[str],
+    results: dict[str, _SplitResult],
+) -> Run:
+    """Snapshot final results and provenance once, after evaluation."""
+    return Run(
         config=config.model_copy(deep=True),
-        data_fingerprint=_data_fingerprint(df) if data_fingerprint is None else data_fingerprint,
+        data_fingerprint=_data_fingerprint(df),
         n_rows=int(len(df)),
-        n_train=int(len(train_df)),
-        n_test=int(len(test_df)),
+        n_train=int(len(train_idx)),
+        n_test=int(len(test_idx)),
         train_indices=tuple(map(int, train_idx)),
         test_indices=tuple(map(int, test_idx)),
         feature_names=list(feature_names),
-        models=results,
+        models={
+            name: ModelResult(
+                kind=config.models[name].kind,
+                params=deepcopy(config.models[name].effective_params(config.spec)),
+                metrics=result.metrics,
+                calibration_table=result.calibration_table,
+                protected_calibration=result.protected_calibration,
+            )
+            for name, result in results.items()
+        },
     )
-    if return_estimators:
-        return run, estimators
-    return run
 
 
 def run_experiment(
@@ -655,10 +642,8 @@ def run_experiment(
         raise ValueError("loaded dataset is empty")
     _validate_portfolio(config, df)
     train_idx, test_idx = _split_indices(config, df)
-    return _evaluate_split(
-        config,
-        df,
-        train_idx,
-        test_idx,
-        return_estimators=return_estimators,
-    )
+    feature_names, results = _evaluate_split(config, df, train_idx, test_idx)
+    run = _assemble_run(config, df, train_idx, test_idx, feature_names, results)
+    if return_estimators:
+        return run, {name: result.estimator for name, result in results.items()}
+    return run

@@ -166,6 +166,26 @@ def op_ratio(y_true, y_pred, sample_weight=None) -> float:
     return float(observed_pp / pred_pp)
 
 
+def _tweedie_scores(
+    claim_amount: np.ndarray, prediction: np.ndarray, exposure: np.ndarray
+) -> tuple[float, float]:
+    """Fixed-power rate deviance and D² against this partition's observed mean.
+
+    Callers own input validation and the policy for nonpositive predictions.
+    """
+    observed_rate = claim_amount / exposure
+    deviance = float(
+        mean_tweedie_deviance(observed_rate, prediction, sample_weight=exposure, power=1.5)
+    )
+    null_deviance = 0.0
+    if claim_amount.sum() > 0:
+        null_prediction = np.full_like(prediction, claim_amount.sum() / exposure.sum())
+        null_deviance = float(
+            mean_tweedie_deviance(observed_rate, null_prediction, sample_weight=exposure, power=1.5)
+        )
+    return deviance, 1.0 - deviance / null_deviance if null_deviance > 0 else float("nan")
+
+
 def stability_table(y_true, y_pred, sample_weight, *, periods) -> pd.DataFrame:
     """Return exposure-weighted diagnostics for each naturally sorted period.
 
@@ -220,29 +240,10 @@ def stability_table(y_true, y_pred, sample_weight, *, periods) -> pd.DataFrame:
         claims = group["claim_amount"].to_numpy()
         predictions = group["prediction"].to_numpy()
         exposure = group["exposure"].to_numpy()
-        observed_rate = claims / exposure
         exposure_total = float(exposure.sum())
         claim_total = float(claims.sum())
         predicted_total = float(np.dot(predictions, exposure))
-        deviance = float(
-            mean_tweedie_deviance(
-                observed_rate,
-                predictions,
-                sample_weight=exposure,
-                power=1.5,
-            )
-        )
-        null_deviance = 0.0
-        if claim_total > 0:
-            null_prediction = np.full_like(predictions, claim_total / exposure_total)
-            null_deviance = float(
-                mean_tweedie_deviance(
-                    observed_rate,
-                    null_prediction,
-                    sample_weight=exposure,
-                    power=1.5,
-                )
-            )
+        deviance, d2 = _tweedie_scores(claims, predictions, exposure)
         rows.append(
             {
                 "period": period,
@@ -252,7 +253,7 @@ def stability_table(y_true, y_pred, sample_weight, *, periods) -> pd.DataFrame:
                 "o_p_ratio": op_ratio(claims, predictions, exposure),
                 "gini": gini(claims, predictions, exposure),
                 "deviance": deviance,
-                "d2": 1.0 - deviance / null_deviance if null_deviance > 0 else float("nan"),
+                "d2": d2,
             }
         )
 

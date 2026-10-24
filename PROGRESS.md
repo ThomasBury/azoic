@@ -9,20 +9,19 @@ Legend: ☐ pending · ◐ in progress · ☑ done
 
 ## Current focus
 
-- **M52 ☑ — shared portfolio outcome validation and aligned calibration counts**
-  completed locally on 2026-10-24. Workflow/tuning and FSM share portfolio value
-  checks; calibration counts reject scalar, multidimensional and misaligned
-  inputs while preserving segment totals. Full checks and strict docs passed.
-- M52 was implemented alone: it has independent acceptance and requires none
-  of M53–M55. Git delivery is now authorized and isolated on
-  `fix/m52-outcome-validation`, based on merged M51 PR #13 at `fad4a5f`.
-  [PR #14](https://github.com/ThomasBury/azoic/pull/14) is open; its live status
-  is the authority for final-head Codex review and CI. Both must pass before
-  handoff; no merge or release is included.
-- **Next implementation session:** M53 / phase 5, workflow evaluation/assembly
-  separation and shared fixed-power scoring. Read PRD sections 3/6 and M52's
-  completion checkpoint, trace `_evaluate_split`, tuning objectives and stability
-  scoring, then mark M53 ◐. Do not start it in this session. M54–M55 and
+- **M53 ☑ — separate split evaluation from final run assembly** completed
+  locally on 2026-10-24. Trials use internal split scores; final public snapshots
+  and fingerprinting happen once. Workflow/stability share fixed-power scoring.
+- M53 was implemented alone: its acceptance does not require M54 typing/
+  composition or M55 provenance. Public results, splits and learned mappings
+  remain intact. Full checks and strict docs passed; see the checkpoint below.
+- Git delivery is authorized on `chore/m53-split-evaluation`, based on merged
+  M52 PR #14 at `3b32a4a`. The PR must receive final-head Codex review and green
+  CI before handoff. No merge or release is included.
+- **Next implementation session:** M54 / phase 6, public typing and composition
+  contract. Read PRD sections 3/6 and M53's completion checkpoint; trace root
+  re-exports, public annotations, reporting/logging imports and RiskGBM validation
+  timing before marking M54 ◐. Do not start it in this session. M55 and
   independent maintainer validation remain pending.
 
 Previous focus (historical):
@@ -111,6 +110,94 @@ Previous focus and delivery evidence:
 - **Branch:** `feat/m46-lightgbm-preprocessing`, based on the completed WP5 branch.
 - Previous delivery: WP5 [PR #8](https://github.com/ThomasBury/azoic/pull/8)
   merged into `main` at `a99df81`; this branch was fast-forwarded to that base.
+
+## M53 — Workflow evaluation and assembly separation ☑ — 2026-10-24
+
+- [x] Read Current focus, M52 completion/delivery, PRD sections 3/6 and all callers.
+- [x] Assess grouping: implement this independently accepted phase alone.
+- [x] Separate construction, fixed-shape split results and final `Run` assembly.
+- [x] Share fixed-power scoring with stability, preserving boundary policies.
+- [x] Replace private-patching regressions with behavioral checks.
+- [x] Run focused checks, full `just check`, strict docs and final diff review.
+
+### M53 kickoff checkpoint
+
+The next phase is M53; M52 is merged in the current clean checkout. Traced
+workflow construction/evaluation, tuning objectives/final refit, stability
+scoring and all private helper consumers. Changes reach workflow, tune, metrics,
+their tests and the living project records. No config, public export, dependency,
+fixture format or public result field needs changing. Trials currently build
+`ModelResult` and `Run` even with diagnostics disabled; remove that work while
+keeping score arithmetic and holdout membership intact. M54/M55 stay separate.
+
+### M53 checkpoint — implementation and focused acceptance
+
+Construction now lives in `_build_model`; `_evaluate_split` always returns
+feature names plus `_SplitResult` records; `_assemble_run` creates public model
+results, configuration/parameter snapshots and the data fingerprint once per
+final run. Ordinary and tuned final results share that assembly. Trials consume
+internal scores and do not build public results or predict training rows.
+`metrics._tweedie_scores` owns fixed-power deviance and partition-relative D²;
+workflow warning/inf/NaN and stability rejection remain at their boundaries.
+
+Replaced private evaluation/objective patches with independent real Optuna
+studies and public-run replays. Checks cover selected values, config/Python
+precedence, ordinary/final-tuned equivalence, predictions, protected calibration,
+split positions and learned bin mappings. Public constructor/predict spies show
+three inner holdout predictions followed by the outer holdout/training pair,
+with exactly one final `Run` and `ModelResult`.
+
+Focused `uv run pytest tests/test_workflow.py tests/test_tune.py
+ tests/test_metrics.py -q`: **309 passed**, 3 expected warning emissions, in
+**26.78 seconds**; log `/tmp/azoic-m53-focused.log`. The first run caught two
+new parity checks passing surplus columns to fitted estimators; corrected those
+checks to use the fitted feature schema. Ruff and Ty pass.
+`uv sync --locked --all-extras --all-groups` exited **0**, no lock changes.
+Remaining: full `just check`, strict docs, ownership-map references and final
+diff review. No M54/M55, Git delivery or publication started.
+
+### M53 completion checkpoint — 2026-10-24
+
+Acceptance complete:
+
+- `uv sync --locked --all-extras --all-groups` exited **0**, no lock changes.
+- `just check` exited **0**: Ruff/Ty passed; **1328 passed, 4 skipped,
+  2 expected failures**, 11 warnings, in **177.47 seconds**. Existing array-API
+  skips and strict-1D target expected failures remain. Log:
+  `/tmp/azoic-m53-check.log`.
+- Focused workflow/tune/metrics checks passed **309** in **26.78 seconds**.
+  Independent Optuna/public-run comparisons cover both raw and preprocessed
+  routes; existing tests retain random/temporal holdouts, claim-free/nonpositive
+  predictions, native missing routing, mapping overrides, FSM/severity weights,
+  snapshots, CLI/reporting/logging and synthetic tutorial behavior.
+- Final strict `just docs-build` exited **0**, no issues, in **0.51 seconds**.
+  Log: `/tmp/azoic-m53-docs.log`. All **51** ownership-map test references resolve;
+  changed Python formatting and `git diff --check` pass.
+- Reviewed all changed source/tests/records and connected consumers. Exactly
+  eight intended files changed. No dependency, config schema, public result
+  field, root export, package version or generated artifact changed. Historical
+  M49 exercise evidence remains explicitly labelled as the baseline.
+
+Handoff: M53 is complete locally and uncommitted on `main`. It stands alone;
+M54 typing/composition and M55 provenance remain pending. Hosted CI, fresh
+wheel/sdist/Python 3.14 smokes and real-data tutorial rendering were not rerun
+for this internal refactor. No Git delivery, release or independent maintainer
+validation started. Exact next action in a new implementation session: read
+Current focus and PRD M54, trace root exports/public annotations, annotation-only
+reporting/logging imports and RiskGBM validation timing, then mark M54 ◐ and
+implement that phase only.
+
+### M53 Git delivery checkpoint — 2026-10-24
+
+The user authorized staging, a conventional commit, a clear common-English PR
+and waiting for Codex review, addressing findings and repeating until clear.
+Fetched `origin/main`; it matches the implementation base at `3b32a4a`.
+Created `chore/m53-split-evaluation` and inspected all eight intended files.
+The working-tree review reported no actionable regressions; the completed full
+checks and strict docs remain applicable because delivery changes only this
+record. Next: stage/check/commit/push, open the PR, then obtain Codex review and
+hosted CI on the final branch head. M54/M55, merging and publication remain
+outside this delivery.
 
 ## M52 — Shared outcome validation and calibration counts ☑ — 2026-10-24
 
