@@ -741,6 +741,15 @@ def test_explicit_sample_weight_is_not_floored() -> None:
     RiskGBM(objective="tweedie", n_estimators=10).fit(X, y, sample_weight=w)
 
 
+@pytest.mark.parametrize("column", ["exposure", "claim_amount", "claim_count"])
+def test_freq_severity_rejects_duplicate_outcome_columns(column) -> None:
+    df = _df(n=10)
+    df = pd.concat([df, df[[column]]], axis=1)
+    model = FrequencySeverityModel(freq=RiskGLM(family="poisson"), sev=RiskGLM(family="gamma"))
+    with pytest.raises(ValueError, match="one-dimensional"):
+        model.fit(df)
+
+
 def test_freq_severity_rejects_sub_day_exposure() -> None:
     df = _df(n=2000)
     df.loc[df.index[0], "exposure"] = 0.001

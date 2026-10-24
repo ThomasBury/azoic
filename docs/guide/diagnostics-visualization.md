@@ -53,6 +53,12 @@ distinct values than bins; at or below that count the actual levels are kept.
 label per row in place of the default prediction deciles; NaN labels form their
 own segment.
 
+Optional `calibration_table(claim_count=...)` counts must be a finite,
+non-negative, one-dimensional vector with one value per input row. Counts align
+by position and sum within segments: `[3, 4]` in one segment gives 7. Scalars,
+column vectors and mismatched lengths raise instead of broadcasting. This
+diagnostic does not enforce the portfolio's count/amount consistency rule.
+
 Constant predictions form one ordinary calibration group, including without
 exposure weights. Missing labels supplied through `groups=` still form a
 separate segment. Calibration, one-way, and double-lift segments must each sum

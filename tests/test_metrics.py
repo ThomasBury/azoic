@@ -698,6 +698,37 @@ def test_calibration_table_rejects_invalid_claim_count() -> None:
             calibration_table(y_true, y_pred, w, claim_count=bad_counts)
 
 
+@pytest.mark.parametrize(
+    ("counts", "message"),
+    [
+        (3, "one-dimensional"),
+        ([[3], [4]], "one-dimensional"),
+        ([[3, 4]], "one-dimensional"),
+        ([], "inconsistent numbers"),
+        ([3], "inconsistent numbers"),
+        ([3, 4, 5], "inconsistent numbers"),
+        ([3, np.nan], "claim_count"),
+        ([3, np.inf], "claim_count"),
+        ([3, -np.inf], "claim_count"),
+        ([3, -4], "claim_count"),
+    ],
+)
+def test_calibration_counts_reject_broadcasting_and_invalid_vectors(counts, message) -> None:
+    with pytest.raises(ValueError, match=message):
+        calibration_table([0, 20], [10, 10], [1, 1], groups=["all", "all"], claim_count=counts)
+
+
+@pytest.mark.parametrize("counts", [[3, 4], pd.Series([3, 4], index=[20, 10])])
+def test_calibration_counts_are_positional_segment_totals(counts) -> None:
+    original = counts.copy()
+    table = calibration_table(
+        [0, 20], [10, 10], [0, 1 / 366], groups=["all", "all"], claim_count=counts
+    )
+    assert table["claim_count"].tolist() == [7]
+    assert table["exposure"].item() == pytest.approx(1 / 366)
+    np.testing.assert_array_equal(counts, original)
+
+
 def test_one_way_table_keeps_genuine_nan_string_distinct_from_missing() -> None:
     """A genuine "nan" string level must not merge with true missing values."""
     X = pd.DataFrame({"feat": pd.array(["nan", "a", None, "a"], dtype=object)})

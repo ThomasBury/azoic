@@ -31,7 +31,7 @@ from sklearn.utils.validation import (
     validate_data,
 )
 
-from azoic.data import EXPOSURE_FLOOR
+from azoic.data import EXPOSURE_FLOOR, _validate_outcomes
 
 __all__ = ["RiskGLM", "RiskGBM", "FrequencySeverityModel"]
 
@@ -588,16 +588,7 @@ class FrequencySeverityModel(RegressorMixin, BaseEstimator):
         exposure = X[self.exposure_col].to_numpy(dtype=float)
         cc = X[self.claim_count_col].to_numpy(dtype=float)
         ca = X[self.claim_amount_col].to_numpy(dtype=float)
-        if not np.isfinite(exposure).all() or np.any(exposure <= 0):
-            raise ValueError("exposure must contain only positive finite values")
-        if np.any(exposure < EXPOSURE_FLOOR):
-            raise ValueError("exposure must be at least 1/366 (one day of exposure)")
-        if not np.isfinite(cc).all() or np.any(cc < 0):
-            raise ValueError("claim_count must contain only non-negative finite values")
-        if not np.isfinite(ca).all() or np.any(ca < 0):
-            raise ValueError("claim_amount must contain only non-negative finite values")
-        if np.any((cc == 0) != (ca == 0)):
-            raise ValueError("claim_count and claim_amount rows must be zero or positive together")
+        _validate_outcomes(exposure, ca, cc)
 
         if y is not None:
             y_rate = np.asarray(y, dtype=float)

@@ -28,7 +28,7 @@ from pydantic import BaseModel, ConfigDict, Field, FiniteFloat, model_serializer
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import FunctionTransformer
 
-from azoic.data import EXPOSURE_FLOOR, DatasetSpec, load_data
+from azoic.data import DatasetSpec, _validate_outcomes, load_data
 from azoic.metrics import (
     calibration_table,
     gini,
@@ -494,21 +494,11 @@ def _validate_portfolio(config: ExperimentConfig, df: pd.DataFrame) -> None:
     missing = [column for column in config.spec.required_columns() if column not in df.columns]
     if missing:
         raise ValueError(f"dataset is missing required columns: {missing}")
-    exposure = df[config.spec.exposure].to_numpy(dtype=float)
-    target = df[config.spec.target].to_numpy(dtype=float)
-    if not np.isfinite(exposure).all() or np.any(exposure <= 0):
-        raise ValueError("exposure must contain only positive finite values")
-    if np.any(exposure < EXPOSURE_FLOOR):
-        raise ValueError("exposure must be at least 1/366 (one day of exposure)")
-    if not np.isfinite(target).all() or np.any(target < 0):
-        raise ValueError("target must contain only non-negative finite values")
-    if config.spec.claim_count is None:
-        return
-    claim_count = df[config.spec.claim_count].to_numpy(dtype=float)
-    if not np.isfinite(claim_count).all() or np.any(claim_count < 0):
-        raise ValueError("claim_count must contain only non-negative finite values")
-    if np.any((claim_count == 0) != (target == 0)):
-        raise ValueError("claim_count and target rows must be zero or positive together")
+    _validate_outcomes(
+        df[config.spec.exposure],
+        df[config.spec.target],
+        df[config.spec.claim_count] if config.spec.claim_count is not None else None,
+    )
 
 
 def _drop_columns(X: pd.DataFrame, *, columns: list[str]) -> pd.DataFrame:

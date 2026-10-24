@@ -9,6 +9,24 @@ Legend: ☐ pending · ◐ in progress · ☑ done
 
 ## Current focus
 
+- **M52 ☑ — shared portfolio outcome validation and aligned calibration counts**
+  completed locally on 2026-10-24. Workflow/tuning and FSM share portfolio value
+  checks; calibration counts reject scalar, multidimensional and misaligned
+  inputs while preserving segment totals. Full checks and strict docs passed.
+- M52 was implemented alone: it has independent acceptance and requires none
+  of M53–M55. Git delivery is now authorized and isolated on
+  `fix/m52-outcome-validation`, based on merged M51 PR #13 at `fad4a5f`.
+  [PR #14](https://github.com/ThomasBury/azoic/pull/14) is open; its live status
+  is the authority for final-head Codex review and CI. Both must pass before
+  handoff; no merge or release is included.
+- **Next implementation session:** M53 / phase 5, workflow evaluation/assembly
+  separation and shared fixed-power scoring. Read PRD sections 3/6 and M52's
+  completion checkpoint, trace `_evaluate_split`, tuning objectives and stability
+  scoring, then mark M53 ◐. Do not start it in this session. M54–M55 and
+  independent maintainer validation remain pending.
+
+Previous focus (historical):
+
 - **M51 ☑ — dependency floors and installed artifacts** completed locally on
   2026-10-24. glum/Typer floors, unchanged locked Python 3.12 full validation and
   all four low-version Python 3.12/current-wheel Python 3.14 artifact checks
@@ -93,6 +111,106 @@ Previous focus and delivery evidence:
 - **Branch:** `feat/m46-lightgbm-preprocessing`, based on the completed WP5 branch.
 - Previous delivery: WP5 [PR #8](https://github.com/ThomasBury/azoic/pull/8)
   merged into `main` at `a99df81`; this branch was fast-forwarded to that base.
+
+## M52 — Shared outcome validation and calibration counts ☑ — 2026-10-24
+
+- [x] Read Current focus, M51 completion/delivery, PRD sections 3/6 and callers.
+- [x] Share finite, aligned, one-dimensional portfolio outcome checks in `data.py`.
+- [x] Preserve schema, supplied-rate, severity and distinct weight policies.
+- [x] Reject scalar/multidimensional/misaligned calibration counts; retain totals.
+- [x] Run focused regressions, `just check`, strict docs and final diff review.
+
+### M52 kickoff checkpoint
+
+The user requested the next milestone and an assessment of grouping. M52 is
+next and stands alone: it does not require M53–M55 and the approved plan calls
+for one phase per session. Scope reaches `data.py`, workflow (also called by
+tuning), FSM, calibration diagnostics, their tests and living documentation.
+`load_data` keeps schema-only validation; supplied-rate and severity eligibility
+stay in FSM. Explicit model weights, ranking weights and diagnostic segment
+floors remain separate. Calibration counts become strict aligned 1D vectors;
+scalars previously broadcast and column vectors could pass through pandas.
+No dependencies, public exports, config, fixtures or release changes are needed.
+
+Next: implement the shared validator and count guards, then verify all consumers.
+
+### M52 checkpoint — implementation and focused acceptance
+
+`data._validate_outcomes` now owns aligned 1D finite portfolio outcome checks,
+the row exposure floor and optional count/amount consistency. Workflow retains
+schema checks and delegates values; tuning inherits that boundary. FSM delegates
+the same value checks while retaining supplied-rate equality and severity
+eligibility/weights. Workflow amount errors now consistently name `claim_amount`
+instead of `target`; the in-memory run/tune expectations were updated together.
+
+Calibration validates count shape and alignment before grouping, rejecting
+scalar broadcasting and column-vector flattening. Its count totals remain
+positional and independent of portfolio outcome consistency and row exposure
+floors; list/Series `[3, 4]` still totals seven with a valid segment exposure.
+New tests also cover shape/length failures, duplicate special columns, the
+day-count tolerance, tuning rejection and unchanged schema-only loading.
+No public exports, configuration, dependencies, fixtures or version changed.
+AGENTS, the rule ownership map and the diagnostic guide match this behavior.
+
+Checks: focused data/metrics/models/workflow/tune regressions passed **646**, with
+**2 skipped, 2 expected failures**, 4 existing warnings, in **33.73 seconds**.
+Ruff and production Ty passed. `uv sync --locked --all-extras --all-groups`
+passed; strict `just docs-build` passed with no issues in **3.21 seconds**.
+Logs: `/tmp/azoic-m52-focused.log`, `/tmp/azoic-m52-docs.log`.
+Remaining: full `just check`, final diff/file-reference review, then completion
+handoff. M53–M55, Git delivery and publication have not started.
+
+### M52 completion checkpoint — 2026-10-24
+
+Acceptance complete:
+
+- `uv sync --locked --all-extras --all-groups` exited **0** with no lock changes.
+- `just check` exited **0**: Ruff/Ty passed; **1324 passed, 4 skipped,
+  2 expected failures**, 11 warnings, in **174.77 seconds**. This includes
+  ordinary/tuned runs, claim-free holdouts, explicit/severity weights, ranking
+  and diagnostic exposure policies, estimator contracts and synthetic tutorial
+  checks. Existing array-API skips and strict-1D target expected failures remain.
+  Log: `/tmp/azoic-m52-check.log`.
+- Focused data/metrics/models/workflow/tune checks passed **646**, with
+  **2 skipped, 2 expected failures**, in **33.73 seconds**.
+- Strict `just docs-build` exited **0**, no issues, in **3.21 seconds**.
+  All **51** ownership-map test file/node references were checked against the
+  current tree. `git diff --check` passed.
+- Reviewed the complete diff and all shared-validator/calibration consumers.
+  Only the 13 intended source, regression and documentation files changed.
+  Loader schema rules, supplied-rate checks, severity filtering, model/ranking
+  weights and segment exposure floors remain at their respective boundaries.
+  No dependency, config, export, package version or generated artifact changed.
+
+Handoff: M52 is complete locally and uncommitted on `main`. Scalars and column
+vectors passed as calibration counts now raise; callers must supply aligned 1D
+counts. Workflow amount validation errors now use the shared `claim_amount`
+label. Hosted CI, fresh wheel/sdist/Python 3.14 smokes and real-data tutorial
+rendering were not rerun for this internal validation phase. No Git delivery,
+release or next milestone started. Exact next action in a new implementation
+session: read Current focus and PRD M53, trace workflow/tuning/stability scoring
+and result assembly, then mark M53 ◐ and implement that phase only.
+
+### M52 Git delivery checkpoint — 2026-10-24
+
+The user authorized staging, a conventional commit, a plain-English PR and
+waiting for Codex review, addressing findings and repeating review until clear.
+Fetched `origin/main`; it matches the implementation base at `fad4a5f`.
+Created `fix/m52-outcome-validation` and reviewed all 13 intended changed files.
+The completed full checks and strict docs remain applicable; runtime code has
+not changed during delivery preparation. Next: stage and validate the intended
+diff, commit/push, open the PR, then obtain Codex review and hosted CI on the
+final branch head. M53, merging and publication remain outside this delivery.
+
+Opened [PR #14](https://github.com/ThomasBury/azoic/pull/14) with implementation
+commit `cb306ef` (`fix: share portfolio checks and validate calibration counts`).
+Its plain-English title/description cover the duplicated checks, count-shape
+failure, valid segment totals, compatibility impact and verification. Fresh
+Ruff and staged whitespace checks passed; the earlier full acceptance applies
+because delivery changed only this record. This follow-up records the PR before
+requesting Codex review on the final branch head. Next: inspect Codex comments
+and hosted CI, address findings and repeat review until clear. The live PR holds
+the final review/CI evidence; M53, merging and publication remain pending.
 
 ## M51 — Dependency floors and installed artifacts ☑ — 2026-10-24
 
