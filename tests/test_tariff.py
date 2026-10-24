@@ -889,3 +889,213 @@ def test_m6_acceptance_tariff_reproduces_portfolio_total(tmp_path: Path) -> None
         "vehicle_age",
         "vehicle_brand",
     ]
+
+
+@pytest.mark.parametrize("with_frame", [False, True])
+@pytest.mark.parametrize("existing", [False, True])
+@pytest.mark.parametrize("kind", ["scaler", "function", "columns"])
+def test_export_rejects_unsupported_preprocessing_before_writing(
+    tmp_path, monkeypatch, kind, existing, with_frame
+):
+    from sklearn.compose import ColumnTransformer
+    from sklearn.pipeline import Pipeline
+    from sklearn.preprocessing import FunctionTransformer, StandardScaler
+
+    X = pd.DataFrame({"x": np.arange(12, dtype=float)})
+    steps = {
+        "scaler": StandardScaler().set_output(transform="pandas"),
+        "function": FunctionTransformer(lambda frame: frame + 1),
+        "columns": ColumnTransformer(
+            [("x", "passthrough", ["x"])], verbose_feature_names_out=False
+        ).set_output(transform="pandas"),
+    }
+    model = Pipeline(
+        [("unsupported", steps[kind]), ("model", RiskGLM(family="poisson", link="log"))]
+    ).fit(X, np.exp(X["x"] / 12))
+    out = tmp_path / "tariff.xlsx"
+    if existing:
+        pd.DataFrame({"previous": [42]}).to_excel(out, index=False)
+    before = out.read_bytes() if existing else None
+    files = set(tmp_path.iterdir())
+
+    def unexpected_writer(*args, **kwargs):
+        raise AssertionError("unsupported preprocessing must fail before opening a workbook")
+
+    monkeypatch.setattr(pd, "ExcelWriter", unexpected_writer)
+    with pytest.raises(ValueError, match="unsupported preprocessing step 'unsupported'"):
+        export_tariff(model, out, X=X if with_frame else None, recalibrate=False)
+    assert set(tmp_path.iterdir()) == files
+    assert (out.read_bytes() if out.exists() else None) == before
+
+
+@pytest.mark.parametrize("recalibrate", [False, True])
+def test_export_supported_pipeline_has_independent_workbook_prices(tmp_path, recalibrate):
+    from ast import literal_eval
+
+    from sklearn.pipeline import Pipeline
+    from sklearn.preprocessing import FunctionTransformer
+
+    from azoic.preprocessing import AutoBinner, AutoGrouper
+    from azoic.workflow import _drop_columns
+
+    X = pd.DataFrame(
+        {
+            "age": np.tile([20.0, 40.0, 60.0, 80.0, 90.0], 12),
+            "segment": ["a", "a", "b", "c", "b"] * 12,
+            "x": np.linspace(0, 1, 60),
+            "exposure": 1.0,
+            "claim_count": 1.0,
+        }
+    )
+    y = np.exp(X["age"] / 100 + X["x"] / 10) * np.where(X["segment"] == "a", 2, 1)
+    X["amount"] = y
+    specials = {
+        "exposure_col": "exposure",
+        "claim_count_col": "claim_count",
+        "target_col": "amount",
+    }
+    model = Pipeline(
+        [
+            ("skip", None),
+            ("bins", AutoBinner(cols=["age"], strategy="quantile", max_bins=2, **specials)),
+            ("pass", "passthrough"),
+            ("groups", AutoGrouper(cols=["segment"], strategy="rare", min_exposure=20, **specials)),
+            (
+                "drop",
+                FunctionTransformer(_drop_columns, kw_args={"columns": ["amount", "claim_count"]}),
+            ),
+            ("model", RiskGLM(family="poisson", link="log", exposure_col="exposure")),
+        ]
+    ).fit(X, y)
+    original = X.copy(deep=True)
+    out = tmp_path / "tariff.xlsx"
+    pd.DataFrame({"previous": [42]}).to_excel(out, index=False)
+    assert (
+        export_tariff(
+            model, out, X=X, y=X["amount"], exposure_col="exposure", recalibrate=recalibrate
+        )
+        == out
+    )
+    pd.testing.assert_frame_equal(X, original)
+    assert list(tmp_path.iterdir()) == [out]
+    sheets = pd.read_excel(out, sheet_name=None)
+    assert list(sheets) == ["base_rate", "factors", "mappings"]
+    factors, mappings = sheets["factors"], sheets["mappings"]
+    assert set(factors["feature"]) == {"age", "segment", "x"}
+    assert mappings.query("role == 'dropped'")["feature"].tolist() == ["amount", "claim_count"]
+    bins = mappings.query("role == 'binned'").iloc[0]
+    groups = mappings.query("role == 'grouped'").iloc[0]
+    group_map = {
+        literal_eval(source): literal_eval(destination)
+        for item in groups["mapping"].split("; ")
+        for source, destination in [item.split(" -> ")]
+    }
+    assert group_map["a"] == "a" and group_map["c"] == "Other"
+    edge = float(bins["mapping"])
+    probe = X.iloc[:5].copy()
+    probe["age"] = [np.nextafter(edge, -np.inf), edge, np.nextafter(edge, np.inf), np.nan, 100.0]
+    probe["segment"] = ["a", "c", "unseen", None, "b"]
+    intervals = sorted(
+        [level for level in factors.query("feature == 'age'")["level"] if level != "Missing"],
+        key=lambda level: float(level[1:-1].split(", ")[0]),
+    )
+    assert bins["interval_closure"] == "left"
+    age_levels = [
+        intervals[0],
+        intervals[1],
+        intervals[1],
+        bins["missing_destination"],
+        intervals[1],
+    ]
+    prices = np.full(len(probe), float(sheets["base_rate"].loc[0, "base_rate"]))
+    for row in factors.itertuples():
+        if row.feature == "x":
+            prices *= row.multiplicative_factor ** probe["x"].to_numpy()
+        else:
+            levels = (
+                age_levels
+                if row.feature == "age"
+                else [
+                    group_map.get(value, groups["unseen_destination"]) for value in probe["segment"]
+                ]
+            )
+            prices[np.asarray(levels) == row.level] *= row.multiplicative_factor
+    scale = X["amount"].sum() / np.dot(model.predict(X), X["exposure"]) if recalibrate else 1
+    with pytest.warns(UserWarning, match="unseen levels"):
+        expected = model.predict(probe) * scale
+    np.testing.assert_allclose(prices, expected, rtol=1e-10)
+
+
+@pytest.mark.parametrize("existing", [False, True])
+@pytest.mark.parametrize("failure", ["serialization", "save", "replace"])
+def test_export_failures_preserve_destination_and_remove_temporary_files(
+    tmp_path, monkeypatch, existing, failure
+):
+    from openpyxl import Workbook
+
+    model = RiskGLM(family="poisson", link="log").fit(
+        pd.DataFrame({"x": np.arange(12, dtype=float)}), np.arange(1, 13, dtype=float)
+    )
+    out = tmp_path / "tariff.xlsx"
+    if existing:
+        pd.DataFrame({"previous": [42]}).to_excel(out, index=False)
+    before = out.read_bytes() if existing else None
+    files = set(tmp_path.iterdir())
+
+    if failure == "serialization":
+        to_excel = pd.DataFrame.to_excel
+
+        def fail_serialization(self, *args, **kwargs):
+            to_excel(self, *args, **kwargs)
+            if kwargs["sheet_name"] == "factors":
+                raise OSError("injected serialization failure")
+
+        monkeypatch.setattr(pd.DataFrame, "to_excel", fail_serialization)
+    elif failure == "save":
+
+        def fail_save(self, filename):
+            filename.write(b"incomplete workbook")
+            raise OSError("injected save failure")
+
+        monkeypatch.setattr(Workbook, "save", fail_save)
+    else:
+
+        def fail_replace(self, target):
+            assert self.parent == out.parent and self != out
+            assert pd.ExcelFile(self).sheet_names == ["base_rate", "factors", "mappings"]
+            raise OSError("injected replace failure")
+
+        monkeypatch.setattr(Path, "replace", fail_replace)
+    with pytest.raises(OSError, match=f"injected {failure} failure"):
+        export_tariff(model, out, recalibrate=False)
+    assert set(tmp_path.iterdir()) == files
+    assert (out.read_bytes() if out.exists() else None) == before
+
+
+def test_distillation_preserves_generic_transforms_and_passthrough(tmp_path):
+    from sklearn.pipeline import Pipeline
+    from sklearn.preprocessing import FunctionTransformer
+
+    X = pd.DataFrame({"x": np.linspace(0, 10, 80), "exposure": 1.0})
+    teacher = Pipeline(
+        [
+            ("skip", None),
+            ("scale", FunctionTransformer(lambda frame: frame.assign(x=2 * frame["x"]))),
+            ("pass", "passthrough"),
+            ("model", RiskGBM(exposure_col="exposure", n_estimators=10, n_jobs=1)),
+        ]
+    ).fit(X.iloc[:60], np.exp(X["x"].iloc[:60] / 10))
+    original = X.copy(deep=True)
+    student = distill_gbm(teacher, X.iloc[:60], X.iloc[60:])
+    pd.testing.assert_frame_equal(X, original)
+    assert student.named_steps["scale"] is not teacher.named_steps["scale"]
+    np.testing.assert_allclose(student[:-1].transform(X)["x"], 2 * X["x"])
+    rates = student.predict(X.iloc[60:])
+    assert rates.shape == (20,) and np.isfinite(rates).all() and (rates > 0).all()
+    assert student.distillation_metrics_["student_teacher_total_ratio"] == pytest.approx(
+        np.dot(rates, X["exposure"].iloc[60:])
+        / np.dot(teacher.predict(X.iloc[60:]), X["exposure"].iloc[60:])
+    )
+    with pytest.raises(ValueError, match="unsupported preprocessing step 'scale'"):
+        export_tariff(student, tmp_path / "unsupported.xlsx", recalibrate=False)
+    assert not list(tmp_path.iterdir())

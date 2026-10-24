@@ -9,6 +9,22 @@ Legend: ☐ pending · ◐ in progress · ☑ done
 
 ## Current focus
 
+- **M50 ☑ — faithful and failure-safe tariff export** completed locally on
+  2026-10-24. Supported pipelines reproduce workbook prices; unsupported
+  preprocessing is rejected before writing; write failures preserve destinations.
+  Generic distillation transforms remain available. Full checks and strict docs
+  passed; see the completion checkpoint below. Git delivery is authorized and
+  isolated on `fix/m50-tariff-export`, based on current `origin/main` at `11ff10c`.
+- **Delivery:** stage and commit the six M50 files, open the PR against `main`,
+  then wait for Codex review and CI on its final head. Address findings before
+  handoff. The PR holds their live status; no merge or release is authorized.
+- **Next implementation session:** M51 / phase 3, dependency-floor and installed
+  artifact validation, then M52 and M53 in order. Stop after M50 in this session.
+  The approved extension-boundary plan is recorded under M54/M55 in PRD section 6;
+  implementation and independent maintainer validation remain pending.
+
+Previous focus (historical):
+
 - **M49 ☑ — rule ownership and maintenance baseline** completed locally.
   The ownership map, executed/discarded extension and characterization checks
   passed acceptance; runtime behavior is unchanged. M50–M55 remain pending.
@@ -56,6 +72,114 @@ Previous focus and delivery evidence:
 - **Branch:** `feat/m46-lightgbm-preprocessing`, based on the completed WP5 branch.
 - Previous delivery: WP5 [PR #8](https://github.com/ThomasBury/azoic/pull/8)
   merged into `main` at `a99df81`; this branch was fast-forwarded to that base.
+
+## M50 — Faithful and failure-safe tariff export ☑ — 2026-10-24
+
+Kickoff: read Current focus, M49's latest checkpoint, PRD sections 3/6 and the
+export/distillation callers in CLI, tests and tutorial sources. The checkout
+started clean on `docs/m49-rule-ownership` at `462b981`. The user explicitly
+authorized M50 next and recording the extension plan for M54/M55; Git delivery,
+later implementation phases and independent maintainer validation are separate.
+
+- [x] Add regressions for supported/unsupported preprocessing and independent
+  workbook arithmetic; confirm defective cases fail before implementation.
+- [x] Restrict export faithfully while retaining generic distillation transforms.
+- [x] Use sibling-workbook replacement; preserve destinations and clean temporary
+  files after serialization, save or replacement errors.
+- [x] Update guide/project rules and record the pending M54/M55 extension plan.
+- [x] Run focused checks, `just check`, strict docs and final diff validation.
+
+### M50 checkpoint — implementation and failure probes
+
+The 21 new cases first failed against the original implementation: unsupported
+scalers/functions/column transformers reached the workbook writer; passthrough
+steps broke export/distillation; serialization/save failures changed destinations;
+replacement was not atomic. Log: `/tmp/azoic-m50-before.log`.
+
+Export now accepts native bin/group steps, workflow column removal and explicit
+passthrough only; it records removed columns and rejects other transforms before
+creating a workbook. Distillation uses sklearn's fitted pipeline transformation
+directly and keeps generic transforms available. Workbook writes use a sibling
+temporary file, close it before replacement and clean it on all tested failures.
+
+Focused tariff/CLI run: **122 passed** in 21.32 seconds, including independent
+raw/recalibrated workbook multiplication at numeric boundaries and missing/unseen
+groups, literal/typed labels, workflow/CLI export, generic distillation and
+serialization/save/replacement failures with both present and absent destinations.
+The initial lint pass found a test-only dict-comprehension style issue, corrected
+before full acceptance. Guide and project rules describe the newly rejected
+pipelines. PRD section 6 records the approved M54/M55 plan without starting it.
+
+Remaining: final focused run after the test cleanup, `just check`, strict docs,
+dependency-stack recording and diff review. M51–M55 and independent maintainer
+validation remain pending. No new dependencies or public interfaces were added.
+
+### M50 completion checkpoint — 2026-10-24
+
+Acceptance complete:
+
+- Before implementation, all **21** new regression cases failed for the expected
+  missing behavior. After implementation, focused tariff/CLI checks passed
+  **122** tests. The final full suite includes the test cleanup described above.
+- `just check` exited **0**: Ruff/Ty passed; **1281 passed, 4 skipped,
+  2 expected failures**, 11 warnings, in 216.47 seconds. All 29 synthetic tutorial
+  checks passed. The existing array-API skips and strict-1D expected failures
+  remain unchanged.
+- `just docs-build` exited **0**, strict, with no issues in 3.94 seconds.
+- Independent workbook multiplication matches raw and recalibrated pipeline
+  predictions at `rtol=1e-10`, including exact/adjacent bin boundaries, numeric
+  factors, missing bins and missing/unseen/rare categorical groups. Existing
+  learned-tree boundary checks and literal/typed Excel-label checks also passed.
+- Injected serialization, partial-save and replacement errors preserve existing
+  workbooks byte-for-byte, create no absent destination and leave no temporary
+  files. Successful replacement contains exactly the three current sheets.
+- Generic-transform distillation preserves copied fitted preprocessing, positive
+  finite vector predictions and independently recomputed fidelity totals; its
+  unsupported export fails before creating a workbook. CLI/workflow exports and
+  training-only calibration regressions remain green.
+- Reviewed the complete implementation/test diff, local guide references and
+  named PRD pytest evidence selectors. `git diff --check` passed. Only AGENTS,
+  PRD, this tracker, the operations guide, tariff implementation and tariff tests
+  changed; generated files remain ignored.
+
+Tested local stack: Python **3.12.7**, NumPy **2.5.2**, pandas **3.0.6**,
+scikit-learn **1.9.0**, Pydantic **2.13.4**, glum **3.4.1**, LightGBM **4.7.0**,
+openpyxl **3.1.5**. This does not establish every metadata-permitted stack.
+Logs: `/tmp/azoic-m50-before.log`, `/tmp/azoic-m50-focused.log`,
+`/tmp/azoic-m50-check.log`, `/tmp/azoic-m50-docs.log`.
+
+Handoff: M50 is complete locally and uncommitted on `docs/m49-rule-ownership`.
+The M54/M55 extension plan is recorded, not implemented; independent maintainer
+validation remains pending for M55. No next milestone, Git delivery, release or
+installed-artifact rehearsal started. Full real-data tutorial rendering was not
+repeated because tutorial sources are unchanged; synthetic tutorial checks passed.
+Atomic replacement protects failed writes, not power-loss durability. Exact next
+action in a new implementation session: read Current focus and PRD M51, then
+validate the requested dependency-floor and isolated wheel/sdist stacks.
+
+### M50 Git delivery checkpoint — 2026-10-24
+
+The user authorized staging, a Conventional Commit, a plain-English PR and
+iteration on Codex bot findings. Refreshed `origin/main`: M49 PR #11 is merged
+at `11ff10c`, whose tree matches the M50 implementation base at `462b981`.
+Created `fix/m50-tariff-export` from that main branch while preserving the six
+authorized M50 files. Reviewed their complete diff and connected CLI, workflow,
+preprocessing, distillation and CI paths; no earlier milestone enters this PR.
+
+Fresh delivery acceptance: `just check` exited **0**, with Ruff/Ty green and
+**1281 passed, 4 skipped, 2 expected failures**, 11 warnings, in 268.15 seconds.
+`just docs-build` exited **0**, strict, with no issues. All 48 named PRD pytest
+selectors and the operations guide's local links were verified; `git diff --check`
+passed. Logs: `/tmp/azoic-m50-delivery-check.log`,
+`/tmp/azoic-m50-delivery-docs.log`.
+
+Stage exactly AGENTS, PRD, this tracker, the operations guide, tariff source and
+tariff tests; inspect the staged diff, commit and push, then open the PR against
+main. The PR conversation records Codex review and CI on the final head; wait for
+completion and address findings before handoff. This checkpoint records source
+review and local acceptance without claiming remote review before it occurs.
+No later milestone, merge, release or independent maintainer validation is part
+of this delivery.
 
 ## M49 — Rule ownership and maintenance baseline ☑ — 2026-10-23
 

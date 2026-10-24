@@ -31,10 +31,12 @@ from collections.abc import Hashable
 from copy import deepcopy
 from math import fsum
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 
 import numpy as np
 import pandas as pd
 from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import FunctionTransformer
 from sklearn.utils.validation import check_array, check_consistent_length
 
 from azoic.data import EXPOSURE_FLOOR
@@ -99,8 +101,10 @@ def distill_gbm(
         if not np.isfinite(exposure).all() or np.any(exposure <= 0):
             raise ValueError(f"distill_gbm {name} exposure must be positive and finite")
 
-    _, fit_frame, _ = _pipeline_parts(teacher, X_fit)
-    _, validation_frame, _ = _pipeline_parts(teacher, X_validation)
+    fit_frame, validation_frame = X_fit, X_validation
+    if isinstance(teacher, Pipeline) and len(teacher.steps) > 1:
+        fit_frame = teacher[:-1].transform(X_fit)
+        validation_frame = teacher[:-1].transform(X_validation)
     teacher_fit = np.asarray(gbm.predict(fit_frame), dtype=float)
     teacher_validation = np.asarray(gbm.predict(validation_frame), dtype=float)
     for name, prediction in (("fit", teacher_fit), ("validation", teacher_validation)):
@@ -436,10 +440,14 @@ def _pipeline_parts(estimator, X):
     if not isinstance(estimator, Pipeline):
         return estimator, X, pd.DataFrame()
 
+    from azoic.workflow import _drop_columns
+
     rows = []
     transformed = X
-    for _, step in estimator.steps[:-1]:
-        if isinstance(step, AutoBinner):
+    for name, step in estimator.steps[:-1]:
+        if step is None or (isinstance(step, str) and step == "passthrough"):
+            continue
+        if type(step) is AutoBinner:
             for feature, edges in step.mapping_.items():
                 levels = list(step.category_dtypes_[feature].categories)
                 rows.append(
@@ -455,7 +463,7 @@ def _pipeline_parts(estimator, X):
                         "missing_destination": str(levels[step.missing_[feature]]),
                     }
                 )
-        elif isinstance(step, AutoGrouper):
+        elif type(step) is AutoGrouper:
             for feature, mapping in step.mapping_.items():
                 levels = list(step.category_dtypes_[feature].categories)
                 rows.append(
@@ -477,6 +485,21 @@ def _pipeline_parts(estimator, X):
                         "unseen_destination": str(step.missing_[feature]),
                     }
                 )
+        elif (
+            type(step) is FunctionTransformer
+            and step.func is _drop_columns
+            and not step.validate
+            and step.feature_names_out is None
+        ):
+            rows.extend(
+                {"feature": column, "role": "dropped"} for column in step.kw_args["columns"]
+            )
+        else:
+            raise ValueError(
+                f"export_tariff: unsupported preprocessing step {name!r} "
+                f"({type(step).__name__}); only AutoBinner, AutoGrouper, workflow "
+                "column removal, None and 'passthrough' can be represented in the workbook"
+            )
         if transformed is not None:
             transformed = step.transform(transformed)
     return estimator.steps[-1][1], transformed, pd.DataFrame(rows)
@@ -508,6 +531,16 @@ def export_tariff(
     Base and factors must be representable as finite floats (strictly positive
     except for a zero-total recalibrated base). User text is written as literal
     Excel strings; numeric and boolean level labels retain their types.
+
+    Pipeline preprocessing is limited to native ``AutoBinner`` / ``AutoGrouper``
+    steps, workflow column removal, ``None`` and ``"passthrough"``. Other
+    transforms (including scalers, arbitrary functions and column transformers)
+    raise ``ValueError`` before any workbook is opened. Preprocessing mapping
+    rows retain pipeline order; removed columns have role ``"dropped"``.
+
+    A sibling temporary workbook is fully written and closed before replacing
+    the destination. Serialization, save or replacement failures leave an
+    existing destination unchanged and remove the temporary file.
     """
     if recalibrate and (X is None or y is None or exposure_col is None):
         raise ValueError(
@@ -565,13 +598,24 @@ def export_tariff(
         mapping_sheet = pd.concat([mapping_sheet, upstream_mappings], ignore_index=True)
 
     p = Path(path)
-    with pd.ExcelWriter(p, engine="openpyxl") as writer:
-        base_sheet.to_excel(writer, sheet_name="base_rate", index=False)
-        factors_sheet.to_excel(writer, sheet_name="factors", index=False)
-        mapping_sheet.to_excel(writer, sheet_name="mappings", index=False)
-        for sheet in writer.sheets.values():
-            for row in sheet:
-                for cell in row:
-                    if isinstance(cell.value, str):
-                        cell.data_type = "s"
+    with NamedTemporaryFile(
+        dir=p.parent, prefix=f".{p.stem}-", suffix=p.suffix, delete=False
+    ) as temporary_file:
+        temporary = Path(temporary_file.name)
+    try:
+        with (
+            temporary.open("wb") as workbook,
+            pd.ExcelWriter(workbook, engine="openpyxl") as writer,
+        ):
+            base_sheet.to_excel(writer, sheet_name="base_rate", index=False)
+            factors_sheet.to_excel(writer, sheet_name="factors", index=False)
+            mapping_sheet.to_excel(writer, sheet_name="mappings", index=False)
+            for sheet in writer.sheets.values():
+                for row in sheet:
+                    for cell in row:
+                        if isinstance(cell.value, str):
+                            cell.data_type = "s"
+        temporary.replace(p)
+    finally:
+        temporary.unlink(missing_ok=True)
     return p
