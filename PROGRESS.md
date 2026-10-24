@@ -17,7 +17,8 @@ Legend: ☐ pending · ◐ in progress · ☑ done
   `ModelSpec.kind`, result identities and runtime container validation are intact.
 - Git delivery is authorized on `feat/m54-public-contract`, based on merged
   M53 PR #15 at `71aaf2c`. The PR must receive final-head Codex review and green
-  CI before handoff. No merge or release is included.
+  CI before handoff. [PR #16](https://github.com/ThomasBury/azoic/pull/16) is open;
+  its live status is the authority for final review/CI. No merge or release is included.
 - **Next implementation session:** M55 / phase 7, final-run provenance and
   external evidence. Read PRD sections 3/6 and M54's completion checkpoint;
   trace final assembly, tuning settings, reporting and logging before marking
@@ -233,6 +234,15 @@ implementation/callers and recorded full acceptance. No source changed during
 this delivery; fresh Ruff and staged whitespace checks apply before committing.
 Next: commit/push, open the PR, record its URL, then obtain Codex review and
 hosted CI on the final head. M55, merging and publication remain outside scope.
+
+Opened [PR #16](https://github.com/ThomasBury/azoic/pull/16) with implementation
+commit `74fee06` (`feat: type public APIs and define model component requirements`).
+The PR explains concrete typing, lazy imports, component requirements, the
+intentional fit-time exception change and independent acceptance. Fresh Ruff
+and staged whitespace checks passed. This follow-up records the PR before
+requesting Codex review on the final branch head. Next: wait for Codex and CI,
+fix actionable findings and repeat review until clear. M55, merging and release
+remain pending; the PR holds the live final-head review and CI evidence.
 
 ## M53 — Workflow evaluation and assembly separation ☑ — 2026-10-24
 
