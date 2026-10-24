@@ -17,7 +17,7 @@ from collections.abc import Iterable
 from math import isfinite
 from pathlib import Path
 
-from azoic.workflow import Run
+import azoic
 
 __all__ = ["log_run"]
 
@@ -30,7 +30,7 @@ def _flatten_params(prefix: str, params: dict) -> dict:
 
 
 def log_run(
-    run: Run,
+    run: azoic.Run,
     *,
     tracking_uri: str | None = None,
     experiment_name: str | None = None,

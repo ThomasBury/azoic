@@ -124,6 +124,8 @@ def export_tariff(
     ),
 ) -> None:
     """Run a config and export a GLM or an explicitly distilled GBM tariff."""
+    from sklearn.pipeline import Pipeline
+
     from azoic.models import RiskGBM, RiskGLM
 
     cfg = ExperimentConfig.from_yaml(config)
@@ -136,7 +138,7 @@ def export_tariff(
     df = load_data(cfg.data_path, spec=cfg.spec)
     run, ests = run_experiment(cfg, return_estimators=True, df=df)
     est = ests[model]
-    final_est = est.steps[-1][1] if hasattr(est, "steps") else est
+    final_est = est.steps[-1][1] if isinstance(est, Pipeline) else est
     if isinstance(final_est, RiskGBM) and not distill:
         raise typer.BadParameter(
             f"model {model!r} ends in RiskGBM; pass --distill to export a GLM student."
@@ -153,16 +155,23 @@ def export_tariff(
     train_indices = list(run.train_indices)
     X_train = X.iloc[train_indices]
     if isinstance(final_est, RiskGBM):
-        est = _distill_gbm(est, X_train, X.iloc[list(run.test_indices)])
-        metrics = vars(est)["distillation_metrics_"]
+        exportable = _distill_gbm(
+            est if isinstance(est, Pipeline) else final_est,
+            X_train,
+            X.iloc[list(run.test_indices)],
+        )
+        metrics = vars(exportable)["distillation_metrics_"]
         typer.echo(
             "Distillation fidelity: "
             f"teacher_student_deviance={metrics['teacher_student_deviance']:.6g}, "
             f"student_teacher_total_ratio={metrics['student_teacher_total_ratio']:.6g}"
         )
 
+    else:
+        exportable = est if isinstance(est, Pipeline) else final_est
+
     _export_tariff(
-        est,
+        exportable,
         out,
         X=X_train,
         y=y.iloc[train_indices],

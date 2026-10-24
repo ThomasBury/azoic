@@ -17,11 +17,14 @@ FrequencySeverityModel.fit applies the actuarial severity filter (claim_count
 from __future__ import annotations
 
 import warnings
+from collections.abc import Sequence
+from typing import Any, Self
 
 import numpy as np
 import pandas as pd
 from glum import GeneralizedLinearRegressor, TweedieDistribution
 from lightgbm import LGBMRegressor
+from numpy.typing import ArrayLike
 from sklearn.base import BaseEstimator, RegressorMixin, clone
 from sklearn.metrics import d2_tweedie_score
 from sklearn.utils.validation import (
@@ -197,19 +200,23 @@ class RiskGLM(RegressorMixin, BaseEstimator):
     feature_names_in_, n_features_in_
     """
 
+    distillation_metrics_: dict[str, float]
+    feature_names_in_: np.ndarray
+    n_features_in_: int
+
     def __init__(
         self,
-        family="normal",
-        link="auto",
-        exposure_col=None,
-        tweedie_power=None,
-        alpha=0.001,
-        l1_ratio=0.0,
-        fit_intercept=True,
-        max_iter=100,
-        gradient_tol=None,
-        random_state=None,
-    ):
+        family: str = "normal",
+        link: str = "auto",
+        exposure_col: str | None = None,
+        tweedie_power: float | None = None,
+        alpha: float = 0.001,
+        l1_ratio: float = 0.0,
+        fit_intercept: bool = True,
+        max_iter: int = 100,
+        gradient_tol: float | None = None,
+        random_state: int | None = None,
+    ) -> None:
         self.family = family
         self.link = link
         self.exposure_col = exposure_col
@@ -243,7 +250,9 @@ class RiskGLM(RegressorMixin, BaseEstimator):
             random_state=self.random_state,
         )
 
-    def fit(self, X, y, sample_weight=None):
+    def fit(
+        self, X: pd.DataFrame | ArrayLike, y: ArrayLike, sample_weight: ArrayLike | None = None
+    ) -> Self:
         _store_fit_meta(self, X)
         X_features, w = _pop_weight(X, self.exposure_col, sample_weight, require_exposure=True)
         y = _validate_target(X_features, y)
@@ -255,13 +264,15 @@ class RiskGLM(RegressorMixin, BaseEstimator):
         self.n_iter_ = backend.n_iter_
         return self
 
-    def predict(self, X):
+    def predict(self, X: pd.DataFrame | ArrayLike) -> np.ndarray:
         check_is_fitted(self, "backend_")
         X_features, _ = _pop_weight(X, self.exposure_col, None)
         _check_model_features(self, X_features, (self.exposure_col,))
         return self.backend_.predict(_categorize_strings(X_features))
 
-    def score(self, X, y, sample_weight=None):
+    def score(
+        self, X: pd.DataFrame | ArrayLike, y: ArrayLike, sample_weight: ArrayLike | None = None
+    ) -> float:
         check_is_fitted(self, "backend_")
         X_features, w = _pop_weight(X, self.exposure_col, sample_weight, require_exposure=True)
         _check_model_features(self, X_features, (self.exposure_col,))
@@ -286,7 +297,7 @@ class RiskGBM(RegressorMixin, BaseEstimator):
     exposure_col : str | None
         Column in X popped and forwarded to LightGBM as ``sample_weight``.
     tweedie_variance_power : float
-        Tweedie power; validated in ``__init__`` to lie in ``[1.0, 2.0)``
+        Tweedie power; validated during ``fit`` to lie in ``[1.0, 2.0)``
         (PRD rule 4) when ``objective == "tweedie"``.
     monotone_constraints : dict[str, int] | sequence[int] | None
         Per-feature monotonicity for LightGBM's tree splits. ``dict`` keys are
@@ -308,45 +319,29 @@ class RiskGBM(RegressorMixin, BaseEstimator):
     feature_names_in_, n_features_in_
     """
 
+    feature_names_in_: np.ndarray
+    n_features_in_: int
+
     def __init__(
         self,
-        objective="tweedie",
-        exposure_col=None,
-        tweedie_variance_power=1.5,
-        num_leaves=31,
-        max_depth=-1,
-        learning_rate=0.1,
-        n_estimators=100,
-        min_child_samples=20,
-        subsample=1.0,
-        subsample_freq=0,
-        colsample_bytree=1.0,
-        reg_alpha=0.0,
-        reg_lambda=0.0,
-        monotone_constraints=None,
-        random_state=None,
-        n_jobs=None,
-        verbose=-1,
-    ):
-        # PRD rule 4: validate tweedie_variance_power "in __init__" when we can
-        # safely. sklearn's check_do_not_raise_errors_in_init_or_set_params feeds
-        # arbitrary non-scalar values to every parameter; we guard the guard so
-        # hot-garbage payloads Fallon through to fit where _make_backend re-checks.
-        if (
-            isinstance(objective, str)
-            and objective == "tweedie"
-            and isinstance(tweedie_variance_power, (int, float))
-            and not (1.0 <= tweedie_variance_power < 2.0)
-        ):
-            raise ValueError(
-                f"tweedie_variance_power must be in [1.0, 2.0); got {tweedie_variance_power}"
-            )
-        if isinstance(monotone_constraints, dict):
-            bad = {k: v for k, v in monotone_constraints.items() if v not in (-1, 0, 1)}
-            if bad:
-                raise ValueError(
-                    f"monotone_constraints dict values must be in {{-1, 0, 1}}; got {bad}"
-                )
+        objective: str = "tweedie",
+        exposure_col: str | None = None,
+        tweedie_variance_power: float = 1.5,
+        num_leaves: int = 31,
+        max_depth: int = -1,
+        learning_rate: float = 0.1,
+        n_estimators: int = 100,
+        min_child_samples: int = 20,
+        subsample: float = 1.0,
+        subsample_freq: int = 0,
+        colsample_bytree: float = 1.0,
+        reg_alpha: float = 0.0,
+        reg_lambda: float = 0.0,
+        monotone_constraints: dict[str, int] | Sequence[int] | None = None,
+        random_state: int | None = None,
+        n_jobs: int | None = None,
+        verbose: int = -1,
+    ) -> None:
         self.objective = objective
         self.exposure_col = exposure_col
         self.tweedie_variance_power = tweedie_variance_power
@@ -442,7 +437,9 @@ class RiskGBM(RegressorMixin, BaseEstimator):
             )
         return arr.astype(int).tolist()
 
-    def fit(self, X, y, sample_weight=None):
+    def fit(
+        self, X: pd.DataFrame | ArrayLike, y: ArrayLike, sample_weight: ArrayLike | None = None
+    ) -> Self:
         _store_fit_meta(self, X)
         X_features, w = _pop_weight(X, self.exposure_col, sample_weight, require_exposure=True)
         y = _validate_target(X_features, y)
@@ -468,7 +465,7 @@ class RiskGBM(RegressorMixin, BaseEstimator):
         self.backend_ = backend
         return self
 
-    def predict(self, X):
+    def predict(self, X: pd.DataFrame | ArrayLike) -> np.ndarray:
         check_is_fitted(self, "backend_")
         X_features, _ = _pop_weight(X, self.exposure_col, None)
         _check_model_features(self, X_features, (self.exposure_col,))
@@ -485,7 +482,9 @@ class RiskGBM(RegressorMixin, BaseEstimator):
             )
         return _GBM_OBJECTIVE_POWER[self.objective]
 
-    def score(self, X, y, sample_weight=None):
+    def score(
+        self, X: pd.DataFrame | ArrayLike, y: ArrayLike, sample_weight: ArrayLike | None = None
+    ) -> float:
         """D^2 of the deviance matching ``objective`` (Tweedie power map).
 
         Only objectives in ``_GBM_OBJECTIVE_POWER`` (poisson, gamma, the L2
@@ -540,14 +539,17 @@ class FrequencySeverityModel(RegressorMixin, BaseEstimator):
         positive-claim row available to fit severity.
     """
 
+    feature_names_in_: np.ndarray
+    n_features_in_: int
+
     def __init__(
         self,
-        freq=None,
-        sev=None,
-        exposure_col="exposure",
-        claim_count_col="claim_count",
-        claim_amount_col="claim_amount",
-    ):
+        freq: Any = None,
+        sev: Any = None,
+        exposure_col: str = "exposure",
+        claim_count_col: str = "claim_count",
+        claim_amount_col: str = "claim_amount",
+    ) -> None:
         self.freq = freq
         self.sev = sev
         self.exposure_col = exposure_col
@@ -580,7 +582,7 @@ class FrequencySeverityModel(RegressorMixin, BaseEstimator):
         if missing:
             raise ValueError(f"FrequencySeverityModel.fit: missing special columns: {missing}")
 
-    def fit(self, X, y=None):
+    def fit(self, X: pd.DataFrame, y: ArrayLike | None = None) -> Self:
         if self.freq is None or self.sev is None:
             raise ValueError("FrequencySeverityModel requires both `freq` and `sev`.")
         self._require_specials(X)
@@ -642,7 +644,7 @@ class FrequencySeverityModel(RegressorMixin, BaseEstimator):
         self.sev_.fit(X_features.loc[pos], y_sev, sample_weight=cc[pos])
         return self
 
-    def predict(self, X):
+    def predict(self, X: pd.DataFrame | ArrayLike) -> np.ndarray:
         check_is_fitted(self, "freq_")
         X_features = _categorize_strings(self._strip_specials(X))
         _check_model_features(
@@ -661,7 +663,7 @@ class FrequencySeverityModel(RegressorMixin, BaseEstimator):
             )
         return np.maximum(freq_pred, 0.0) * np.maximum(sev_pred, 0.0)
 
-    def score(self, X, y, sample_weight=None):
+    def score(self, X: pd.DataFrame, y: ArrayLike, sample_weight: ArrayLike | None = None) -> float:
         """D^2 (Tweedie, p=1.5) on pure-premium rates, weighted by exposure.
 
         ``y`` is the pure-premium rate target. Exposure from ``X`` is the

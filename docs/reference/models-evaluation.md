@@ -20,6 +20,9 @@ must meet the one-day floor.
 | `azoic.metrics` | `gini`, `lorenz`, `calibration_table`, `stability_table`, `one_way_table`, `double_lift_table`, `op_ratio`, `mean_tweedie_deviance`, `mean_poisson_deviance`, `mean_gamma_deviance` | Actuarial diagnostics as values and tables |
 | `azoic.plots` | `plot_lorenz`, `plot_lift`, `plot_calibration`, `plot_one_way`, `plot_double_lift`, `plot_actual_vs_predicted`, `model_colors`, `azoic_style` | Matplotlib rendering of the metric results |
 
+[Compatibility and composition](compatibility.md) defines supported component
+units, public fitted state, sklearn checks and validation-timing migration notes.
+
 ::: azoic.models
 
 ::: azoic.metrics

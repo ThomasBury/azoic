@@ -20,7 +20,7 @@ import warnings
 from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, Self, overload
 
 import numpy as np
 import pandas as pd
@@ -65,7 +65,7 @@ class FloatDistribution(BaseModel):
     log: bool = False
 
     @model_validator(mode="after")
-    def _validate_range(self):
+    def _validate_range(self) -> Self:
         if self.low > self.high:
             raise ValueError("float distribution requires low <= high")
         if self.step is not None and self.step <= 0:
@@ -87,7 +87,7 @@ class IntDistribution(BaseModel):
     log: bool = False
 
     @model_validator(mode="after")
-    def _validate_range(self):
+    def _validate_range(self) -> Self:
         if self.low > self.high:
             raise ValueError("int distribution requires low <= high")
         if self.step <= 0:
@@ -120,7 +120,7 @@ class TuningSpec(BaseModel):
     search_space: dict[str, dict[str, ParameterDistribution]] = Field(default_factory=dict)
 
     @model_validator(mode="after")
-    def _validate_spaces(self):
+    def _validate_spaces(self) -> Self:
         empty = sorted(name for name, space in self.search_space.items() if not space)
         if empty:
             raise ValueError(f"custom model search spaces must not be empty: {empty}")
@@ -133,13 +133,15 @@ class PreprocessingSpec(BaseModel):
     binner: dict[str, Any] | None = None
     grouper: dict[str, Any] | None = None
 
-    def build_steps(self, spec: DatasetSpec) -> list[tuple[str, Any]]:
-        special = {
+    def build_steps(
+        self, spec: DatasetSpec
+    ) -> list[tuple[str, AutoBinner | AutoGrouper | FunctionTransformer]]:
+        special: dict[str, Any] = {
             "exposure_col": spec.exposure,
             "claim_count_col": spec.claim_count,
             "target_col": spec.target,
         }
-        steps: list[tuple[str, Any]] = []
+        steps: list[tuple[str, AutoBinner | AutoGrouper | FunctionTransformer]] = []
         if self.binner is not None:
             steps.append(("binner", AutoBinner(**{**self.binner, **special})))
         if self.grouper is not None:
@@ -197,7 +199,7 @@ class ModelSpec(BaseModel):
     severity: ModelSpec | None = None
 
     @model_validator(mode="after")
-    def _validate_nested_specs(self):
+    def _validate_nested_specs(self) -> Self:
         nested = self.frequency is not None or self.severity is not None
         if self.kind == "frequency_severity":
             if self.frequency is None or self.severity is None:
@@ -273,7 +275,9 @@ class ModelSpec(BaseModel):
             params["exposure_col"] = dataset_spec.exposure
         return params
 
-    def build(self, dataset_spec: DatasetSpec | None = None):
+    def build(
+        self, dataset_spec: DatasetSpec | None = None
+    ) -> RiskGLM | RiskGBM | FrequencySeverityModel:
         """Construct the (unfitted) estimator from this spec."""
         if self.kind == "frequency_severity":
             if (
@@ -290,16 +294,15 @@ class ModelSpec(BaseModel):
                     f"params contains reserved frequency_severity keys {reserved}; "
                     "use the `frequency:` / `severity:` spec fields"
                 )
-            return FrequencySeverityModel(
-                **{
-                    **self.params,
-                    "freq": self.frequency.build(),
-                    "sev": self.severity.build(),
-                    "exposure_col": dataset_spec.exposure,
-                    "claim_count_col": dataset_spec.claim_count,
-                    "claim_amount_col": dataset_spec.target,
-                }
-            )
+            component_params: dict[str, Any] = {
+                **self.params,
+                "freq": self.frequency.build(),
+                "sev": self.severity.build(),
+                "exposure_col": dataset_spec.exposure,
+                "claim_count_col": dataset_spec.claim_count,
+                "claim_amount_col": dataset_spec.target,
+            }
+            return FrequencySeverityModel(**component_params)
         params = self.effective_params(dataset_spec)
         if self.kind == "glm":
             return RiskGLM(**params)
@@ -330,7 +333,7 @@ class ExperimentConfig(BaseModel):
     tuning: TuningSpec | None = None
 
     @model_validator(mode="after")
-    def _validate_features(self):
+    def _validate_features(self) -> Self:
         if self.features is None:
             return self
         duplicates = sorted({name for name in self.features if self.features.count(name) > 1})
@@ -342,7 +345,7 @@ class ExperimentConfig(BaseModel):
         return self
 
     @model_validator(mode="after")
-    def _validate_tuning(self):
+    def _validate_tuning(self) -> Self:
         if self.tuning is None:
             return self
         unknown_models = sorted(set(self.tuning.search_space) - set(self.models))
@@ -491,7 +494,7 @@ def _drop_columns(X: pd.DataFrame, *, columns: list[str]) -> pd.DataFrame:
 
 def _build_model(
     config: ExperimentConfig, spec: ModelSpec, feature_names: list[str]
-) -> tuple[Any, list[str]]:
+) -> tuple[RiskGLM | RiskGBM | FrequencySeverityModel | Pipeline, list[str]]:
     preprocessing = config.preprocessing if spec.preprocess else None
     columns = [*feature_names, config.spec.exposure]
     specials = [config.spec.target]
@@ -500,7 +503,7 @@ def _build_model(
     if preprocessing is not None or spec.kind == "frequency_severity":
         columns.extend(specials)
 
-    estimator = spec.build(config.spec)
+    estimator: RiskGLM | RiskGBM | FrequencySeverityModel | Pipeline = spec.build(config.spec)
     if preprocessing is not None:
         steps = preprocessing.build_steps(config.spec)
         if spec.kind != "frequency_severity":
@@ -513,7 +516,7 @@ def _build_model(
 
 @dataclass
 class _SplitResult:
-    estimator: Any
+    estimator: RiskGLM | RiskGBM | FrequencySeverityModel | Pipeline
     metrics: dict[str, float]
     calibration_table: pd.DataFrame
     protected_calibration: dict[str, pd.DataFrame]
@@ -624,12 +627,39 @@ def _assemble_run(
     )
 
 
+@overload
+def run_experiment(
+    config: ExperimentConfig,
+    *,
+    return_estimators: Literal[False] = False,
+    df: pd.DataFrame | None = None,
+) -> Run: ...
+
+
+@overload
+def run_experiment(
+    config: ExperimentConfig,
+    *,
+    return_estimators: Literal[True],
+    df: pd.DataFrame | None = None,
+) -> tuple[Run, dict[str, RiskGLM | RiskGBM | FrequencySeverityModel | Pipeline]]: ...
+
+
+@overload
+def run_experiment(
+    config: ExperimentConfig,
+    *,
+    return_estimators: bool,
+    df: pd.DataFrame | None = None,
+) -> Run | tuple[Run, dict[str, RiskGLM | RiskGBM | FrequencySeverityModel | Pipeline]]: ...
+
+
 def run_experiment(
     config: ExperimentConfig,
     *,
     return_estimators: bool = False,
     df: pd.DataFrame | None = None,
-):
+) -> Run | tuple[Run, dict[str, RiskGLM | RiskGBM | FrequencySeverityModel | Pipeline]]:
     """Validate, split, fit, and score an experiment.
 
     ``df`` supplies an in-memory portfolio without reading ``config.data_path``.

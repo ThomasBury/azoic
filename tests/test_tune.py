@@ -644,3 +644,35 @@ def test_trials_only_predict_inner_holdouts_and_build_final_results(monkeypatch,
     assert runs[0]["data_fingerprint"] == result.run.data_fingerprint
     assert not model_results[0]["calibration_table"].empty
     assert "gini_train" in model_results[0]["metrics"]
+
+
+def test_tune_result_keeps_estimator_container_validation():
+    from pydantic import ValidationError
+    from sklearn.dummy import DummyRegressor
+
+    config = ExperimentConfig(
+        data_path="unused.parquet",
+        spec={"target": "amount", "exposure": "exposure"},
+        models={"glm": ModelSpec(kind="glm")},
+    )
+    run = Run(
+        config=config,
+        data_fingerprint="fixture",
+        n_rows=3,
+        n_train=2,
+        n_test=1,
+        train_indices=(0, 1),
+        test_indices=(2,),
+        feature_names=["constant"],
+        models={},
+    )
+    component = DummyRegressor()
+    payload = {"best_params": {}, "best_values": {}, "n_trials": 0, "run": run}
+    result = TuneResult(**payload, estimators={"custom": component})
+    assert result.estimators["custom"] is component
+    result.estimators["second"] = component
+    assert len(result.estimators) == 2
+    with pytest.raises(ValidationError):
+        TuneResult(**payload, estimators=[component])
+    with pytest.raises(ValidationError):
+        Run(**{**run.model_dump(), "config": object()})

@@ -1,0 +1,67 @@
+"""Downstream typing consumer, checked by test_init; never executed."""
+
+from typing import assert_type
+
+import numpy as np
+import pandas as pd
+from sklearn.pipeline import Pipeline
+
+from azoic import (
+    AutoBinner,
+    AutoGrouper,
+    ExperimentConfig,
+    FrequencySeverityModel,
+    ModelResult,
+    ModelSpec,
+    RiskGBM,
+    RiskGLM,
+    Run,
+    TuneResult,
+    calibration_table,
+    comparison_table,
+    gini,
+    log_run,
+    model_card,
+    run_experiment,
+    tune_experiment,
+)
+
+
+class CustomGLM(RiskGLM):
+    pass
+
+
+def consumer(config: ExperimentConfig, frame: pd.DataFrame, flag: bool):
+    assert_type(RiskGLM().fit(frame, frame["rate"]), RiskGLM)
+    assert_type(CustomGLM().fit(frame, frame["rate"]), CustomGLM)
+    assert_type(RiskGBM().fit(frame, frame["rate"]), RiskGBM)
+    assert_type(FrequencySeverityModel().fit(frame), FrequencySeverityModel)
+    assert_type(AutoBinner().fit(frame, frame["rate"]), AutoBinner)
+    assert_type(AutoGrouper().fit(frame, frame["rate"]), AutoGrouper)
+    AutoBinner().set_mapping({"x": [1.0, 2.0]}, missing={"x": 0})
+    AutoGrouper().set_mapping({"x": {"a": "A", "b": "B"}}, missing={"x": "A"})
+    assert_type(AutoBinner().transform(frame), pd.DataFrame)
+    assert_type(AutoGrouper().transform(frame), pd.DataFrame)
+    assert_type(AutoBinner().transform(np.zeros((3, 1))), np.ndarray)
+    assert_type(run_experiment(config, df=frame), Run)
+    assert_type(run_experiment(config, return_estimators=False), Run)
+    run, estimators = run_experiment(config, return_estimators=True)
+    assert_type(run, Run)
+    assert_type(estimators, dict[str, RiskGLM | RiskGBM | FrequencySeverityModel | Pipeline])
+    assert_type(
+        run_experiment(config, return_estimators=flag),
+        Run | tuple[Run, dict[str, RiskGLM | RiskGBM | FrequencySeverityModel | Pipeline]],
+    )
+    assert_type(run.config, ExperimentConfig)
+    assert_type(run.models["glm"], ModelResult)
+    assert_type(ModelSpec(kind="glm").build(), RiskGLM | RiskGBM | FrequencySeverityModel)
+    tuned = tune_experiment(config)
+    assert_type(tuned, TuneResult)
+    assert_type(
+        tuned.estimators, dict[str, RiskGLM | RiskGBM | FrequencySeverityModel | Pipeline] | None
+    )
+    assert_type(gini(frame["amount"], frame["rate"]), float)
+    assert_type(calibration_table(frame["amount"], frame["rate"]), pd.DataFrame)
+    assert_type(model_card(run), str)
+    assert_type(comparison_table([run]), pd.DataFrame)
+    assert_type(log_run(run), str)

@@ -24,6 +24,7 @@ nav = [
         {"Configuration and CLI" = "reference/configuration-cli.md"},
         {"Data and preparation" = "reference/data-preparation.md"},
         {"Models and evaluation" = "reference/models-evaluation.md"},
+        {"Compatibility and composition" = "reference/compatibility.md"},
         {"Workflow and operations" = "reference/workflow-operations.md"},
         {"Glossary" = "reference/glossary.md"},
     ]},
