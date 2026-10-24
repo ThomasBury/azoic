@@ -160,8 +160,10 @@ preprocessing when a workbook is required.
 
 Export writes and closes a temporary workbook beside the destination, then
 atomically replaces the destination. A serialization, save or replacement error
-preserves an existing workbook and removes the temporary file. This protects
-against failed writes; it is not a power-loss durability guarantee.
+preserves an existing workbook and removes the temporary file. Existing
+destination permission bits are copied before replacement; a permission-setting
+error also preserves the original file. This protects against failed writes;
+it is not a power-loss durability guarantee.
 
 Application sums the linear predictor before exponentiating. Invalid or
 unrepresentable factors and rates raise `ValueError`; export also rejects

@@ -45,7 +45,8 @@ ranking weights and diagnostic segment totals as separate policies. M49 records
 the baseline; M50 completed faithful and failure-safe tariff export. Export
 supports native bins/groups, workflow column removal and passthrough; other
 transforms must fail before opening workbooks. Preserve generic distillation
-transforms and replace only fully saved sibling workbooks. M54's extension
+transforms, preserve existing destination permission bits and replace only fully
+saved sibling workbooks. M54's extension
 contract and M55's independent maintainer exercise are planned in PRD section 6;
 do not extract results, publish a checker or widen `ModelSpec.kind` in advance.
 Independent maintainer validation remains pending for M55.

@@ -31,6 +31,7 @@ from collections.abc import Hashable
 from copy import deepcopy
 from math import fsum
 from pathlib import Path
+from stat import S_IMODE
 from tempfile import NamedTemporaryFile
 
 import numpy as np
@@ -539,8 +540,9 @@ def export_tariff(
     rows retain pipeline order; removed columns have role ``"dropped"``.
 
     A sibling temporary workbook is fully written and closed before replacing
-    the destination. Serialization, save or replacement failures leave an
-    existing destination unchanged and remove the temporary file.
+    the destination, preserving an existing destination's permission bits.
+    Serialization, save, permission or replacement failures leave an existing
+    destination unchanged and remove the temporary file.
     """
     if recalibrate and (X is None or y is None or exposure_col is None):
         raise ValueError(
@@ -615,6 +617,8 @@ def export_tariff(
                     for cell in row:
                         if isinstance(cell.value, str):
                             cell.data_type = "s"
+        if p.exists():
+            temporary.chmod(S_IMODE(p.stat().st_mode))
         temporary.replace(p)
     finally:
         temporary.unlink(missing_ok=True)

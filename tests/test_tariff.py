@@ -7,7 +7,9 @@ observed claim amount exactly, and the structural (non-recalibrated) tariff's
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
+from stat import S_IMODE
 
 import numpy as np
 import pandas as pd
@@ -1070,6 +1072,34 @@ def test_export_failures_preserve_destination_and_remove_temporary_files(
         export_tariff(model, out, recalibrate=False)
     assert set(tmp_path.iterdir()) == files
     assert (out.read_bytes() if out.exists() else None) == before
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX permission bits")
+@pytest.mark.parametrize("fail_chmod", [False, True])
+def test_export_preserves_existing_workbook_permissions(tmp_path, monkeypatch, fail_chmod):
+    model = RiskGLM(family="poisson", link="log").fit(
+        pd.DataFrame({"x": np.arange(12, dtype=float)}), np.arange(1, 13, dtype=float)
+    )
+    out = tmp_path / "shared.xlsx"
+    pd.DataFrame({"previous": [42]}).to_excel(out, index=False)
+    out.chmod(0o664)
+    before = out.read_bytes()
+    if fail_chmod:
+
+        def reject_permissions(self, mode):
+            assert self != out and mode == 0o664
+            raise OSError("injected chmod failure")
+
+        monkeypatch.setattr(Path, "chmod", reject_permissions)
+        with pytest.raises(OSError, match="injected chmod failure"):
+            export_tariff(model, out, recalibrate=False)
+        assert out.read_bytes() == before
+    else:
+        export_tariff(model, out, recalibrate=False)
+        with pd.ExcelFile(out) as workbook:
+            assert workbook.sheet_names == ["base_rate", "factors", "mappings"]
+    assert S_IMODE(out.stat().st_mode) == 0o664
+    assert list(tmp_path.iterdir()) == [out]
 
 
 def test_distillation_preserves_generic_transforms_and_passthrough(tmp_path):

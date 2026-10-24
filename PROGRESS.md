@@ -15,9 +15,11 @@ Legend: ☐ pending · ◐ in progress · ☑ done
   Generic distillation transforms remain available. Full checks and strict docs
   passed; see the completion checkpoint below. Git delivery is authorized and
   isolated on `fix/m50-tariff-export`, based on current `origin/main` at `11ff10c`.
-- **Delivery:** stage and commit the six M50 files, open the PR against `main`,
-  then wait for Codex review and CI on its final head. Address findings before
-  handoff. The PR holds their live status; no merge or release is authorized.
+- **Delivery:** [PR #12](https://github.com/ThomasBury/azoic/pull/12) is open.
+  Codex reviewed `a0843f9` and found one permission-preservation regression;
+  the fix passed fresh full acceptance. Push it and obtain Codex review and CI
+  on the updated head before handoff. The PR holds their live status; no merge
+  or release is authorized.
 - **Next implementation session:** M51 / phase 3, dependency-floor and installed
   artifact validation, then M52 and M53 in order. Stop after M50 in this session.
   The approved extension-boundary plan is recorded under M54/M55 in PRD section 6;
@@ -180,6 +182,29 @@ completion and address findings before handoff. This checkpoint records source
 review and local acceptance without claiming remote review before it occurs.
 No later milestone, merge, release or independent maintainer validation is part
 of this delivery.
+
+### M50 Codex review checkpoint — permission preservation
+
+Opened [PR #12](https://github.com/ThomasBury/azoic/pull/12) with commit
+`a0843f9` (`fix: protect tariff workbooks and reject unsupported transforms`).
+Codex found that sibling replacement changed a shared `0664` workbook to the
+temporary file's `0600` permissions. Both new POSIX checks failed against the
+reviewed commit: permission preservation and failure when permissions cannot
+be applied. Log: `/tmp/azoic-m50-permissions-before.log`.
+
+The fix copies the existing destination's permission bits onto the closed
+temporary workbook before replacement. A chmod failure leaves the old bytes and
+mode intact and removes the temporary file. Both POSIX regression cases passed;
+the focused permission/write-failure run passed **8** tests in 5.32 seconds.
+Fresh `just check` exited **0**: Ruff/Ty passed, **1283 passed, 4 skipped,
+2 expected failures**, 11 warnings, in 211.71 seconds. Strict `just docs-build`
+exited **0**, with no issues in 5.08 seconds. The guide, API docstring and project
+rules describe permission preservation; `git diff --check` passed.
+
+Logs: `/tmp/azoic-m50-permissions-focused.log`, `/tmp/azoic-m50-review-check.log`,
+`/tmp/azoic-m50-review-docs.log`. Remaining: commit/push the fix, reply to the
+finding and obtain Codex review/CI on the new head. The PR is the live authority
+for their final status. No next phase is started by this review fix.
 
 ## M49 — Rule ownership and maintenance baseline ☑ — 2026-10-23
 
