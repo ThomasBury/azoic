@@ -10,7 +10,6 @@ deviance and a populated calibration table.
 from __future__ import annotations
 
 from pathlib import Path
-from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
@@ -25,8 +24,10 @@ from azoic.tune import (  # noqa: E402
 )
 from azoic.workflow import (  # noqa: E402
     ExperimentConfig,
+    ModelResult,
     ModelSpec,
     PreprocessingSpec,
+    Run,
     TuningSpec,
     _split_indices,
     run_experiment,
@@ -242,37 +243,38 @@ def test_omitted_tuning_reproduces_default_space_and_seeded_results(tmp_path: Pa
     assert original.best_values == pytest.approx(configured.best_values, rel=1e-9)
 
 
-def test_python_tuning_precedence(monkeypatch, tmp_path: Path) -> None:
-    import azoic.tune as tune_module
+@pytest.mark.parametrize(
+    ("configured", "kwargs", "trials", "penalty"),
+    [
+        (True, {"n_trials": 4, "calibration_penalty": 5.0}, 4, 5.0),
+        (True, {}, 2, 3.0),
+        (False, {}, 20, 1.0),
+    ],
+)
+def test_python_tuning_precedence(monkeypatch, tmp_path, configured, kwargs, trials, penalty):
+    studies = []
+    create_study = optuna.create_study
 
-    captured_trials = []
-    captured_penalties = []
+    def record_study(**kwargs):
+        study = create_study(**kwargs)
+        studies.append(study)
+        return study
 
-    class Study:
-        best_trial = SimpleNamespace(params={}, value=0.0)
-
-        def optimize(self, objective, *, n_trials):
-            captured_trials.append(n_trials)
-
-    def capture_objective(config, name, spec, calibration_penalty, *args):
-        captured_penalties.append(calibration_penalty)
-        return lambda trial: 0.0
-
-    monkeypatch.setattr(optuna, "create_study", lambda **kwargs: Study())
-    monkeypatch.setattr(tune_module, "_make_objective", capture_objective)
+    monkeypatch.setattr(optuna, "create_study", record_study)
     config = _config(
         tmp_path,
         models={"glm-tweedie": _glm()},
-        tuning={"n_trials": 2, "calibration_penalty": 3.0},
+        tuning={"n_trials": 2, "calibration_penalty": 3.0} if configured else None,
     )
-
-    explicit = tune_experiment(config, n_trials=4, calibration_penalty=5.0)
-    yaml = tune_experiment(config)
-    fallback = tune_experiment(config.model_copy(update={"tuning": None}))
-
-    assert [explicit.n_trials, yaml.n_trials, fallback.n_trials] == [4, 2, 20]
-    assert captured_trials == [4, 2, 20]
-    assert captured_penalties == [5.0, 3.0, 1.0]
+    result = tune_experiment(config, **kwargs)
+    assert result.n_trials == len(studies[0].trials) == trials
+    df = pd.read_parquet(config.data_path)
+    outer_training = df.iloc[list(result.run.train_indices)]
+    inner_run = run_experiment(result.run.config, df=outer_training)
+    metrics = inner_run.models["glm-tweedie"].metrics
+    assert result.best_values["glm-tweedie"] == pytest.approx(
+        metrics["deviance_test"] + penalty * abs(1 - metrics["op_ratio_test"])
+    )
 
 
 def test_tune_experiment_preserves_yaml_identity_params_in_final_run(
@@ -537,99 +539,108 @@ def test_tuning_trial_with_nonpositive_predictions_returns_inf_without_crashing(
     assert result.run.models["glm-normal"].metrics["deviance_test"] == float("inf")
 
 
-def test_tune_experiment_hot_loop_parity_and_timing_smoke(monkeypatch, tmp_path: Path) -> None:
-    import azoic.tune as tune_module
-    import azoic.workflow as workflow
+@pytest.mark.parametrize("preprocess", [False, True])
+def test_tuning_matches_independent_studies_and_final_run(tmp_path, preprocess):
+    choices = {"glm": {"alpha": [0.01, 0.1]}, "gbm": {"num_leaves": [4, 8]}}
+    config = _config(
+        tmp_path,
+        models={"glm": _glm(), "gbm": _gbm().model_copy(update={"preprocess": False})},
+        tuning={
+            "search_space": {
+                name: {
+                    key: {"type": "categorical", "choices": values} for key, values in space.items()
+                }
+                for name, space in choices.items()
+            }
+        },
+    )
+    config.features = ["driver_age", "vehicle_age", "vehicle_brand"]
+    config.spec = config.spec.model_copy(update={"protected_cols": ["region"]})
+    if preprocess:
+        config.preprocessing = PreprocessingSpec(binner={"cols": ["driver_age"], "max_bins": 3})
+    df = pd.read_parquet(config.data_path)
+    result = tune_experiment(config, df=df, n_trials=3, return_estimators=True)
+    outer_training = df.iloc[list(result.run.train_indices)]
+    for i, (name, spec) in enumerate(config.models.items()):
+        study = optuna.create_study(
+            direction="minimize", sampler=optuna.samplers.TPESampler(seed=42 + i)
+        )
+
+        def objective(trial, name=name, spec=spec):
+            params = {
+                key: trial.suggest_categorical(key, values) for key, values in choices[name].items()
+            }
+            trial_config = config.model_copy(
+                update={
+                    "models": {name: spec.model_copy(update={"params": {**spec.params, **params}})},
+                    "tuning": None,
+                }
+            )
+            inner = run_experiment(trial_config, df=outer_training)
+            metrics = inner.models[name].metrics
+            return metrics["deviance_test"] + abs(1 - metrics["op_ratio_test"])
+
+        study.optimize(objective, n_trials=3)
+        assert result.best_params[name] == study.best_params
+        assert result.best_values[name] == pytest.approx(study.best_value)
+
+    direct, estimators = run_experiment(result.run.config, df=df, return_estimators=True)
+    assert result.run.train_indices == direct.train_indices
+    assert result.run.test_indices == direct.test_indices
+    assert result.run.data_fingerprint == direct.data_fingerprint
+    assert result.run.feature_names == direct.feature_names
+    for name in config.models:
+        actual, expected = result.run.models[name], direct.models[name]
+        assert actual.params == expected.params
+        assert actual.metrics == pytest.approx(expected.metrics)
+        pd.testing.assert_frame_equal(actual.calibration_table, expected.calibration_table)
+        pd.testing.assert_frame_equal(
+            actual.protected_calibration["region"], expected.protected_calibration["region"]
+        )
+        np.testing.assert_allclose(
+            result.estimators[name].predict(df[[*config.features, config.spec.exposure]]),
+            estimators[name].predict(df[[*config.features, config.spec.exposure]]),
+        )
+    if preprocess:
+        actual = result.estimators["glm"].named_steps["binner"]
+        expected = estimators["glm"].named_steps["binner"]
+        for column in actual.mapping_:
+            np.testing.assert_array_equal(actual.mapping_[column], expected.mapping_[column])
+        assert actual.missing_ == expected.missing_
+        assert actual.closure_ == expected.closure_
+
+
+def test_trials_only_predict_inner_holdouts_and_build_final_results(monkeypatch, tmp_path):
     from azoic.models import RiskGLM
 
-    cfg = _config(
-        tmp_path,
-        models={"glm-tweedie": _glm(), "gbm-tweedie": _gbm()},
-    )
-    cfg = cfg.model_copy(
-        update={
-            "features": ["driver_age", "vehicle_age", "vehicle_brand"],
-            "spec": cfg.spec.model_copy(update={"protected_cols": ["region"]}),
-        }
-    )
+    predictions, runs, model_results = [], [], []
+    predict, run_init, result_init = RiskGLM.predict, Run.__init__, ModelResult.__init__
 
-    actual_eval = workflow._evaluate_split
-    actual_fp = workflow._data_fingerprint
-    actual_cal = workflow.calibration_table
-    actual_glm_predict = RiskGLM.predict
+    def record_predict(self, X):
+        predictions.append(tuple(X.index))
+        return predict(self, X)
 
-    def slow_eval(config, df, train_idx, test_idx, *, return_estimators=False, **_kwargs):
-        return actual_eval(
-            config,
-            df,
-            train_idx,
-            test_idx,
-            return_estimators=return_estimators,
-            data_fingerprint=None,
-            diagnostics=True,
-        )
+    def record_run(self, **kwargs):
+        runs.append(kwargs)
+        run_init(self, **kwargs)
 
-    monkeypatch.setattr(tune_module, "_evaluate_split", slow_eval)
-    baseline = tune_experiment(cfg, n_trials=4, random_state=42)
+    def record_result(self, **kwargs):
+        model_results.append(kwargs)
+        result_init(self, **kwargs)
 
-    fp_calls = 0
-    cal_calls = 0
-    glm_predict_calls = 0
-    inner_runs = []
-
-    def count_fp(df):
-        nonlocal fp_calls
-        fp_calls += 1
-        return actual_fp(df)
-
-    def count_cal(*args, **kwargs):
-        nonlocal cal_calls
-        cal_calls += 1
-        return actual_cal(*args, **kwargs)
-
-    def count_glm_predict(self, X):
-        nonlocal glm_predict_calls
-        glm_predict_calls += 1
-        return actual_glm_predict(self, X)
-
-    def record_eval(config, df, train_idx, test_idx, **kwargs):
-        out = actual_eval(config, df, train_idx, test_idx, **kwargs)
-        if not kwargs.get("diagnostics", True):
-            inner_runs.append(out)
-        return out
-
-    monkeypatch.setattr(workflow, "_data_fingerprint", count_fp)
-    monkeypatch.setattr(tune_module, "_data_fingerprint", count_fp)
-    monkeypatch.setattr(workflow, "calibration_table", count_cal)
-    monkeypatch.setattr(RiskGLM, "predict", count_glm_predict)
-    monkeypatch.setattr(tune_module, "_evaluate_split", record_eval)
-
-    fast = tune_experiment(cfg, n_trials=4, random_state=42)
-
-    assert fp_calls == 1
-    assert len(inner_runs) == 8
-    for inner_run in inner_runs:
-        (res,) = inner_run.models.values()
-        assert "gini_train" not in res.metrics
-        assert res.calibration_table.empty
-        assert res.protected_calibration == {}
-    # 4 inner GLM trials (test predict only) + 1 outer GLM refit (train + test predict) = 6
-    assert glm_predict_calls == 6
-    # calibration_table only runs on the final outer refit: 2 models * (1 decile + 1 protected) = 4
-    assert cal_calls == 4
-
-    assert fast.best_params == baseline.best_params
-    assert fast.best_values == pytest.approx(baseline.best_values, rel=1e-9)
-    assert fast.run.data_fingerprint == baseline.run.data_fingerprint
-    for name in cfg.models:
-        assert fast.run.models[name].metrics == pytest.approx(
-            baseline.run.models[name].metrics, rel=1e-9
-        )
-        pd.testing.assert_frame_equal(
-            fast.run.models[name].calibration_table,
-            baseline.run.models[name].calibration_table,
-        )
-        pd.testing.assert_frame_equal(
-            fast.run.models[name].protected_calibration["region"],
-            baseline.run.models[name].protected_calibration["region"],
-        )
+    monkeypatch.setattr(RiskGLM, "predict", record_predict)
+    monkeypatch.setattr(Run, "__init__", record_run)
+    monkeypatch.setattr(ModelResult, "__init__", record_result)
+    config = _config(tmp_path, models={"glm": _glm()})
+    df = pd.read_parquet(config.data_path)
+    outer_train, outer_test = _split_indices(config, df)
+    _, inner_test = _split_indices(config, df.iloc[outer_train])
+    result = tune_experiment(config, df=df, n_trials=3)
+    assert predictions == [tuple(df.iloc[outer_train[inner_test]].index)] * 3 + [
+        tuple(df.iloc[outer_test].index),
+        tuple(df.iloc[outer_train].index),
+    ]
+    assert len(runs) == len(model_results) == 1
+    assert runs[0]["data_fingerprint"] == result.run.data_fingerprint
+    assert not model_results[0]["calibration_table"].empty
+    assert "gini_train" in model_results[0]["metrics"]

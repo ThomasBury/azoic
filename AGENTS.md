@@ -53,9 +53,14 @@ does not imply every allowed stack is tested. M52 shares portfolio outcome
 validation in `data._validate_outcomes` across workflow/tuning and FSM; retain
 schema, supplied-rate and severity checks at their boundaries. Calibration
 counts are aligned 1D vectors; their validation must not impose portfolio row
-floors or count/amount consistency on diagnostic segments. M54's extension
-contract and M55's independent maintainer exercise are planned in PRD section 6;
-do not extract results, publish a checker or widen `ModelSpec.kind` in advance.
+floors or count/amount consistency on diagnostic segments. M53 separates
+estimator/input construction, fixed-shape split evaluation and final run
+assembly. Trials consume split scores without public result snapshots,
+training diagnostics or provenance; workflow and stability share fixed-power
+Tweedie arithmetic while retaining their warning/rejection policies.
+M54's extension contract and M55's independent maintainer exercise are planned
+in PRD section 6; do not extract results, publish a checker or widen
+`ModelSpec.kind` in advance.
 Independent maintainer validation remains pending for M55.
 Current focus is the authority for the active/next milestone. Read
 `PREPROCESSING_FIX_PLAN.md` for the verified bugs, regression scope, PR delivery,

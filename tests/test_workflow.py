@@ -24,7 +24,6 @@ from azoic.workflow import (
     Run,
     TuningSpec,
     _data_fingerprint,
-    _deviance_test,
     run_experiment,
 )
 from tests.conftest import make_synthetic_portfolio
@@ -944,31 +943,23 @@ def test_run_experiment_empty_dataset_raises(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_deviance_test_is_exposure_weighted_tweedie_power_1_5() -> None:
-    from sklearn.metrics import mean_tweedie_deviance
-
-    observed = np.array([0.0, 1.0, 4.0])
-    predicted = np.array([0.5, 1.5, 3.0])
-    exposure = np.array([1.0, 2.0, 5.0])
-    actual = _deviance_test(
-        obs_rate=observed,
-        pred_rate=predicted,
-        exposure=exposure,
+def test_run_deviance_is_exposure_weighted_tweedie_power_1_5(tmp_path) -> None:
+    df = make_synthetic_portfolio(n=100, seed=19)
+    config = ExperimentConfig(
+        data_path="unused.parquet",
+        spec={"target": "claim_amount", "exposure": "exposure"},
+        features=["driver_age"],
+        models={"glm": ModelSpec(params={"family": "poisson", "link": "log"})},
     )
-    expected = mean_tweedie_deviance(
-        observed,
-        predicted,
-        sample_weight=exposure,
-        power=1.5,
+    run, estimators = run_experiment(config, df=df, return_estimators=True)
+    test = df.iloc[list(run.test_indices)]
+    observed = (test.claim_amount / test.exposure).to_numpy()
+    predicted = estimators["glm"].predict(test[["driver_age", "exposure"]])
+    expected = mean_tweedie_deviance(observed, predicted, sample_weight=test.exposure, power=1.5)
+    assert run.models["glm"].metrics["deviance_test"] == pytest.approx(expected)
+    assert expected != pytest.approx(
+        mean_tweedie_deviance(observed, predicted, sample_weight=test.exposure, power=0)
     )
-    squared_error = mean_tweedie_deviance(
-        observed,
-        predicted,
-        sample_weight=exposure,
-        power=0,
-    )
-    assert actual == pytest.approx(expected)
-    assert actual != pytest.approx(squared_error)
 
 
 def test_experiment_config_rejects_empty_models_duplicate_and_special_features() -> None:
