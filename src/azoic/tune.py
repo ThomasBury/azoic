@@ -37,7 +37,7 @@ from azoic.workflow import (
     ModelSpec,
     ParameterDistribution,
     Run,
-    _data_fingerprint,
+    _assemble_run,
     _evaluate_split,
     _split_indices,
     _validate_portfolio,
@@ -113,21 +113,19 @@ def _make_objective(
     train_idx,
     test_idx,
     search_space: dict[str, ParameterDistribution] | None,
-    data_fingerprint: str | None = None,
 ):
     def objective(trial):
         tuned_params = _suggest(trial, spec.kind, dict(spec.params), search_space)
         tuned_spec = spec.model_copy(update={"params": tuned_params})
         tuned_config = config.model_copy(update={"models": {name: tuned_spec}, "tuning": None})
-        run = _evaluate_split(
+        _, results = _evaluate_split(
             tuned_config,
             df,
             train_idx,
             test_idx,
-            data_fingerprint=data_fingerprint,
             diagnostics=False,
         )
-        return _objective_value(run.models[name].metrics, calibration_penalty)
+        return _objective_value(results[name].metrics, calibration_penalty)
 
     return objective
 
@@ -207,7 +205,6 @@ def tune_experiment(
     if len(df) == 0:
         raise ValueError("loaded dataset is empty")
     _validate_portfolio(config, df)
-    data_fingerprint = _data_fingerprint(df)
     outer_train_idx, outer_test_idx = _split_indices(config, df)
     inner_train_rel, inner_test_rel = _split_indices(config, df.iloc[outer_train_idx])
     inner_train_idx = outer_train_idx[inner_train_rel]
@@ -231,7 +228,6 @@ def tune_experiment(
                 inner_train_idx,
                 inner_test_idx,
                 config.tuning.search_space.get(name) if config.tuning is not None else None,
-                data_fingerprint,
             ),
             n_trials=n_trials,
         )
@@ -249,18 +245,21 @@ def tune_experiment(
     }
     final_config = config.model_copy(update={"models": final_models})
 
-    run, estimators = _evaluate_split(
+    feature_names, results = _evaluate_split(
         final_config,
         df,
         outer_train_idx,
         outer_test_idx,
-        return_estimators=True,
-        data_fingerprint=data_fingerprint,
     )
+    run = _assemble_run(final_config, df, outer_train_idx, outer_test_idx, feature_names, results)
     return TuneResult(
         best_params=best_params,
         best_values=best_values,
         n_trials=int(n_trials),
         run=run,
-        estimators=estimators if return_estimators else None,
+        estimators=(
+            {name: result.estimator for name, result in results.items()}
+            if return_estimators
+            else None
+        ),
     )
