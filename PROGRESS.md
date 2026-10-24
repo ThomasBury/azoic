@@ -16,8 +16,9 @@ Legend: ☐ pending · ◐ in progress · ☑ done
 - M52 was implemented alone: it has independent acceptance and requires none
   of M53–M55. Git delivery is now authorized and isolated on
   `fix/m52-outcome-validation`, based on merged M51 PR #13 at `fad4a5f`.
-  Complete PR creation, Codex review and hosted CI before handoff; no merge or
-  release is included.
+  [PR #14](https://github.com/ThomasBury/azoic/pull/14) is open; its live status
+  is the authority for final-head Codex review and CI. Both must pass before
+  handoff; no merge or release is included.
 - **Next implementation session:** M53 / phase 5, workflow evaluation/assembly
   separation and shared fixed-power scoring. Read PRD sections 3/6 and M52's
   completion checkpoint, trace `_evaluate_split`, tuning objectives and stability
@@ -200,6 +201,16 @@ The completed full checks and strict docs remain applicable; runtime code has
 not changed during delivery preparation. Next: stage and validate the intended
 diff, commit/push, open the PR, then obtain Codex review and hosted CI on the
 final branch head. M53, merging and publication remain outside this delivery.
+
+Opened [PR #14](https://github.com/ThomasBury/azoic/pull/14) with implementation
+commit `cb306ef` (`fix: share portfolio checks and validate calibration counts`).
+Its plain-English title/description cover the duplicated checks, count-shape
+failure, valid segment totals, compatibility impact and verification. Fresh
+Ruff and staged whitespace checks passed; the earlier full acceptance applies
+because delivery changed only this record. This follow-up records the PR before
+requesting Codex review on the final branch head. Next: inspect Codex comments
+and hosted CI, address findings and repeat review until clear. The live PR holds
+the final review/CI evidence; M53, merging and publication remain pending.
 
 ## M51 — Dependency floors and installed artifacts ☑ — 2026-10-24
 
