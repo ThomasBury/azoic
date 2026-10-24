@@ -492,9 +492,10 @@ def _pipeline_parts(estimator, X):
             and not step.validate
             and step.feature_names_out is None
         ):
-            rows.extend(
-                {"feature": column, "role": "dropped"} for column in step.kw_args["columns"]
-            )
+            columns = step.kw_args["columns"]
+            if isinstance(columns, str):
+                columns = [columns]
+            rows.extend({"feature": column, "role": "dropped"} for column in columns)
         else:
             raise ValueError(
                 f"export_tariff: unsupported preprocessing step {name!r} "

@@ -1074,6 +1074,24 @@ def test_export_failures_preserve_destination_and_remove_temporary_files(
     assert (out.read_bytes() if out.exists() else None) == before
 
 
+def test_export_records_scalar_column_removal_once(tmp_path):
+    from sklearn.pipeline import Pipeline
+    from sklearn.preprocessing import FunctionTransformer
+
+    from azoic.workflow import _drop_columns
+
+    X = pd.DataFrame({"x": np.arange(12, dtype=float), "amount": np.arange(1, 13, dtype=float)})
+    model = Pipeline(
+        [
+            ("drop", FunctionTransformer(_drop_columns, kw_args={"columns": "amount"})),
+            ("model", RiskGLM(family="poisson", link="log")),
+        ]
+    ).fit(X, X["amount"])
+    out = export_tariff(model, tmp_path / "scalar.xlsx", recalibrate=False)
+    mappings = pd.read_excel(out, sheet_name="mappings")
+    assert mappings.query("role == 'dropped'")["feature"].tolist() == ["amount"]
+
+
 @pytest.mark.skipif(os.name != "posix", reason="POSIX permission bits")
 @pytest.mark.parametrize("fail_chmod", [False, True])
 def test_export_preserves_existing_workbook_permissions(tmp_path, monkeypatch, fail_chmod):

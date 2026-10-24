@@ -16,10 +16,11 @@ Legend: ☐ pending · ◐ in progress · ☑ done
   passed; see the completion checkpoint below. Git delivery is authorized and
   isolated on `fix/m50-tariff-export`, based on current `origin/main` at `11ff10c`.
 - **Delivery:** [PR #12](https://github.com/ThomasBury/azoic/pull/12) is open.
-  Codex reviewed `a0843f9` and found one permission-preservation regression;
-  the fix passed fresh full acceptance. Push it and obtain Codex review and CI
-  on the updated head before handoff. The PR holds their live status; no merge
-  or release is authorized.
+  Codex's permission-preservation finding was fixed in `ba6ba6c`; that head passed
+  Codex review with no findings and CI. CodeRabbit's scalar dropped-column mapping
+  finding is also fixed and passed fresh full acceptance. Push the correction and
+  obtain Codex review/CI on the final head before handoff. The PR holds their live
+  status; no merge or release is authorized.
 - **Next implementation session:** M51 / phase 3, dependency-floor and installed
   artifact validation, then M52 and M53 in order. Stop after M50 in this session.
   The approved extension-boundary plan is recorded under M54/M55 in PRD section 6;
@@ -205,6 +206,27 @@ Logs: `/tmp/azoic-m50-permissions-focused.log`, `/tmp/azoic-m50-review-check.log
 `/tmp/azoic-m50-review-docs.log`. Remaining: commit/push the fix, reply to the
 finding and obtain Codex review/CI on the new head. The PR is the live authority
 for their final status. No next phase is started by this review fix.
+
+### M50 review checkpoint — scalar dropped-column mapping
+
+CodeRabbit identified that a supported column-removal step using the scalar
+string `"amount"` produced one mapping row per character. Verified pandas' scalar
+label behavior against its official documentation via Context7 and reproduced
+the bad workbook with a regression that failed before the fix. A string column
+name now becomes a one-item sequence when writing dropped-column rows; existing
+list handling remains intact. The focused scalar/list workbook checks passed
+**3** tests in 2.83 seconds. Fresh `just check` exited **0**: Ruff/Ty passed,
+**1284 passed, 4 skipped, 2 expected failures**, 11 warnings, in 197.79 seconds.
+Strict `just docs-build` exited **0**, with no issues in 3.40 seconds;
+`git diff --check` passed.
+
+Codex's second review and CI on `ba6ba6c` both completed successfully with no
+Codex findings. The final scalar correction still requires a new commit/push,
+reply to the CodeRabbit thread, and Codex review/CI on that final head. Logs:
+`/tmp/azoic-m50-scalar-before.log`, `/tmp/azoic-m50-scalar-focused.log`,
+`/tmp/azoic-m50-final-check.log`, `/tmp/azoic-m50-final-docs.log`.
+No new API or later phase is added. Independent maintainer validation remains
+pending for M55; live final-review evidence belongs to PR #12.
 
 ## M49 — Rule ownership and maintenance baseline ☑ — 2026-10-23
 
