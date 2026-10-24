@@ -37,6 +37,12 @@ M48 completed selection and target sensitivity in that chapter: use the populati
 passing all other rules, fixed Area/age strata and identical retained IDs across
 claim caps. Missing-cost scenarios are assumptions only; never change loader rules
 or model inputs. Professional review and predictive comparisons remain pending.
+M49 completed the engineering baseline; continue one phase per session (M49–M55).
+The rule ownership/evidence map and diagnostic-extension baseline live in PRD
+section 3; phase scope is in section 6 and execution evidence in PROGRESS.
+Keep row exposure floors, explicit model weights (including severity counts),
+ranking weights and diagnostic segment totals as separate policies. M49 records
+current behavior; later refactoring, API changes and audit provenance stay pending.
 Current focus is the authority for the active/next milestone. Read
 `PREPROCESSING_FIX_PLAN.md` for the verified bugs, regression scope, PR delivery,
 and release reconciliation. The scope is mirrored in `PRD.md` section 6.

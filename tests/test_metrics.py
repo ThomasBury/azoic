@@ -90,6 +90,48 @@ def test_gini_and_lorenz_are_invariant_within_prediction_ties() -> None:
     assert len(actual.exposure_pct) == len(np.unique(y_pred)) + 1
 
 
+def test_tied_score_gini_has_hand_calculated_area_and_separate_calibration() -> None:
+    claims = np.array([0.0, 2.0, 6.0])
+    prediction = np.array([1.0, 1.0, 2.0])
+    exposure = np.array([1.0, 1.0, 2.0])
+    curve = lorenz(claims, prediction, exposure)
+    np.testing.assert_allclose(curve.exposure_pct, [0, 0.5, 1])
+    np.testing.assert_allclose(curve.claims_pct, [0, 0.25, 1])
+    # Tied blocks give area 1/16 + 5/16 = 3/8, hence Gini 1/4.
+    assert curve.gini == pytest.approx(0.25)
+    for scale, expected_op in [(1, 4 / 3), (2, 2 / 3)]:
+        assert gini(claims, scale * prediction, exposure) == pytest.approx(0.25)
+        assert op_ratio(claims, scale * prediction, exposure) == pytest.approx(expected_op)
+
+
+@pytest.mark.parametrize("diagnostic", ["calibration", "one_way", "double_lift"])
+def test_grouped_diagnostics_floor_segment_totals_instead_of_rows(diagnostic) -> None:
+    claims = [0.0, 1.0, 2.0]
+    prediction = [366.0] * 3
+    exposure = [0.0, 1 / 732, 1 / 732]
+    if diagnostic == "calibration":
+        table = calibration_table(
+            claims, prediction, exposure, groups=["all"] * 3, claim_count=[0, 3, 4]
+        )
+        assert table.loc[0, "claim_count"] == 7
+    elif diagnostic == "one_way":
+        table = one_way_table(
+            pd.DataFrame({"feature": ["all"] * 3}), "feature", claims, prediction, exposure
+        )
+    else:
+        table = double_lift_table(claims, prediction, prediction, exposure)
+    assert len(table) == 1
+    assert table.loc[0, "exposure"] == pytest.approx(1 / 366)
+    assert table.loc[0, "claim_amount"] == 3
+    assert table.loc[0, "observed_pure_premium"] == pytest.approx(1098)
+    predicted_column = (
+        "predicted_claim_amount_a" if diagnostic == "double_lift" else "predicted_claim_amount"
+    )
+    assert table.loc[0, predicted_column] == pytest.approx(1)
+    with pytest.raises(ValueError, match="1/366|positive"):
+        stability_table(claims, prediction, exposure, periods=["all"] * 3)
+
+
 def test_lorenz_endpoints_and_monotonic() -> None:
     df = make_synthetic_portfolio(n=2000, seed=11)
     pp_true = df["claim_amount"] / df["exposure"]  # a naive "predicted" pp
@@ -298,6 +340,11 @@ def test_stability_table_zero_null_deviance_has_nan_d2() -> None:
 
 
 def test_deviances_reexported() -> None:
+    import sklearn.metrics
+
+    assert mean_tweedie_deviance is sklearn.metrics.mean_tweedie_deviance
+    assert mean_poisson_deviance is sklearn.metrics.mean_poisson_deviance
+    assert mean_gamma_deviance is sklearn.metrics.mean_gamma_deviance
     assert callable(mean_tweedie_deviance)
     assert callable(mean_poisson_deviance)
     assert callable(mean_gamma_deviance)
