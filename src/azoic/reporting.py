@@ -76,6 +76,9 @@ def model_card(run: azoic.Run) -> str:
         f"# Azoic model card -- {cfg.name}",
         "",
         "## Experiment",
+        "",
+        "Development evidence only: `test` means development validation, not the final test.",
+        "",
         f"- name: `{cfg.name}`",
         f"- data: `{cfg.data_path}`",
         f"- split: `{cfg.split}` (test_size={cfg.test_size}, random_state={cfg.random_state})",
@@ -90,6 +93,13 @@ def model_card(run: azoic.Run) -> str:
             -1,
             "- protected columns: " + ", ".join(f"`{c}`" for c in cfg.spec.protected_cols),
         )
+
+    lines.extend(["## Portfolio basis", ""])
+    for field in ("exposure_unit", "currency", "observation_period", "claim_valuation_basis"):
+        lines.append(f"- {field}: {getattr(cfg.spec, field) or 'unrecorded'}")
+    lines.append("- upstream adjustments: " + ("; ".join(cfg.spec.adjustments) or "none recorded"))
+    lines.append(f"- record ID column: {cfg.spec.id_col or 'unrecorded'}")
+    lines.append("")
 
     lines.append("## Provenance")
     lines.append("")
@@ -143,7 +153,7 @@ def model_card(run: azoic.Run) -> str:
 def comparison_table(runs: Iterable[azoic.Run]) -> pd.DataFrame:
     """Return all model metrics, warning once for mixed evaluation contexts.
 
-    Dataset fingerprints, target/exposure columns, and holdout membership must
+    Dataset fingerprints, target/exposure columns, portfolio basis and holdout membership must
     match for direct comparisons. Holdout order does not matter. Mixed contexts
     remain available for descriptive comparison; the warning names affected runs.
     """
@@ -153,6 +163,11 @@ def comparison_table(runs: Iterable[azoic.Run]) -> pd.DataFrame:
             run.data_fingerprint,
             run.config.spec.target,
             run.config.spec.exposure,
+            run.config.spec.exposure_unit,
+            run.config.spec.currency,
+            run.config.spec.observation_period,
+            run.config.spec.claim_valuation_basis,
+            tuple(run.config.spec.adjustments),
             frozenset(run.test_indices),
         )
         for run in runs
@@ -165,13 +180,20 @@ def comparison_table(runs: Iterable[azoic.Run]) -> pd.DataFrame:
     if mismatched:
         warnings.warn(
             f"Runs {[runs[0].config.name, *mismatched]!r} have different evaluation contexts "
-            "(dataset fingerprints, target/exposure definitions, or holdout membership); "
+            "(dataset fingerprints, target/exposure definitions, portfolio basis, "
+            "or holdout membership); "
             "metrics are descriptive and cannot be compared directly.",
             UserWarning,
             stacklevel=2,
         )
     rows = [
-        {"config": run.config.name, "model": name, "kind": result.kind, **result.metrics}
+        {
+            "config": run.config.name,
+            "model": name,
+            "kind": result.kind,
+            "evidence": "development",
+            **result.metrics,
+        }
         for run in runs
         for name, result in run.models.items()
     ]
@@ -179,6 +201,7 @@ def comparison_table(runs: Iterable[azoic.Run]) -> pd.DataFrame:
         "config",
         "model",
         "kind",
+        "evidence",
         "gini_train",
         "gini_test",
         "op_ratio_test",
@@ -204,7 +227,7 @@ def comparison_dashboard(runs: Iterable[azoic.Run]) -> str:
         rows=2,
         cols=3,
         specs=[[{"type": "table", "colspan": 3}, None, None], [{}, {}, {}]],
-        subplot_titles=("Metrics", "", "", "Gini (test)", "O/P ratio", "Deviance"),
+        subplot_titles=("Development metrics", "", "", "Gini (test)", "O/P ratio", "Deviance"),
         row_heights=[0.45, 0.55],
         vertical_spacing=0.12,
     )

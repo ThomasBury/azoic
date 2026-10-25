@@ -1,7 +1,8 @@
-"""Azoic CLI (Typer): ``profile`` / ``fit`` / ``compare`` / ``export-tariff`` /
+"""Azoic CLI (Typer): ``check`` / ``profile`` / ``fit`` / ``compare`` / ``export-tariff`` /
 ``tune``.
 
 Wraps the M5 + M6 + M7 pieces end-to-end:
+  * ``azoic check`` -- read-only development config/data checks; no fitting.
   * ``azoic profile`` -- runs ``profile_features`` + ``screen_features`` and
     prints (or writes) the resulting screening table.
   * ``azoic fit`` -- loads an ``ExperimentConfig`` YAML, ``run_experiment``s
@@ -19,6 +20,7 @@ ponytail: the CLI is a thin shell over ``workflow`` + ``reporting`` +
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import typer
@@ -28,13 +30,25 @@ from azoic.profile import profile_features, screen_features
 from azoic.reporting import comparison_table, model_card
 from azoic.tariff import distill_gbm as _distill_gbm
 from azoic.tariff import export_tariff as _export_tariff
-from azoic.workflow import ExperimentConfig, run_experiment
+from azoic.workflow import ExperimentConfig, check_experiment, run_experiment
 
 app = typer.Typer(
     no_args_is_help=True,
     add_completion=False,
     help="Azoic: non-life technical tariff (pure premium) modelling.",
 )
+
+
+@app.command()
+def check(
+    config: Path = typer.Option(..., "--config", help="Development ExperimentConfig YAML."),
+) -> None:
+    """Check config/data without fitting, dropping, repairing or writing files."""
+    try:
+        result = check_experiment(ExperimentConfig.from_yaml(config))
+    except ValueError as error:
+        raise typer.BadParameter(str(error)) from None
+    typer.echo(json.dumps(result, indent=2))
 
 
 @app.command()

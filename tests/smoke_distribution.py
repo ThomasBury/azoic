@@ -68,6 +68,27 @@ print(f"azoic {azoic.__version__}; pandas {pd.__version__}; installed at {packag
 print("GLM/GBM fit, score, categorical influence, imports, and version checks passed")
 
 checks = TestCase()
+
+# Public development boundary works with runtime dependencies only.
+portfolio = pd.DataFrame(
+    {
+        "id": ["a", "b", "c", "d"],
+        "x": [1.0, 2.0, 3.0, 4.0],
+        "exposure": 1.0,
+        "amount": [0.0, 10.0, 20.0, np.nan],
+    }
+)
+development, final_test = azoic.split_portfolio(portfolio, ["d"], id_col="id")
+config = azoic.ExperimentConfig(
+    data_path="not-read.parquet",
+    features=["x"],
+    spec=azoic.DatasetSpec(target="amount", exposure="exposure", id_col="id", currency="EUR"),
+    models={"glm": azoic.ModelSpec()},
+)
+summary = azoic.check_experiment(config, df=development)
+assert summary["n_rows"] == 3 and summary["evidence"] == "development"
+assert summary["portfolio_basis"]["currency"] == "EUR"
+assert final_test.id.tolist() == ["d"] and final_test.amount.isna().all()
 for cls in (AutoBinner, AutoGrouper):
     kwargs = {"strategy": "tree"} if cls is AutoBinner else {}
     for value in (np.nan, np.inf, -np.inf, "nan", "inf", "-inf"):
@@ -106,12 +127,12 @@ for cls in (AutoBinner, AutoGrouper):
     transformer.set_mapping(transformer.mapping_)
     pd.testing.assert_frame_equal(expected, transformer.transform(frame))
     assert transformer.missing_["x"] is not None
-for command in ("profile", "fit", "compare", "export-tariff", "tune"):
+for command in ("check", "profile", "fit", "compare", "export-tariff", "tune"):
     result = subprocess.run(
         ["azoic", command, "--help"], check=True, capture_output=True, text=True
     )
     assert "Usage:" in result.stdout, command
-print("Preprocessing outcome/column contracts, constant bins, and all five CLI helps passed")
+print("Preprocessing outcome/column contracts, constant bins, and all six CLI helps passed")
 
 # Public, runtime-only composition recipe; also published in the compatibility guide.
 X = pd.DataFrame(

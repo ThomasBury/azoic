@@ -22,11 +22,32 @@ short runnable path, start with the
 | `claim_count` | string or null | `null` | Aggregate claim-count column; required for frequency-severity |
 | `time_col` | string or null | `null` | Ordered period used by a temporal split |
 | `protected_cols` | list of strings | `[]` | Review-only subgroup columns retained for held-out calibration and excluded from features |
+| `id_col` | string or null | `null` | Unique nonmissing string/integer record ID, excluded from features; recorded in `Run.record_ids` |
+| `excluded_cols` | list of strings | `[]` | Non-feature columns such as incumbent technical rates and partition labels |
+| `exposure_unit` | `year` | `year` | Declared exposure unit; other units require upstream conversion |
+| `currency` | string or null | `null` | Declared currency; no conversion |
+| `observation_period` | string or null | `null` | Declared development observation window |
+| `claim_valuation_basis` | string or null | `null` | Paid/incurred/ultimate basis and valuation date as applicable |
+| `adjustments` | list of strings | `[]` | Externally applied caps, inflation or other adjustments; no transformations |
 
 `target`, `exposure`, and every protected-column name must be non-empty.
 `protected_cols` must be unique and cannot overlap target, exposure, claim count,
-or time. When data loads, every named field must exist.
+or time. `id_col` must be distinct from other roles; `excluded_cols` must be
+unique, nonempty names distinct from every other declared role. All declared
+column roles must exist when data loads. Portfolio descriptions are metadata,
+not column names; supplied descriptions and adjustment entries must be nonempty.
 Unknown fields are rejected: use `claim_count`, not `claim_count_col`, in `spec`.
+
+## Read-only development check
+
+`check_experiment(config, df=development)` or
+`azoic check --config development.yaml` checks portfolio outcomes, record IDs,
+explicit predictors, split feasibility and model/preprocessor construction.
+It returns/prints a summary with counts, features, development evidence label,
+fingerprint and portfolio assumptions. It never fits, repairs, drops rows,
+applies caps or writes files. Fit-time predictor/mapping rules and backend
+convergence remain fitting checks. See the
+[portfolio separation recipe](../guide/actuarial-workflow.md#freeze-portfolio-membership-before-experimenting).
 
 ## `ExperimentConfig`
 
@@ -380,6 +401,7 @@ models:
 
 | Command | Required input | Main options | Output |
 |---|---|---|---|
+| `azoic check` | `--config`, including explicit `features` | None | Read-only development summary as JSON; no fitting or file writes |
 | `azoic profile` | `--data`, `--target`, `--exposure` | `--claim-count`, `--time-col`, `--out` | Screening table to stdout or CSV; `--data` preserves local paths and `s3://` URI strings |
 | `azoic fit` | `--config` | `--out`, `--quiet` | Markdown model card to stdout and/or a file |
 | `azoic compare` | One or more config paths | `--out` | Comparison table to stdout or CSV |
@@ -429,6 +451,13 @@ values containing the actual fit/evaluation row positions, in their original
 partition order. All models within a run share those positions. For tuning,
 `TuneResult.run` records the final **outer** partition, not an inner trial split.
 
+Experiments and tuning consume development data only. `test` metric names and
+positions refer to development validation; comparison tables include
+`evidence="development"`. The separate final-test portfolio is not loaded.
+When `spec.id_col` is declared, `Run.record_ids` is the immutable tuple of all
+supplied row IDs in source order; index it with the recorded positions to recover
+training and validation IDs. Empty means IDs were not recorded.
+
 Recover rows from the exact input frame without sorting, filtering, or changing
 its index. The fingerprint covers shape, columns, dtypes, index, values, and
 categorical vocabulary (including unused levels), category dtype/order, and the
@@ -437,8 +466,8 @@ parameters; public dictionaries and DataFrames remain mutable. Category-aware
 fingerprints intentionally change, so older runs need fresh evaluation.
 
 Matching seeds or row counts alone cannot establish matching partitions.
-Comparisons warn once on different fingerprints, target/exposure columns, or
-holdout membership, naming affected runs without dropping rows. Holdout
+Comparisons warn once on different fingerprints, target/exposure columns,
+declared portfolio basis, or holdout membership, naming affected runs without dropping rows. Holdout
 positions are compared as sets, so a permutation alone does not warn.
 
 ```python

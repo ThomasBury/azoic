@@ -92,7 +92,46 @@ for name, result in run.models.items():
 
 The rest of this section describes the **unreleased checkout**, not the 0.5.0
 installation. In particular, 0.5.0 lacks `df=`, per-model `preprocess: false`,
-and the full constructor/runtime provenance fields below.
+the portfolio separation/check APIs, and the full constructor/runtime provenance fields below.
+
+Before a real modelling exercise, [freeze development/final-test membership](actuarial-workflow.md#freeze-portfolio-membership-before-experimenting).
+Keep the opening release-compatible example above unchanged; the following
+checkout-only YAML records that guide's development contract. Save it beside
+`development.parquet` as `development.yaml` and run the read-only check first.
+
+```yaml
+name: development-candidates
+data_path: development.parquet
+spec:
+  target: claim_amount
+  exposure: exposure
+  claim_count: claim_count
+  time_col: period
+  id_col: record_id
+  excluded_cols: [partition]
+  exposure_unit: year
+  currency: EUR
+  observation_period: synthetic periods 0–19
+  claim_valuation_basis: synthetic simulated ultimate amounts
+  adjustments: [no external caps or adjustments]
+features: [driver_age, vehicle_age, region]
+split: temporal
+models:
+  glm:
+    kind: glm
+    params: {family: tweedie, link: log}
+```
+
+```bash
+uv run azoic check --config development.yaml
+```
+
+This reads and checks the development portfolio without fitting, repairing,
+dropping rows or writing files. The same result is available through
+`check_experiment(ExperimentConfig.from_yaml("development.yaml"))`. Existing
+fit/tune functions consume only the portfolio supplied: they do not discover or
+open the separate final-test file. Comparisons label their results as development
+evidence; the public metric suffix `_test` remains for development validation.
 
 A `Run` includes the validated config, data fingerprint, row counts, feature
 names, runtime versions, effective tuning settings when tuned, and per-model

@@ -65,8 +65,8 @@ Category-aware fingerprints intentionally change; evaluate older runs again
 before comparing them with fresh results.
 
 Comparison tables and dashboards warn once when runs differ in dataset
-fingerprint, target/exposure columns, or holdout membership. The warning names
-the affected runs and preserves every row for descriptive comparison. Different
+fingerprint, target/exposure columns, declared portfolio basis, or holdout
+membership. The warning names the affected runs and preserves every row for descriptive comparison. Different
 orders of the same holdout positions count as the same evaluated sample.
 
 The CLI can run several configs and write their comparison table:
@@ -80,7 +80,13 @@ Plotly JavaScript embedded and requires the `plot` extra; the CSV table does
 not. Write the string to a file as above and open it in a browser. There is no
 dashboard CLI command.
 
-## Tune without touching outer test
+All comparisons here are **development evidence**. Reserve a separate
+[final-test portfolio](actuarial-workflow.md#freeze-portfolio-membership-before-experimenting)
+before experimenting. The `test` metric suffix denotes development validation;
+repeated review can influence selection, so it cannot establish independent
+final-test performance.
+
+## Tune without touching development validation during search
 
 ```bash
 uv add "azoic[tune]"

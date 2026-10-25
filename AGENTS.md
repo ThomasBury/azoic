@@ -80,6 +80,13 @@ column names, counts and at most five zero-based positions, never row values or
 index labels. Linux/Windows starter CI is separate from full Linux validation.
 M56 verified the starter on Linux and Windows Server 2025/Python 3.12; broader
 platform claims require corresponding observed checks.
+M57 separates final-test/development portfolios by predeclared unique record IDs
+using `data.split_portfolio`; save membership before experimentation. Supply only
+development data to workflow/tuning; their `test` names mean development validation.
+`DatasetSpec.id_col`/`excluded_cols` never enter features; basis fields only record
+upstream assumptions. `check_experiment`/`azoic check` require explicit predictors
+and never fit or repair data. `Run.record_ids` aligns with existing split positions.
+Saved runs and frozen final evaluation remain separate M58/M61 work.
 Current focus is the authority for the active/next milestone. Read
 `PREPROCESSING_FIX_PLAN.md` for the verified bugs, regression scope, PR delivery,
 and release reconciliation. The scope is mirrored in `PRD.md` section 6.
@@ -115,7 +122,7 @@ are separate from the first-model path.
 
 ```
 src/azoic/
-  data.py           # DatasetSpec, load_data
+  data.py           # DatasetSpec, load_data, split_portfolio
   profile.py        # profile_features, screen_features
   preprocessing.py  # AutoBinner, AutoGrouper
   models.py         # RiskGLM, RiskGBM, FrequencySeverityModel
@@ -123,7 +130,7 @@ src/azoic/
   validation.py     # make_strata, temporal_split
   plots.py          # plot_lorenz, plot_lift, plot_calibration, plot_one_way, plot_double_lift, plot_actual_vs_predicted (matplotlib)
   tariff.py         # distill_gbm; export_tariff(glm_or_pipeline, path)
-  workflow.py       # ExperimentConfig, preprocessing/freq-sev YAML, run_experiment
+  workflow.py       # check_experiment, ExperimentConfig, preprocessing/freq-sev YAML, run_experiment
   reporting.py      # model_card, comparison_table/dashboard
   mlops.py          # log_run (mlflow, lazy import)
   tune.py           # tune_experiment (optuna, lazy import) -- v0.2 part 1 / M7
@@ -244,7 +251,7 @@ examples/_quarto.yml  # main path and optional recipes; only sources committed, 
 - `.github/workflows/ci.yml` validates PRs and main pushes on Python 3.12 with
   read-only contents permissions: locked all-extras/groups sync, Ruff, Ty,
   pytest, strict docs, distributions, and installed wheel/sdist model,
-  preprocessing, version, and all-five-command CLI smokes.
+  preprocessing, version, and all-six-command CLI smokes.
   Separate runtime-only jobs reuse that smoke outside the checkout for wheel
   and sdist: low compatible direct dependencies from wheel metadata on Python
   3.12 (`lowest-direct`, asserting exact glum/Typer floors), current compatible

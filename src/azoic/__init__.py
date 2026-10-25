@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     from .data import MIN_EXPOSURE as MIN_EXPOSURE
     from .data import DatasetSpec as DatasetSpec
     from .data import load_data as load_data
+    from .data import split_portfolio as split_portfolio
     from .metrics import Lorenz as Lorenz
     from .metrics import calibration_table as calibration_table
     from .metrics import double_lift_table as double_lift_table
@@ -65,6 +66,7 @@ if TYPE_CHECKING:
     from .workflow import PreprocessingSpec as PreprocessingSpec
     from .workflow import Run as Run
     from .workflow import TuningSpec as TuningSpec
+    from .workflow import check_experiment as check_experiment
     from .workflow import run_experiment as run_experiment
 
 __version__ = "0.5.0"
@@ -72,7 +74,7 @@ __version__ = "0.5.0"
 _EXPORTS = {
     name: module
     for module, names in {
-        "data": ("DatasetSpec", "load_data", "MIN_EXPOSURE", "EXPOSURE_FLOOR"),
+        "data": ("DatasetSpec", "load_data", "split_portfolio", "MIN_EXPOSURE", "EXPOSURE_FLOOR"),
         "profile": ("profile_features", "screen_features"),
         "preprocessing": ("AutoBinner", "AutoGrouper"),
         "models": ("RiskGLM", "RiskGBM", "FrequencySeverityModel"),
@@ -116,6 +118,7 @@ _EXPORTS = {
             "ModelResult",
             "Run",
             "run_experiment",
+            "check_experiment",
         ),
         "tariff": (
             "distill_gbm",

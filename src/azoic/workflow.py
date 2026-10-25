@@ -32,7 +32,7 @@ from sklearn.base import BaseEstimator
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import FunctionTransformer
 
-from azoic.data import DatasetSpec, _validate_outcomes, load_data
+from azoic.data import DatasetSpec, _validate_outcomes, _validate_record_ids, load_data
 from azoic.metrics import (
     _tweedie_scores,
     calibration_table,
@@ -55,6 +55,7 @@ __all__ = [
     "ModelResult",
     "Run",
     "run_experiment",
+    "check_experiment",
 ]
 
 
@@ -440,6 +441,9 @@ class Run(BaseModel):
     ``runtime_versions`` records Python and the numerical/model/data stack once
     per final run; ``tuning_settings`` records effective search controls only for
     tuned runs. Empty metadata means unrecorded, never inferred from today's runtime.
+    ``record_ids`` stores all development IDs in input order when ``spec.id_col``
+    is declared; split positions address this tuple. Empty means unrecorded.
+    The ``test`` partition is development validation, not the reserved final test.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid", arbitrary_types_allowed=True)
@@ -455,6 +459,7 @@ class Run(BaseModel):
     models: dict[str, ModelResult]
     runtime_versions: dict[str, str] = Field(default_factory=dict)
     tuning_settings: dict[str, Any] = Field(default_factory=dict)
+    record_ids: tuple[str | int, ...] = ()
 
 
 def _split_indices(config: ExperimentConfig, df: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
@@ -489,6 +494,8 @@ def _data_fingerprint(df: pd.DataFrame) -> str:
 
 
 def _validate_portfolio(config: ExperimentConfig, df: pd.DataFrame) -> None:
+    if len(df) == 0:
+        raise ValueError("loaded dataset is empty")
     missing = [column for column in config.spec.required_columns() if column not in df.columns]
     if missing:
         raise ValueError(f"dataset is missing required columns: {missing}")
@@ -497,6 +504,46 @@ def _validate_portfolio(config: ExperimentConfig, df: pd.DataFrame) -> None:
         df[config.spec.target],
         df[config.spec.claim_count] if config.spec.claim_count is not None else None,
     )
+    if not df.columns.is_unique:
+        raise ValueError("dataset column names must be unique")
+    if config.spec.id_col is not None:
+        _validate_record_ids(df[config.spec.id_col])
+
+
+def check_experiment(config: ExperimentConfig, *, df: pd.DataFrame | None = None) -> dict[str, Any]:
+    """Check declared development data/config without fitting or writing files.
+
+    Requires explicit predictors. Reuses portfolio, feature and split rules;
+    checks estimator/preprocessor construction without learning mappings. No
+    dropping, repair or caps occur. This is not a guarantee of successful fitting:
+    backend convergence and fit-time predictor/mapping checks still apply.
+    """
+    if not config.features:
+        raise ValueError("check requires a nonempty explicit `features` list")
+    if df is None:
+        df = load_data(config.data_path, spec=config.spec)
+    _validate_portfolio(config, df)
+    features = config.feature_columns(df)
+    train, valid = _split_indices(config, df)
+    for model in config.models.values():
+        _build_model(config, model, features)
+    return {
+        "evidence": "development",
+        "n_rows": len(df),
+        "n_train": len(train),
+        "n_validation": len(valid),
+        "features": features,
+        "data_fingerprint": _data_fingerprint(df),
+        "portfolio_basis": config.spec.model_dump(
+            include={
+                "exposure_unit",
+                "currency",
+                "observation_period",
+                "claim_valuation_basis",
+                "adjustments",
+            }
+        ),
+    }
 
 
 def _drop_columns(X: pd.DataFrame, *, columns: list[str]) -> pd.DataFrame:
@@ -664,6 +711,7 @@ def _assemble_run(
         },
         tuning_settings=deepcopy(tuning_settings) if tuning_settings is not None else {},
         data_fingerprint=_data_fingerprint(df),
+        record_ids=tuple(df[config.spec.id_col].tolist()) if config.spec.id_col else (),
         n_rows=int(len(df)),
         n_train=int(len(train_idx)),
         n_test=int(len(test_idx)),
@@ -717,16 +765,16 @@ def run_experiment(
     return_estimators: bool = False,
     df: pd.DataFrame | None = None,
 ) -> Run | tuple[Run, dict[str, RiskGLM | RiskGBM | FrequencySeverityModel | Pipeline]]:
-    """Validate, split, fit, and score an experiment.
+    """Validate, split, fit, and score a development experiment.
 
     ``df`` supplies an in-memory portfolio without reading ``config.data_path``.
     When omitted, load that Parquet path. Both routes validate and fingerprint
-    the input frame and record its positional split; the frame is not mutated.
+    the input development frame and record its positional split; the frame is
+    not mutated. Keep a separate final-test portfolio outside this call. The
+    public ``test`` metric names refer to development validation.
     """
     if df is None:
         df = load_data(config.data_path, spec=config.spec)
-    if len(df) == 0:
-        raise ValueError("loaded dataset is empty")
     _validate_portfolio(config, df)
     train_idx, test_idx = _split_indices(config, df)
     feature_names, results = _evaluate_split(config, df, train_idx, test_idx)
