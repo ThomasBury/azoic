@@ -18,9 +18,9 @@ Legend: ☐ pending · ◐ in progress · ☑ done
 - **Next implementation: M58 — saved fitted candidates**, in a new session.
   Keep M58–M62 independently reviewable; do not group persistence, revisions,
   reporting or final evaluation into this completed isolation phase.
-- M57 Git delivery and iterative Codex bot review are now authorized on
-  `feat/m57-development-final-test`; final-head PR review and CI are the delivery
-  authority. No merge or release is requested. Comparison tables add `evidence`,
+- [PR #19](https://github.com/ThomasBury/azoic/pull/19) is open on
+  `feat/m57-development-final-test`. M57 Git delivery and iterative Codex bot
+  review are authorized; final-head PR review and CI are the delivery authority. No merge or release is requested. Comparison tables add `evidence`,
   requiring a minor release; package metadata remains 0.5.0.
 
 - **M56 ☑ — reliable first journey (phase 1)** passed local and hosted
@@ -255,6 +255,16 @@ The PR will explain portfolio separation, read-only checking, development labels
 actual validation and the comparison-schema change. Next: staged whitespace
 check, commit, push, open the PR, then record its URL and request final-head
 Codex review. M58, merge and release remain outside this delivery.
+
+Opened [PR #19](https://github.com/ThomasBury/azoic/pull/19), **Keep final-test
+data separate from model development**, with implementation commit `362295a`
+(`feat: separate development and final-test portfolios`). The commit footer and
+PR describe the added comparison `evidence` column and minor-release requirement.
+Fresh Ruff, strict docs and staged whitespace checks passed. This documentation
+follow-up records the PR before requesting Codex review of its final head.
+Next: wait for Codex and hosted CI, address findings and request another review
+when needed. The PR is the live authority for final review/CI results; no merge
+or release is authorized.
 
 ## M56 — Reliable first journey ☑ — 2026-10-25
 
