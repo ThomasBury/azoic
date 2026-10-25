@@ -9,19 +9,31 @@ Legend: ☐ pending · ◐ in progress · ☑ done
 
 ## Current focus
 
+- **M58 ☑ — saved fitted candidates (phase 3)** completed locally on 2026-10-25.
+  Trusted persistence, selected tuning config and no-fit saved comparison,
+  reporting, rate scoring and direct GLM export passed acceptance.
+- M58 full gate: Ruff/Ty and **1,415 tests** passed (4 skips, 2 expected failures);
+  strengthened boundary/unseen cases passed separately. Strict docs and final
+  runtime-only wheel/sdist smokes passed, including fresh-process no-fit export.
+- **Next implementation: M59 — controlled mapping and factor revisions**, in a
+  new session. Keep M59–M62 independently reviewable; do not group revisions,
+  review reporting, final evaluation/refit or performance/user observation.
+- M58 Git delivery and iterative Codex bot review are authorized. Work is on
+  `feat/m58-saved-candidates`; record the PR and review evidence below. No merge,
+  release or production deployment is requested.
+
 - **M57 ☑ — development versus final evaluation (phase 2)** completed locally
   on 2026-10-25. ID-based portfolio separation, read-only checks, portfolio basis,
   recorded development IDs and development-evidence reporting passed acceptance.
-- Latest full local gate: Ruff/Ty and 1,410 tests passed (4 skips, 2 expected
+- M57 full local gate: Ruff/Ty and 1,410 tests passed (4 skips, 2 expected
   failures) after the hosted CLI color-assertion correction. Strict docs passed;
   all eight hosted starter/installed-artifact cases passed on the preceding head.
   Final-head Codex/CI results in PR #19 are the delivery authority.
-- **Next implementation: M58 — saved fitted candidates**, in a new session.
+- Previous handoff: **M58 — saved fitted candidates**; completed below.
   Keep M58–M62 independently reviewable; do not group persistence, revisions,
   reporting or final evaluation into this completed isolation phase.
-- [PR #19](https://github.com/ThomasBury/azoic/pull/19) is open on
-  `feat/m57-development-final-test`. M57 Git delivery and iterative Codex bot
-  review are authorized; final-head PR review and CI are the delivery authority. No merge or release is requested. Comparison tables add `evidence`,
+- Historical [PR #19](https://github.com/ThomasBury/azoic/pull/19) merged into
+  `main` at `d81bd52`, the base for M58 delivery. Comparison tables add `evidence`,
   requiring a minor release; package metadata remains 0.5.0.
 
 - **M56 ☑ — reliable first journey (phase 1)** passed local and hosted
@@ -157,6 +169,117 @@ Previous focus and delivery evidence:
 - **Branch:** `feat/m46-lightgbm-preprocessing`, based on the completed WP5 branch.
 - Previous delivery: WP5 [PR #8](https://github.com/ThomasBury/azoic/pull/8)
   merged into `main` at `a99df81`; this branch was fast-forwarded to that base.
+
+## M58 — Saved fitted candidates ☑ — 2026-10-25
+
+- [x] Read Current focus, M57 checkpoint, PRD M56–M62 and affected callers.
+- [x] Assess grouping: persistence is independently testable; keep M59–M62 separate.
+- [x] Persist Run/config, fitted pipelines, versions, identity and split without row data.
+- [x] Add saved-run CLI comparison, reporting, scoring and GLM export without fitting.
+- [x] Save tuning's selected configuration and fitted candidates.
+- [x] Verify fresh-process equality, mappings, no-fit operations and failed-write safety.
+- [x] Run full checks, strict docs and installed-artifact acceptance; record handoff.
+
+### M58 kickoff checkpoint — 2026-10-25
+
+Clean working tree. Reuse workflow's existing Run/estimator pair with standard
+Python pickle and atomic sibling replacement, in the existing workflow module.
+Saved artifacts exclude portfolio frames; summaries, IDs and fitted state remain.
+Only trusted files in the matching environment are supported. Fit/tune remain
+explicit training commands; saved-run operations never distill or refit. Saved
+GLM recalibration requires fingerprint-matched development data and saved train
+positions. Next: implement workflow persistence, CLI consumers and regressions.
+
+### M58 implementation checkpoint — 2026-10-25
+
+Added workflow/root `save_run` and `load_run`, atomic protocol-5 pickle of the
+existing Run/estimator pair, fitted/name/version guards and destination permission
+preservation. No new module or dependency. CLI fit/tune optionally save candidates;
+tune optionally writes selected YAML. Added no-fit saved-run comparison, model
+card, rate scoring and direct GLM export. Fingerprint-matched development data
+is required only for saved recalibration, using stored training positions;
+saved export rejects distillation. Config-based operations remain training.
+Updated API typing, installed smoke and source docs; released starter is untouched.
+
+Focused results: existing CLI/root tests passed (30); initial persistence checks
+passed (5), covering fresh-process GLM/GBM/FSM predictions, fitted mapping fidelity,
+no-fit consumers, recalibration totals, changed-data/workbook preservation,
+serialization failure/permissions and selected tuning config. Further checks now
+also exercise fresh-process tuned predictions and excluded row-note omission.
+Ruff passed; full types/tests, strict docs and installed distributions remain.
+Next: run these gates, inspect the final diff and record actual acceptance.
+
+### M58 completion checkpoint — 2026-10-25
+
+Completed M58 alone. Persistence has its own fresh-process/no-fit acceptance;
+mapping/factor revisions (M59), review reporting (M60), final evaluation and
+production refit (M61), and measured performance/user sessions (M62) remain
+separate consumers with independent gates. No new dependency, module, result
+class or training-data container was introduced. Released M56 starter source
+is unchanged. Existing Python Run/tuning return types and defaults are preserved.
+
+Observed acceptance:
+
+- `OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MPLBACKEND=Agg just check` passed
+  Ruff, production Ty and **1,415 tests, 4 skips, 2 expected failures** in
+  **239.53s**, on locked Python 3.12. Eleven warnings are existing diagnostic/
+  dependency warnings. Final Ruff/Ty and changed-Python formatting checks passed.
+- Five focused persistence tests passed; after full-suite collection, the same
+  five passed again with all finite learned cut points, neighboring floats,
+  missing numeric inputs and an unseen category. The two unseen-level warnings
+  are expected native missing routing. Ordinary GLM/GBM/FSM and tuned GLM
+  predictions agree exactly after fresh-process reload. Learned transforms,
+  config, versions, fingerprint, IDs and split positions survive persistence;
+  excluded row-note values do not enter the file.
+- Saved compare/report/predict and structural/recalibrated GLM export work with
+  all native model/preprocessor fits blocked. Saved export also blocks workflow
+  fitting; distillation cannot enter this route. Scoring preserves record IDs
+  and order without outcomes/exposure. Recalibration reconciles training totals;
+  changed/reordered development frames fail without replacing the workbook.
+- Serialization failure preserves artifact bytes and removes the temporary file;
+  successful replacement preserves destination permission bits. Unknown formats,
+  recorded environment mismatch and mismatched estimator names fail. Tuned
+  artifacts include selected config/effective search evidence; separately saved
+  YAML reloads to that selected config and uses an absolute local data path.
+- `just docs-build` passed strict docs; verified **21 local Markdown targets**
+  across the four changed guide/reference pages and rendered persistence content.
+  Broad `ruff format --check .` flags only pre-existing Markdown code blocks;
+  all seven changed Python files pass their explicit formatting check. The
+  released starter was deliberately not reformatted.
+- `uv build --out-dir /tmp/azoic-m58-dist` built final wheel/sdist. Each passed
+  the final runtime-only `tests/smoke_distribution.py` outside the checkout on
+  Python **3.13**, pandas **3.1.0**: fresh-process exact scoring, saved-run
+  compare/report/predict/structural export with fitting blocked, public API/
+  provenance/composition checks and all **eight** CLI helps. The build reports
+  the existing uv/uv-build version-range warning; both artifacts build and run.
+- `git diff --check` passed. Logs are temporary local evidence at
+  `/tmp/azoic-m58-{check,persistence-final,docs,build,wheel,sdist}.log`.
+
+Limits: pickle must come from a trusted source; unpickling occurs before version
+validation and can execute code. Keep the same source revision and environment;
+exact recorded version checks are not authentication or portability. Artifacts
+retain IDs, aggregate diagnostics and learned state; portfolio frames are
+excluded, not anonymized. Returned objects remain caller-mutable. Atomic sibling
+replacement prevents partial-file replacement, not power-loss data loss or a
+transaction across separate CLI outputs. No hosted Windows/lowest-direct/Python
+3.14 matrix, real-data tutorial render or independent professional-user session
+was rerun; no broader platform or usability claim follows.
+
+Exact next action in a new session: read Current focus, PRD M59 and this
+checkpoint; trace mapping setters, workflow preprocessing construction, tariff
+extraction/recalibration/export and saved-candidate consumers. Mark M59 ◐ before
+implementing controlled mapping/refit and factor-revision evidence. Preserve the
+original candidate/workbook on failures. Do not begin M60 or release automatically.
+
+### M58 Git delivery checkpoint — 2026-10-25
+
+The user authorized staging, a Conventional Commit, a plain-English PR and
+iterative Codex bot review until findings are resolved. Fetched `origin/main`;
+the base is `d81bd52`, including merged M57 PR #19. Isolate the 15 intended
+files on `feat/m58-saved-candidates`, validate staged scope/whitespace and commit
+the completed milestone. Full local acceptance is recorded above; no code has
+changed since that acceptance. Next: push, open the PR, request final-head Codex
+review and observe CI; fix any findings and repeat. No merge/release is included.
 
 ## M57 — Development versus final evaluation ☑ — 2026-10-25
 

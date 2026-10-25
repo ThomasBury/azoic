@@ -16,11 +16,15 @@ column is popped inside ``RiskGLM`` / ``RiskGBM``); diagnostics use aggregate
 from __future__ import annotations
 
 import hashlib
+import os
+import pickle
 import platform
+import stat
+import tempfile
 import warnings
 from copy import deepcopy
 from dataclasses import dataclass
-from importlib.metadata import version
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Annotated, Any, Literal, Self, overload
 
@@ -31,6 +35,7 @@ from pydantic import BaseModel, ConfigDict, Field, FiniteFloat, model_serializer
 from sklearn.base import BaseEstimator
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import FunctionTransformer
+from sklearn.utils.validation import check_is_fitted
 
 from azoic.data import DatasetSpec, _validate_outcomes, _validate_record_ids, load_data
 from azoic.metrics import (
@@ -56,6 +61,8 @@ __all__ = [
     "Run",
     "run_experiment",
     "check_experiment",
+    "save_run",
+    "load_run",
 ]
 
 
@@ -460,6 +467,75 @@ class Run(BaseModel):
     runtime_versions: dict[str, str] = Field(default_factory=dict)
     tuning_settings: dict[str, Any] = Field(default_factory=dict)
     record_ids: tuple[str | int, ...] = ()
+
+
+def save_run(
+    run: Run,
+    estimators: dict[str, RiskGLM | RiskGBM | FrequencySeverityModel | Pipeline],
+    path: str | Path,
+) -> None:
+    """Atomically pickle a Run and its fitted candidates, excluding portfolio frames.
+
+    Keep the matching Python/dependency environment. IDs, aggregate diagnostics
+    and learned state are included; this is not an anonymization mechanism.
+    Only load files from trusted sources: pickle can execute arbitrary code.
+    """
+    if set(estimators) != set(run.models):
+        raise ValueError("estimator names must match run.models exactly")
+    for estimator in estimators.values():
+        check_is_fitted(estimator)
+    if not run.runtime_versions:
+        raise ValueError("run has no recorded runtime versions")
+    destination = Path(path)
+    mode = stat.S_IMODE(destination.stat().st_mode) if destination.exists() else None
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(dir=destination.parent, delete=False) as stream:
+            temporary = Path(stream.name)
+            pickle.dump(
+                {"format": "azoic.run.1", "run": run, "estimators": estimators},
+                stream,
+                protocol=5,
+            )
+        if mode is not None:
+            temporary.chmod(mode)
+        os.replace(temporary, destination)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
+def load_run(
+    path: str | Path,
+) -> tuple[Run, dict[str, RiskGLM | RiskGBM | FrequencySeverityModel | Pipeline]]:
+    """Load a trusted fitted run; reject differing recorded runtime versions.
+
+    Unpickling executes before validation. Version checks are compatibility
+    checks, not a security boundary. Never load an untrusted artifact.
+    """
+    with open(path, "rb") as stream:
+        artifact = pickle.load(stream)
+    if not isinstance(artifact, dict) or artifact.get("format") != "azoic.run.1":
+        raise ValueError("not an Azoic saved run (supported format: azoic.run.1)")
+    run = artifact.get("run")
+    estimators = artifact.get("estimators")
+    if not isinstance(run, Run) or not isinstance(estimators, dict):
+        raise ValueError("saved run must contain Run and fitted estimators")
+    if not run.runtime_versions or set(estimators) != set(run.models):
+        raise ValueError("saved run has missing versions or mismatched estimator names")
+    for package, recorded in run.runtime_versions.items():
+        try:
+            current = platform.python_version() if package == "python" else version(package)
+        except PackageNotFoundError:
+            current = "not installed"
+        if current != recorded:
+            raise ValueError(
+                f"saved run environment mismatch for {package}: recorded {recorded}, "
+                f"current {current}; recreate the training environment"
+            )
+    for estimator in estimators.values():
+        check_is_fitted(estimator)
+    return run, estimators
 
 
 def _split_indices(config: ExperimentConfig, df: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:

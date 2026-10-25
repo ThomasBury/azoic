@@ -1,5 +1,4 @@
-"""Azoic CLI (Typer): ``check`` / ``profile`` / ``fit`` / ``compare`` / ``export-tariff`` /
-``tune``.
+"""Azoic CLI for training configurations and consuming trusted saved candidates.
 
 Wraps the M5 + M6 + M7 pieces end-to-end:
   * ``azoic check`` -- read-only development config/data checks; no fitting.
@@ -7,8 +6,8 @@ Wraps the M5 + M6 + M7 pieces end-to-end:
     prints (or writes) the resulting screening table.
   * ``azoic fit`` -- loads an ``ExperimentConfig`` YAML, ``run_experiment``s
     it, prints a model card to stdout (and/or writes it to disk).
-  * ``azoic compare`` -- runs one or more configs and prints a side-by-side
-    per-model metrics table (CSV to disk if ``--out``).
+  * ``azoic compare`` -- compares saved runs without fitting, or trains configs.
+  * ``azoic report`` / ``azoic predict`` -- report or score saved candidates.
   * ``azoic export-tariff`` -- runs a config, exports a named GLM or, with
     ``--distill``, an exportable GLM student of a positive-objective GBM.
   * ``azoic tune`` -- optuna hyperparameter search per model
@@ -23,14 +22,24 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import numpy as np
+import pandas as pd
 import typer
+import yaml
 
 from azoic.data import DatasetSpec, load_data
 from azoic.profile import profile_features, screen_features
 from azoic.reporting import comparison_table, model_card
 from azoic.tariff import distill_gbm as _distill_gbm
 from azoic.tariff import export_tariff as _export_tariff
-from azoic.workflow import ExperimentConfig, check_experiment, run_experiment
+from azoic.workflow import (
+    ExperimentConfig,
+    _data_fingerprint,
+    check_experiment,
+    load_run,
+    run_experiment,
+    save_run,
+)
 
 app = typer.Typer(
     no_args_is_help=True,
@@ -86,10 +95,15 @@ def fit(
     config: Path = typer.Option(..., "--config", help="ExperimentConfig YAML."),
     out: Path | None = typer.Option(None, "--out", help="Write the model card markdown here."),
     quiet: bool = typer.Option(False, "--quiet", "-q", help="Do not print the card to stdout."),
+    save: Path | None = typer.Option(None, "--save-run", help="Save fitted candidates (pickle)."),
 ) -> None:
     """Run all models in an ``ExperimentConfig`` YAML; produce a model card."""
     cfg = ExperimentConfig.from_yaml(config)
-    run = run_experiment(cfg)
+    if save is None:
+        run = run_experiment(cfg)
+    else:
+        run, estimators = run_experiment(cfg, return_estimators=True)
+        save_run(run, estimators, save)
     md = model_card(run)
 
     if out is not None:
@@ -101,15 +115,23 @@ def fit(
 
 @app.command()
 def compare(
-    configs: list[Path] = typer.Argument(
-        ..., help="One or more ExperimentConfig YAML files to run and compare."
+    configs: list[Path] | None = typer.Argument(
+        None, help="ExperimentConfig YAML files to FIT and compare."
+    ),
+    saved_runs: list[Path] | None = typer.Option(
+        None, "--run", help="Trusted saved run to compare without fitting (repeatable)."
     ),
     out: Path | None = typer.Option(
         None, "--out", help="Write the comparison table to CSV (default: print to stdout)."
     ),
 ) -> None:
-    """Run multiple configs and print a side-by-side per-model metric table."""
-    runs = [run_experiment(ExperimentConfig.from_yaml(cfg_path)) for cfg_path in configs]
+    """Compare saved runs without fitting, or explicitly train positional configs."""
+    if not configs and not saved_runs:
+        raise typer.BadParameter("supply config paths to train or --run saved candidates")
+    if configs and saved_runs:
+        raise typer.BadParameter("choose config paths (fits) or --run (never fits), not both")
+    runs = [load_run(path)[0] for path in saved_runs or []]
+    runs += [run_experiment(ExperimentConfig.from_yaml(path)) for path in configs or []]
     rows = comparison_table(runs)
 
     if out is not None:
@@ -120,9 +142,57 @@ def compare(
     typer.echo(f"Azoic compare\n{rows.to_string(index=False)}")
 
 
+@app.command()
+def report(
+    saved_run: Path = typer.Option(..., "--run", help="Trusted saved run (pickle)."),
+    out: Path | None = typer.Option(None, "--out", help="Write Markdown model card here."),
+) -> None:
+    """Report stored development diagnostics without loading data or fitting."""
+    run, _ = load_run(saved_run)
+    md = model_card(run)
+    if out is not None:
+        out.write_text(md, encoding="utf-8")
+    else:
+        typer.echo(md)
+
+
+@app.command()
+def predict(
+    saved_run: Path = typer.Option(..., "--run", help="Trusted saved run (pickle)."),
+    model: str = typer.Option(..., "--model", help="Saved fitted model name."),
+    data: Path = typer.Option(..., "--data", help="Parquet predictors in scoring order."),
+    out: Path = typer.Option(..., "--out", help="CSV containing pure-premium rates."),
+) -> None:
+    """Score a frozen candidate; outcomes and exposure are optional for rate prediction."""
+    run, estimators = load_run(saved_run)
+    if model not in estimators:
+        raise typer.BadParameter(f"model {model!r} not in saved models {list(estimators)}")
+    frame = pd.read_parquet(data)
+    missing = sorted(set(run.feature_names) - set(frame.columns))
+    if missing:
+        raise typer.BadParameter(f"missing predictors: {missing}")
+    rates = np.asarray(estimators[model].predict(frame[run.feature_names]), dtype=float)
+    if rates.shape != (len(frame),) or not np.isfinite(rates).all():
+        raise ValueError("saved model must predict one finite rate per row")
+    result = pd.DataFrame({"predicted_rate": rates})
+    if run.config.spec.id_col is not None:
+        from azoic.data import _validate_record_ids
+
+        id_col = run.config.spec.id_col
+        if id_col not in frame:
+            raise typer.BadParameter(f"missing record ID column: {id_col}")
+        _validate_record_ids(frame[id_col])
+        result.insert(0, id_col, frame[id_col].to_numpy())
+    result.to_csv(out, index=False)
+
+
 @app.command("export-tariff")
 def export_tariff(
-    config: Path = typer.Option(..., "--config", help="ExperimentConfig YAML."),
+    config: Path | None = typer.Option(None, "--config", help="ExperimentConfig YAML to FIT."),
+    saved_run: Path | None = typer.Option(None, "--run", help="Trusted saved run; never fits."),
+    data: Path | None = typer.Option(
+        None, "--data", help="Original development Parquet for saved-run recalibration."
+    ),
     model: str = typer.Option(..., "--model", help="Name of the model to export."),
     out: Path = typer.Option(..., "--out", help="Output xlsx path."),
     distill: bool = typer.Option(
@@ -137,25 +207,48 @@ def export_tariff(
         "total claim amount (default: on).",
     ),
 ) -> None:
-    """Run a config and export a GLM or an explicitly distilled GBM tariff."""
+    """Export a saved GLM without fitting, or train a config (including distillation)."""
     from sklearn.pipeline import Pipeline
 
     from azoic.models import RiskGBM, RiskGLM
 
-    cfg = ExperimentConfig.from_yaml(config)
-    if model not in cfg.models:
-        raise typer.BadParameter(
-            f"model {model!r} not in config models {list(cfg.models)}; "
-            "check the YAML `models:` keys."
-        )
-    cfg = cfg.model_copy(update={"models": {model: cfg.models[model]}})
-    df = load_data(cfg.data_path, spec=cfg.spec)
-    run, ests = run_experiment(cfg, return_estimators=True, df=df)
+    if (config is None) == (saved_run is None):
+        raise typer.BadParameter("supply exactly one of --config (fits) or --run (never fits)")
+    if saved_run is not None:
+        if distill:
+            raise typer.BadParameter("--distill fits a new student; use --config explicitly")
+        run, ests = load_run(saved_run)
+        cfg = run.config
+        df = None
+        if recalibrate:
+            if data is None:
+                raise typer.BadParameter(
+                    "saved-run recalibration requires --data; or --no-recalibrate"
+                )
+            df = load_data(data, spec=cfg.spec)
+            if _data_fingerprint(df) != run.data_fingerprint:
+                raise typer.BadParameter(
+                    "--data does not match saved development fingerprint/order"
+                )
+        elif data is not None:
+            raise typer.BadParameter("--data is only used for saved-run recalibration")
+    else:
+        if data is not None:
+            raise typer.BadParameter("--data requires --run; config supplies its data_path")
+        assert config is not None
+        cfg = ExperimentConfig.from_yaml(config)
+        if model not in cfg.models:
+            raise typer.BadParameter(f"model {model!r} not in config models {list(cfg.models)}")
+        cfg = cfg.model_copy(update={"models": {model: cfg.models[model]}})
+        df = load_data(cfg.data_path, spec=cfg.spec)
+        run, ests = run_experiment(cfg, return_estimators=True, df=df)
+    if model not in ests:
+        raise typer.BadParameter(f"model {model!r} not in saved models {list(ests)}")
     est = ests[model]
     final_est = est.steps[-1][1] if isinstance(est, Pipeline) else est
     if isinstance(final_est, RiskGBM) and not distill:
         raise typer.BadParameter(
-            f"model {model!r} ends in RiskGBM; pass --distill to export a GLM student."
+            f"model {model!r} ends in RiskGBM; use --config with --distill to train a GLM student."
         )
     if isinstance(final_est, RiskGLM) and distill:
         raise typer.BadParameter("--distill is only valid for a RiskGBM model")
@@ -164,11 +257,12 @@ def export_tariff(
             f"model {model!r} ends in {type(final_est).__name__}; export-tariff requires a RiskGLM."
         )
 
-    X = df[list(est.feature_names_in_)]
-    y = df[cfg.spec.target]
     train_indices = list(run.train_indices)
-    X_train = X.iloc[train_indices]
+    X = df[list(est.feature_names_in_)] if df is not None else None
+    y = df[cfg.spec.target] if df is not None else None
+    X_train = X.iloc[train_indices] if X is not None else None
     if isinstance(final_est, RiskGBM):
+        assert X is not None and X_train is not None
         exportable = _distill_gbm(
             est if isinstance(est, Pipeline) else final_est,
             X_train,
@@ -188,7 +282,7 @@ def export_tariff(
         exportable,
         out,
         X=X_train,
-        y=y.iloc[train_indices],
+        y=y.iloc[train_indices] if y is not None else None,
         exposure_col=cfg.spec.exposure,
         recalibrate=recalibrate,
     )
@@ -210,12 +304,28 @@ def tune(
     ),
     out: Path | None = typer.Option(None, "--out", help="Write the model card markdown here."),
     quiet: bool = typer.Option(False, "--quiet", "-q", help="Do not print the card to stdout."),
+    save: Path | None = typer.Option(None, "--save-run", help="Save selected fitted candidates."),
+    best_config: Path | None = typer.Option(
+        None, "--best-config", help="Write selected config YAML (running it trains again)."
+    ),
 ) -> None:
     """Tune model hyperparameters with optuna, then write a model card of the best fit."""
     from azoic.tune import tune_experiment
 
     cfg = ExperimentConfig.from_yaml(config)
-    result = tune_experiment(cfg, n_trials=trials, calibration_penalty=calibration_penalty)
+    options = {"return_estimators": True} if save is not None else {}
+    result = tune_experiment(
+        cfg, n_trials=trials, calibration_penalty=calibration_penalty, **options
+    )
+    if save is not None:
+        assert result.estimators is not None
+        save_run(result.run, result.estimators, save)
+    if best_config is not None:
+        selected = result.run.config.model_dump(mode="json")
+        raw = selected["data_path"]
+        if "://" not in raw:
+            selected["data_path"] = str(Path(raw).resolve())
+        best_config.write_text(yaml.safe_dump(selected, sort_keys=False), encoding="utf-8")
     md = model_card(result.run)
 
     for name, params in result.best_params.items():

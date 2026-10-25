@@ -1,6 +1,8 @@
 """Runtime-only check: copy outside the checkout and run against each installed artifact."""
 
 import subprocess
+import sys
+import tempfile
 import warnings
 from importlib import import_module
 from importlib.metadata import distribution
@@ -83,12 +85,48 @@ config = azoic.ExperimentConfig(
     data_path="not-read.parquet",
     features=["x"],
     spec=azoic.DatasetSpec(target="amount", exposure="exposure", id_col="id", currency="EUR"),
-    models={"glm": azoic.ModelSpec()},
+    models={"glm": azoic.ModelSpec(params={"family": "tweedie", "link": "log"})},
 )
 summary = azoic.check_experiment(config, df=development)
 assert summary["n_rows"] == 3 and summary["evidence"] == "development"
 assert summary["portfolio_basis"]["currency"] == "EUR"
 assert final_test.id.tolist() == ["d"] and final_test.amount.isna().all()
+
+# Saved candidates score in a fresh installed process without fitting or source data.
+run, estimators = azoic.run_experiment(config, df=development, return_estimators=True)
+with tempfile.TemporaryDirectory() as folder:
+    directory = Path(folder)
+    azoic.save_run(run, estimators, directory / "run.pkl")
+    development[["id", "x"]].to_parquet(directory / "predictors.parquet")
+    expected = estimators["glm"].predict(development[["x"]])
+    code = """
+import numpy as np
+import pandas as pd
+from azoic import load_run
+from azoic.models import RiskGLM, RiskGBM
+from azoic.preprocessing import AutoBinner, AutoGrouper
+def reject(*args, **kwargs):
+    raise AssertionError('saved candidates must not fit')
+for cls in (RiskGLM, RiskGBM, AutoBinner, AutoGrouper):
+    cls.fit = reject
+run, estimators = load_run('run.pkl')
+np.save('rates.npy', estimators['glm'].predict(pd.read_parquet('predictors.parquet')[['x']]))
+from azoic.cli import app
+from typer.testing import CliRunner
+for command in (
+    ['compare', '--run', 'run.pkl'],
+    ['report', '--run', 'run.pkl'],
+    ['predict', '--run', 'run.pkl', '--model', 'glm', '--data', 'predictors.parquet',
+     '--out', 'rates.csv'],
+    ['export-tariff', '--run', 'run.pkl', '--model', 'glm', '--no-recalibrate',
+     '--out', 'tariff.xlsx'],
+):
+    result = CliRunner().invoke(app, command)
+    assert result.exit_code == 0, (result.output, result.exception)
+"""
+    subprocess.run([sys.executable, "-c", code], cwd=directory, check=True)
+    np.testing.assert_array_equal(np.load(directory / "rates.npy"), expected)
+print("Saved-run persistence, fresh-process equality and no-fit CLI consumers passed")
 for cls in (AutoBinner, AutoGrouper):
     kwargs = {"strategy": "tree"} if cls is AutoBinner else {}
     for value in (np.nan, np.inf, -np.inf, "nan", "inf", "-inf"):
@@ -127,12 +165,12 @@ for cls in (AutoBinner, AutoGrouper):
     transformer.set_mapping(transformer.mapping_)
     pd.testing.assert_frame_equal(expected, transformer.transform(frame))
     assert transformer.missing_["x"] is not None
-for command in ("check", "profile", "fit", "compare", "export-tariff", "tune"):
+for command in ("check", "profile", "fit", "compare", "report", "predict", "export-tariff", "tune"):
     result = subprocess.run(
         ["azoic", command, "--help"], check=True, capture_output=True, text=True
     )
     assert "Usage:" in result.stdout, command
-print("Preprocessing outcome/column contracts, constant bins, and all six CLI helps passed")
+print("Preprocessing outcome/column contracts, constant bins, and all eight CLI helps passed")
 
 # Public, runtime-only composition recipe; also published in the compatibility guide.
 X = pd.DataFrame(

@@ -35,6 +35,7 @@ site/
 # Logs
 *.log
 mlruns/
+*.pkl
 
 # Executable tutorial outputs
 examples/_book/

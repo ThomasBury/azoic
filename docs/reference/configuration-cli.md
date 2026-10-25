@@ -403,10 +403,12 @@ models:
 |---|---|---|---|
 | `azoic check` | `--config`, including explicit `features` | None | Read-only development summary as JSON; no fitting or file writes |
 | `azoic profile` | `--data`, `--target`, `--exposure` | `--claim-count`, `--time-col`, `--out` | Screening table to stdout or CSV; `--data` preserves local paths and `s3://` URI strings |
-| `azoic fit` | `--config` | `--out`, `--quiet` | Markdown model card to stdout and/or a file |
-| `azoic compare` | One or more config paths | `--out` | Comparison table to stdout or CSV |
-| `azoic tune` | `--config` | `--trials` (YAML or 20), `--calibration-penalty` (YAML or 1.0), `--out`, `--quiet` | Best parameters plus Markdown model card |
-| `azoic export-tariff` | `--config`, `--model`, `--out` | `--distill`, `--recalibrate/--no-recalibrate` | Three-sheet xlsx tariff |
+| `azoic fit` | `--config` | `--save-run`, `--out`, `--quiet` | Trains; Markdown model card and optional fitted pickle |
+| `azoic compare` | Config paths **or** repeated `--run` | `--out` | Config paths train; saved runs reuse diagnostics without fitting; stdout or CSV |
+| `azoic report` | `--run` | `--out` | Saved Markdown model card without fitting or loading data |
+| `azoic predict` | `--run`, `--model`, `--data`, `--out` | None | CSV of pure-premium `predicted_rate`, with declared ID, in input order; never fits |
+| `azoic tune` | `--config` | `--trials` (YAML or 20), `--calibration-penalty` (YAML or 1.0), `--save-run`, `--best-config`, `--out`, `--quiet` | Trains; selected params/config, card and optional fitted pickle |
+| `azoic export-tariff` | Exactly one of `--config` or `--run`, plus `--model`, `--out` | `--distill` (config only), `--data` (saved recalibration), `--recalibrate/--no-recalibrate` | Three-sheet xlsx; saved GLM route never fits |
 
 Run `azoic COMMAND --help` for Typer's current option spellings.
 
@@ -414,8 +416,21 @@ Run `azoic COMMAND --help` for Typer's current option spellings.
 before screening, so recommendations concern predictors only. Declare optional
 special columns with their CLI flags to exclude them.
 
-`export-tariff` loads the portfolio once and passes the same frame into the
-experiment fit and training-row export.
+`export-tariff --config` loads the portfolio once and passes the same frame into
+the experiment fit and training-row export. With `--run`, structural GLM export
+(`--no-recalibrate`) needs no data; recalibration requires `--data` matching the
+saved full development fingerprint and uses saved training positions. It rejects
+distillation because that fits a student. Report, comparison and scoring accept
+trusted saved candidates without fitting. See the
+[saved-candidate guide](../guide/operations.md#save-fitted-candidates-and-resume-without-training)
+for the pickle trust boundary and matching-environment requirement.
+
+`save_run(run, estimators, path)` saves the Run and fitted estimator dictionary
+returned together by `run_experiment(..., return_estimators=True)` or tuning.
+`load_run(path)` returns that pair. Portfolio frames are excluded; summaries,
+IDs and learned state remain. Save the original data and environment separately.
+`--best-config` writes tuning's selected config with an absolute local data path;
+it is also included in the saved run. Executing that YAML trains a new fit.
 
 ## In-memory Python input
 

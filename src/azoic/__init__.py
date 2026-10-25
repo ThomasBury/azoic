@@ -67,7 +67,9 @@ if TYPE_CHECKING:
     from .workflow import Run as Run
     from .workflow import TuningSpec as TuningSpec
     from .workflow import check_experiment as check_experiment
+    from .workflow import load_run as load_run
     from .workflow import run_experiment as run_experiment
+    from .workflow import save_run as save_run
 
 __version__ = "0.5.0"
 
@@ -119,6 +121,8 @@ _EXPORTS = {
             "Run",
             "run_experiment",
             "check_experiment",
+            "save_run",
+            "load_run",
         ),
         "tariff": (
             "distill_gbm",
