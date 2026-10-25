@@ -95,7 +95,7 @@ baseline is `just check`.
 | Grouped diagnostic exposure (years) and count totals | `calibration_table`, `one_way_table`, `double_lift_table` floor each segment's total exposure | Zero/sub-day rows can contribute to a valid segment. `stability_table` instead enforces the row floor. Optional calibration counts must be aligned finite, non-negative 1D vectors; they do not impose portfolio count/amount consistency. `[3, 4]` in one segment sums to seven. | `tests/test_metrics.py::test_grouped_diagnostics_floor_segment_totals_instead_of_rows`; `tests/test_metrics.py::test_calibration_table_rejects_zero_exposure_segments`; `tests/test_metrics.py::test_calibration_counts_reject_broadcasting_and_invalid_vectors`; `tests/test_metrics.py::test_calibration_counts_are_positional_segment_totals`; `tests/test_metrics.py::test_stability_table_rejects_sub_day_exposure` |
 | Deviance and D²: weighted rates, fixed power 1.5 for experiment/stability comparisons | Shared `metrics._tweedie_scores` for workflow `_evaluate_split` and `metrics.stability_table`; deviance functions are upstream sklearn re-exports | Estimator scores use their family/objective power. Workflow warns and yields inf/NaN for nonpositive predictions; stability rejects them. D² uses the evaluated period's observed-mean null; zero null deviance gives NaN. | `tests/test_metrics.py::test_deviances_reexported`; `tests/test_workflow.py::test_run_deviance_is_exposure_weighted_tweedie_power_1_5`; `tests/test_workflow.py::test_temporal_test_d2_matches_period_baseline`; `tests/test_workflow.py::test_run_experiment_handles_clipped_zero_predictions_and_ordered_protected_cols` |
 | Evaluation boundaries and holdout membership | `validation.temporal_split` keeps equal timestamps together; workflow records positional splits; tuning derives inner splits only from outer training and evaluates final models on outer test | Protected diagnostics are descriptive outer-test evidence. Comparison warns on incompatible data/target/exposure/holdout contexts. Distillation callers must supply disjoint observations; object identity cannot establish independence. | `tests/test_validation.py::test_temporal_split_keeps_equal_timestamps_on_one_side`; `tests/test_validation.py::test_temporal_split_rejects_missing_times_and_empty_cutoff_partitions`; `tests/test_tune.py::test_tuning_does_not_inspect_outer_test_outcomes`; `tests/test_reporting.py::test_comparison_warns_once_for_mixed_evaluation_contexts` |
-| Result snapshots and audit limits | Workflow `_assemble_run` deep-copies config and effective explicit params, fingerprints the canonical frame and records split positions once per final run; lazy package exports keep imports light | Frozen result attributes contain mutable public containers. Constructor defaults, runtime versions and tuning settings are not yet complete provenance (M55). Caller owns data, environments and fitted-model storage. | `tests/test_workflow.py::test_run_snapshots_caller_configuration_and_nested_params`; `tests/test_workflow.py::test_data_fingerprint_covers_categorical_metadata`; `tests/test_init.py::test_package_exports_are_lazy_and_discoverable` |
+| Result snapshots and audit limits | Workflow `_assemble_run` deep-copies config and effective explicit params, fingerprints the canonical frame and records split positions once per final run; lazy package exports keep imports light | Frozen result attributes contain mutable public containers. M55 records full wrapper/preprocessing constructors, runtime versions and effective tuning once per final run; empty historical metadata stays unrecorded. This is audit evidence, not portable replay or backend fitted state. Caller owns data, environments and fitted-model storage. | `tests/test_workflow.py::test_run_snapshots_caller_configuration_and_nested_params`; `tests/test_workflow.py::test_data_fingerprint_covers_categorical_metadata`; `tests/test_init.py::test_package_exports_are_lazy_and_discoverable`; `tests/test_workflow.py::test_final_provenance_covers_defaults_components_and_independent_snapshots`; `tests/test_workflow.py::test_historical_results_keep_provenance_unrecorded`; `tests/test_tune.py::test_tuning_provenance_records_effective_controls_once_per_final_run`; `tests/test_reporting.py::test_model_card_has_compact_and_historical_provenance`; `tests/test_mlops.py::test_log_run_separates_recorded_provenance_and_preserves_historical_absence` |
 | Tariff application and recalibration | `tariff.extract_tariff` requires a fitted log-link GLM; `apply_tariff` rejects unseen categories/nonfinite numerics; export recalibration checks aggregate amounts and row exposure floor. M50 restricts export to representable preprocessing and atomically replaces completed workbooks. | Zero observed total permits a zero recalibrated base. Library callers choose calibration data; CLI uses training positions. Generic transforms remain available to distillation but are rejected by export. M49 did not establish export fidelity or failure safety; M50 adds that evidence. | `tests/test_tariff.py::test_exported_intervals_independently_reproduce_boundary_premiums`; `tests/test_tariff.py::test_apply_tariff_unknown_categorical_level_raises`; `tests/test_tariff.py::test_apply_tariff_rejects_nonfinite_numeric_input`; `tests/test_tariff.py::test_zero_total_recalibration_keeps_zero_rates`; `tests/test_tariff.py::test_export_supported_pipeline_has_independent_workbook_prices`; `tests/test_tariff.py::test_export_rejects_unsupported_preprocessing_before_writing`; `tests/test_tariff.py::test_export_failures_preserve_destination_and_remove_temporary_files`; `tests/test_tariff.py::test_distillation_preserves_generic_transforms_and_passthrough`; `tests/test_tutorial.py` |
 
 #### Diagnostic-extension exercise: M49 baseline
@@ -232,7 +232,7 @@ framework, orchestration class or speculative upper bound is required.
 | M52 / 4 (completed locally) | Private shared outcome validator in `data.py` used by workflow/FSM: aligned finite vectors, row exposure floor, non-negative amounts/counts, optional count/amount consistency. Keep schema, supplied-rate, severity, explicit-weight and segment policies at their boundaries; calibration counts must be aligned 1D vectors, including valid `[3, 4]` summing to seven. |
 | M53 / 5 (completed locally) | Separate estimator/input construction, fixed-shape split results and final `Run` assembly within current modules; trials consume scores without final-run assembly, training diagnostics or provenance. Share fixed-power scoring with stability while retaining warning/rejection differences; replace private-patching tests with behavioral checks and preserve all public results/splits/mappings. |
 | M54 / 6 (completed locally) | Static root re-exports with lazy runtime imports; concrete public annotations, `Self` and `return_estimators` overloads. Document justified heterogeneous/third-party `Any` boundaries. Move RiskGBM validation to fit, including after `set_params`; update callers and exception-timing migration notes. Publish the composition contract and Azoic 0.x policy below; remove annotation-only workflow imports from reporting/logging through the lazy root. Verify downstream typing, import identities, cloning, pipelines, estimator checks, targeted FSM CV and installed wheel/sdist composition. |
-| M55 / 7 | Snapshot actual full constructor settings in defaulted `ModelResult.resolved_params`, qualified classes/sklearn component paths; record final-run `runtime_versions` and effective `tuning_settings`, including sampler/seeds. Deep-copy containers, preserve config/params, collect metadata once per final run, expose compact cards/separate MLflow prefixes; historical provenance stays explicitly unrecorded. Repeat the M49 diagnostic exercise and obtain independent maintainer observations for M54's documented component exercise, or explicitly leave that validation pending. |
+| M55 / 7 (completed locally; independent validation pending) | Snapshot actual full constructor settings in defaulted `ModelResult.resolved_params`, qualified classes/sklearn component paths; record final-run `runtime_versions` and effective `tuning_settings`, including sampler/seeds. Deep-copy containers, preserve config/params, collect metadata once per final run, expose compact cards/separate MLflow prefixes; historical provenance stays explicitly unrecorded. Repeat the M49 diagnostic exercise and obtain independent maintainer observations for M54's documented component exercise, or explicitly leave that validation pending. |
 
 Public API breaks are permitted when justified, with callers/tests/docs/project
 rules and migration notes updated together; no test-only private compatibility
@@ -260,8 +260,8 @@ preprocessing mappings and return interfaces are unchanged.
 
 The public contract and executable component recipe are published in
 [`docs/reference/compatibility.md`](docs/reference/compatibility.md). M54's
-acceptance and exact tested stacks are recorded in `PROGRESS.md`; M55 provenance
-and independent maintainer evidence remain separate.
+acceptance and exact tested stacks are recorded in `PROGRESS.md`; M55 adds
+final-run provenance separately. Independent maintainer evidence remains pending.
 
 Support Python component composition without expanding workflow construction,
 serialization or tuning: keep `ModelSpec.kind` unchanged. Keep `Run` and
@@ -307,7 +307,8 @@ Document the following supported component and state boundaries:
 - Preprocessing covers documented fitting, transformation, feature-name and
   mapping APIs, including fitted mappings and missing destinations. `Run` covers
   `config`, `data_fingerprint`, row counts, split indices, `feature_names` and
-  `models`; `ModelResult` covers `kind`, `params`, `metrics`, `calibration_table`
+  `models`, `runtime_versions`, `tuning_settings`; `ModelResult` covers `kind`,
+  `params`, `resolved_params`, `metrics`, `calibration_table`
   and `protected_calibration`. Frozen attributes do not imply deep immutability
   of their public dictionaries, lists or DataFrames.
 - No Azoic-specific subclass override hooks or internal call order are promised:
@@ -347,12 +348,17 @@ and the runtime-only consumer outside the checkout against both wheel and sdist,
 using public imports. Extend the existing distribution smoke; report the tested
 dependency stacks without claiming every metadata-permitted combination works.
 
-#### M55 external evidence — pending
+#### M55 diagnostic repeat complete; independent validation pending
 
-Repeat M49's diagnostic through ordinary/tuned results, reporting, comparisons
-and local logging after the refactoring. Preserve its independent predicted amount
-7 and O/P `10/7`; that baseline does not establish third-party compatibility,
-subclass hooks or independent maintainability. An independent maintainer must
+M55 repeated and discarded M49's diagnostic after the refactoring. Ordinary/tuned
+results, cards, comparison tables/dashboard tables and real local SQLite MLflow
+preserved independent predicted amount 7 and O/P `10/7`. Only the metric entry in
+`workflow._evaluate_split` and its card label in `reporting._metrics_block_md`
+needed changes in the disposable source copy; no exercise metric ships. Execution
+and installed-artifact evidence are recorded in `PROGRESS.md`.
+
+That single-agent repeat does not establish third-party compatibility, subclass
+hooks or independent maintainability. An independent maintainer must
 reproduce the installed-package component recipe from the documentation without
 private imports or coaching and report ambiguities. No independent validation
 has occurred; record unavailable observations as pending, never as acceptance.

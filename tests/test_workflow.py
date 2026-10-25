@@ -10,6 +10,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pytest
+from sklearn.base import BaseEstimator
 
 from azoic.data import DatasetSpec
 from azoic.metrics import calibration_table, gini, mean_tweedie_deviance, op_ratio, stability_table
@@ -447,7 +448,7 @@ def test_run_records_exact_fit_and_holdout_positions(monkeypatch, tmp_path: Path
         models={"first": ModelSpec(), "second": ModelSpec()},
     )
 
-    class RecordingEstimator:
+    class RecordingEstimator(BaseEstimator):
         def fit(self, X, y):
             self.fit_frame_ = X.copy()
             self.fit_target_ = y.copy()
@@ -1138,7 +1139,7 @@ def test_tutorial_freezes_all_training_factors_and_labels_holdout_metrics(monkey
     ]
     features = ["driver_age", "vehicle_age"]
 
-    class FixedEstimator:
+    class FixedEstimator(BaseEstimator):
         def __init__(self, scale):
             self.scale = scale
 
@@ -1504,3 +1505,105 @@ def test_run_experiment_handles_clipped_zero_predictions_and_ordered_protected_c
     assert metrics["deviance_test"] == float("inf")
     assert np.isnan(metrics["d2_test"])
     assert run.models["fsm"].protected_calibration["band"]["group"].tolist() == ["Feb", "Mar"]
+
+
+def test_final_provenance_covers_defaults_components_and_independent_snapshots(tmp_path):
+    from importlib.metadata import version
+
+    from azoic.workflow import PreprocessingSpec
+
+    df = make_synthetic_portfolio(n=500)
+    config = ExperimentConfig(
+        data_path="unused.parquet",
+        spec=DatasetSpec(target="claim_amount", exposure="exposure", claim_count="claim_count"),
+        features=["driver_age", "region"],
+        preprocessing=PreprocessingSpec(binner={"cols": ["driver_age"], "max_bins": 3}),
+        models={
+            "glm": ModelSpec(params={"family": "poisson", "link": "log"}),
+            "gbm": ModelSpec(
+                kind="gbm",
+                preprocess=False,
+                params={
+                    "n_estimators": 3,
+                    "monotone_constraints": {"driver_age": 1},
+                },
+            ),
+            "fsm": ModelSpec(
+                kind="frequency_severity",
+                frequency={
+                    "kind": "glm",
+                    "params": {"family": "poisson", "link": "log"},
+                },
+                severity={"kind": "glm", "params": {"family": "gamma", "link": "log"}},
+            ),
+        },
+    )
+    run, estimators = run_experiment(config, df=df, return_estimators=True)
+    glm = run.models["glm"].resolved_params
+    assert glm["class"] == "sklearn.pipeline.Pipeline"
+    assert glm["model"] == "azoic.models.RiskGLM"
+    assert glm["model__alpha"] == 0.001
+    assert glm["model__max_iter"] == 100
+    assert glm["model__exposure_col"] == "exposure"
+    assert glm["binner"] == "azoic.preprocessing.AutoBinner"
+    assert glm["binner__cols"] == ["driver_age"]
+    assert glm["drop_specials__func"] == "azoic.workflow._drop_columns"
+    assert glm["drop_specials__kw_args"] == {"columns": ["claim_amount", "claim_count"]}
+    assert glm["steps"][-1] == ("model", "azoic.models.RiskGLM")
+    assert set(glm) == {"class", *estimators["glm"].get_params()}
+    gbm = run.models["gbm"].resolved_params
+    assert gbm["class"] == "azoic.models.RiskGBM"
+    assert gbm["num_leaves"] == 31
+    assert gbm["n_estimators"] == 3
+    assert gbm["random_state"] is None
+    fsm = run.models["fsm"].resolved_params
+    assert fsm["model"] == "azoic.models.FrequencySeverityModel"
+    assert fsm["model__freq"] == fsm["model__sev"] == "azoic.models.RiskGLM"
+    assert fsm["model__freq__family"] == "poisson"
+    assert fsm["model__sev__family"] == "gamma"
+    assert fsm["model__sev__alpha"] == 0.001
+    assert not any(key.endswith("backend_") for key in glm)
+    assert run.runtime_versions["azoic"] == version("azoic")
+    assert run.runtime_versions["scikit-learn"] == version("scikit-learn")
+    assert "python" in run.runtime_versions
+    assert "optuna" not in run.runtime_versions
+    assert run.tuning_settings == {}
+    assert "alpha" not in run.models["glm"].params
+
+    estimators["gbm"].monotone_constraints["driver_age"] = -1
+    estimators["glm"].named_steps["binner"].cols.append("changed")
+    estimators["glm"].named_steps["drop_specials"].kw_args["columns"].append("changed")
+    assert gbm["monotone_constraints"] == {"driver_age": 1}
+    assert glm["binner__cols"] == ["driver_age"]
+    assert glm["drop_specials__kw_args"] == {"columns": ["claim_amount", "claim_count"]}
+    gbm["monotone_constraints"]["driver_age"] = 0
+    assert run.models["gbm"].params["monotone_constraints"] == {"driver_age": 1}
+    assert run.config.models["gbm"].params["monotone_constraints"] == {"driver_age": 1}
+
+
+def test_historical_results_keep_provenance_unrecorded():
+    config = ExperimentConfig(
+        data_path="old.parquet",
+        spec={
+            "target": "amount",
+            "exposure": "exposure",
+        },
+        models={"old": ModelSpec()},
+    )
+    result = ModelResult(kind="glm", params={}, metrics={}, calibration_table=pd.DataFrame())
+    run = Run(
+        config=config,
+        data_fingerprint="historical",
+        n_rows=2,
+        n_train=1,
+        n_test=1,
+        train_indices=(0,),
+        test_indices=(1,),
+        feature_names=["x"],
+        models={"old": result},
+    )
+    assert result.resolved_params == {}
+    assert run.runtime_versions == run.tuning_settings == {}
+    other = ModelResult(kind="glm", params={}, metrics={}, calibration_table=pd.DataFrame())
+    result.resolved_params["class"] = "caller change"
+    assert other.resolved_params == {}

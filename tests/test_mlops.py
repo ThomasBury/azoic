@@ -336,3 +336,48 @@ def test_m6_acceptance_mlflow_run_records_params_metrics_artifacts(
     assert any(
         artifact.path.endswith("card.md") for artifact in _list_artifacts(run_id, path="artifacts")
     )
+
+
+def test_log_run_separates_recorded_provenance_and_preserves_historical_absence(tmp_path):
+    from azoic.reporting import model_card
+    from azoic.tune import tune_experiment
+
+    pytest.importorskip("optuna")
+    cfg, ordinary = _run(
+        tmp_path, models={"glm": ModelSpec(params={"family": "poisson", "link": "log"})}
+    )
+    cfg = ExperimentConfig.model_validate(
+        {
+            **cfg.model_dump(),
+            "tuning": {"n_trials": 7, "calibration_penalty": 8.0},
+        }
+    )
+    tuned = tune_experiment(cfg, n_trials=1, calibration_penalty=0.0, random_state=19).run
+    card = model_card(tuned)
+    assert "1 trials/model, calibration_penalty=0.0, random_state=19" in card
+    assert "TPESampler" in card and "seed=19" in card
+    run_id = log_run(tuned, tracking_uri=_tracking_uri(tmp_path), experiment_name="provenance")
+    params = _data(run_id).params
+    assert params["runtime_versions.azoic"] == tuned.runtime_versions["azoic"]
+    assert params["tuning_settings.n_trials"] == "1"
+    assert params["tuning_settings.calibration_penalty"] == "0.0"
+    assert params["tuning_settings.models.glm.seed"] == "19"
+    assert params["tuning_settings.models.glm.sampler"].endswith(".TPESampler")
+    assert params["glm.resolved_params.class"] == "azoic.models.RiskGLM"
+    assert params["glm.resolved_params.max_iter"] == "100"
+    assert "glm.params.max_iter" not in params
+    assert float(params["glm.params.alpha"]) == tuned.models["glm"].params["alpha"]
+    old = ordinary.model_copy(
+        update={
+            "runtime_versions": {},
+            "models": {
+                "glm": ordinary.models["glm"].model_copy(update={"resolved_params": {}}),
+            },
+        }
+    )
+    old_id = log_run(old)
+    old_params = _data(old_id).params
+    assert not any(
+        key.startswith(("runtime_versions.", "tuning_settings.", "glm.resolved_params."))
+        for key in old_params
+    )

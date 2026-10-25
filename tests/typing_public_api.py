@@ -1,6 +1,6 @@
 """Downstream typing consumer, checked by test_init; never executed."""
 
-from typing import assert_type
+from typing import Any, assert_type
 
 import numpy as np
 import pandas as pd
@@ -54,6 +54,9 @@ def consumer(config: ExperimentConfig, frame: pd.DataFrame, flag: bool):
     )
     assert_type(run.config, ExperimentConfig)
     assert_type(run.models["glm"], ModelResult)
+    assert_type(run.models["glm"].resolved_params, dict[str, Any])
+    assert_type(run.runtime_versions, dict[str, str])
+    assert_type(run.tuning_settings, dict[str, Any])
     assert_type(ModelSpec(kind="glm").build(), RiskGLM | RiskGBM | FrequencySeverityModel)
     tuned = tune_experiment(config)
     assert_type(tuned, TuneResult)

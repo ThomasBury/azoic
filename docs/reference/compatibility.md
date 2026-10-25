@@ -134,7 +134,8 @@ runtime-validated `ExperimentConfig`.
   manual/quantile intervals are lower-inclusive. Changed tree mappings require
   an explicit missing destination.
 - Results: `Run.config`, `data_fingerprint`, row counts, split indices,
-  `feature_names`, `models`; `ModelResult.kind`, `params`, `metrics`,
+  `feature_names`, `models`, `runtime_versions`, `tuning_settings`;
+  `ModelResult.kind`, `params`, `resolved_params`, `metrics`,
   `calibration_table`, `protected_calibration`. Frozen attributes do not imply
   deep immutability of dictionaries, lists or DataFrames. Experiment/tuning
   return interfaces are unchanged.

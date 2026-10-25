@@ -26,8 +26,33 @@ split, features, model parameters, held-out metrics, and a calibration preview
 (first 12 rows; write full tables separately when every segment is needed).
 
 Workflow runs snapshot the configuration and nested model parameters, so later
-changes to the caller's config do not rewrite a result. Public dictionaries and
-DataFrames remain mutable. The fingerprint includes categorical vocabulary
+changes to the caller's config do not rewrite a result. Each model's
+`resolved_params` also records every actual wrapper and preprocessing constructor
+setting, including defaults, with a qualified `class` and sklearn
+`__` component paths (for example `model__alpha` or `model__sev__family`).
+Estimator and function values become qualified names; containers are copied.
+This records constructors, not fitted coefficients, learned mappings or hidden
+backend defaults.
+
+`run.runtime_versions` records Python, Azoic and its numerical/model/data/runtime
+stack once after the final fit. Tuned runs add Optuna and `run.tuning_settings`:
+effective trial count, calibration penalty, search seed, sequential execution,
+inner split controls and each model's sampler class, seed and resolved search
+space. Keyword overrides take precedence over YAML; sampler seed is the search
+seed plus the model's insertion position. Model seeds remain in `resolved_params`
+and may be `None`. An ordinary run has empty tuning settings even if its config
+contains a tuning section.
+
+Cards show versions, tuning controls and constructor identities compactly;
+inspect the result containers for all settings. MLflow uses `runtime_versions.*`,
+`tuning_settings.*` and `<model>.resolved_params.*`, separately from existing
+explicit `<model>.params.*`. Historical/manual results default to empty provenance:
+cards say **unrecorded**, and logging never substitutes today's environment.
+
+These snapshots support audit, not portable replay or deterministic predictions.
+Keep the input data, environment lock and fitted models yourself. Public
+dictionaries and DataFrames remain mutable. The fingerprint includes categorical
+vocabulary
 (even unused levels), its dtype, declared category order, and the ordered flag.
 Category-aware fingerprints intentionally change; evaluate older runs again
 before comparing them with fresh results.

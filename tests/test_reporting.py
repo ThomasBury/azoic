@@ -253,3 +253,25 @@ def test_reporting_retains_undefined_test_d2(monkeypatch, tmp_path, test_rate) -
     metrics_table = figures[0]["data"][0]
     d2_column = metrics_table["header"]["values"].index("d2_test")
     assert metrics_table["cells"]["values"][d2_column] == [None]
+
+
+def test_model_card_has_compact_and_historical_provenance(tmp_path):
+    run = _run(tmp_path)
+    card = model_card(run)
+    assert f"azoic={run.runtime_versions['azoic']}" in card
+    assert "azoic.models.RiskGLM" in card
+    assert "settings in `resolved_params`" in card
+    old = run.model_copy(
+        update={
+            "runtime_versions": {},
+            "tuning_settings": {},
+            "models": {
+                name: result.model_copy(update={"resolved_params": {}})
+                for name, result in run.models.items()
+            },
+        }
+    )
+    card = model_card(old)
+    assert "runtime versions: unrecorded" in card
+    assert "constructors: unrecorded" in card
+    assert "azoic=" not in card

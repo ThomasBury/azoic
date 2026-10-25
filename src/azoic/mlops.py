@@ -48,6 +48,9 @@ def log_run(
         one ``<model>.params.<k>`` per param,
         plus one ``<model>.<metric>`` metric per metric (NaN and infinite
         metrics are skipped -- mlflow rejects non-finite values since 3.x).
+      * Provenance: ``runtime_versions.*``, ``tuning_settings.*`` and
+        ``<model>.resolved_params.*`` remain separate from explicit params.
+        Empty historical metadata is not inferred from the logging environment.
       * Artifacts: every path in ``artifacts`` (file or directory). A missing
         path raises ``FileNotFoundError``. Files upload flat under
         ``artifact_path`` (default ``"artifacts"``); a directory's contents
@@ -87,12 +90,23 @@ def log_run(
             for step, params in run.config.preprocessing.model_dump(exclude_none=True).items():
                 mlflow.log_params(_flatten_params(f"experiment.preprocessing.{step}", params))
 
+        mlflow.log_params(_flatten_params("runtime_versions", run.runtime_versions))
+        mlflow.log_params(
+            _flatten_params(
+                "tuning_settings",
+                {key: value for key, value in run.tuning_settings.items() if key != "models"},
+            )
+        )
+        for name, settings in run.tuning_settings.get("models", {}).items():
+            mlflow.log_params(_flatten_params(f"tuning_settings.models.{name}", settings))
+
         # Per-model params + metrics.
         for name, res in run.models.items():
             mlflow.log_params(
                 {f"{name}.kind": res.kind, f"{name}.preprocess": run.config.models[name].preprocess}
             )
             mlflow.log_params(_flatten_params(f"{name}.params", res.params))
+            mlflow.log_params(_flatten_params(f"{name}.resolved_params", res.resolved_params))
             metrics_out: dict = {}
             for k, v in res.metrics.items():
                 fv = float(v)

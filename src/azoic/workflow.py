@@ -16,9 +16,11 @@ column is popped inside ``RiskGLM`` / ``RiskGBM``); diagnostics use aggregate
 from __future__ import annotations
 
 import hashlib
+import platform
 import warnings
 from copy import deepcopy
 from dataclasses import dataclass
+from importlib.metadata import version
 from pathlib import Path
 from typing import Annotated, Any, Literal, Self, overload
 
@@ -26,6 +28,7 @@ import numpy as np
 import pandas as pd
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, FiniteFloat, model_serializer, model_validator
+from sklearn.base import BaseEstimator
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import FunctionTransformer
 
@@ -409,7 +412,9 @@ class ModelResult(BaseModel):
 
     Workflow evaluation snapshots parameter containers. Attributes cannot be
     reassigned, but public dictionaries and DataFrames remain mutable. Fitted
-    estimators are returned separately when requested.
+    estimators are returned separately when requested. ``resolved_params`` records
+    full wrapper/preprocessing constructors with sklearn ``__`` paths and qualified
+    class names, not fitted state or backend defaults. Empty means unrecorded.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid", arbitrary_types_allowed=True)
@@ -419,6 +424,7 @@ class ModelResult(BaseModel):
     metrics: dict[str, float]
     calibration_table: pd.DataFrame
     protected_calibration: dict[str, pd.DataFrame] = Field(default_factory=dict)
+    resolved_params: dict[str, Any] = Field(default_factory=dict)
 
 
 class Run(BaseModel):
@@ -431,6 +437,9 @@ class Run(BaseModel):
 
     Workflow evaluation deep-copies configuration and recorded parameters;
     later caller mutations cannot change them. Public containers remain mutable.
+    ``runtime_versions`` records Python and the numerical/model/data stack once
+    per final run; ``tuning_settings`` records effective search controls only for
+    tuned runs. Empty metadata means unrecorded, never inferred from today's runtime.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid", arbitrary_types_allowed=True)
@@ -444,6 +453,8 @@ class Run(BaseModel):
     test_indices: tuple[int, ...]
     feature_names: list[str]
     models: dict[str, ModelResult]
+    runtime_versions: dict[str, str] = Field(default_factory=dict)
+    tuning_settings: dict[str, Any] = Field(default_factory=dict)
 
 
 def _split_indices(config: ExperimentConfig, df: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
@@ -596,6 +607,26 @@ def _evaluate_split(
     return feature_names, results
 
 
+def _constructor_value(value: Any) -> Any:
+    """Keep constructor containers, replacing executable objects with qualified names."""
+    if isinstance(value, BaseEstimator):
+        return f"{type(value).__module__}.{type(value).__qualname__}"
+    if callable(value):
+        return f"{value.__module__}.{value.__qualname__}"
+    if isinstance(value, dict):
+        return {key: _constructor_value(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return type(value)(_constructor_value(item) for item in value)
+    return deepcopy(value)
+
+
+def _resolved_params(estimator: BaseEstimator) -> dict[str, Any]:
+    return {
+        "class": _constructor_value(estimator),
+        **{key: _constructor_value(value) for key, value in estimator.get_params().items()},
+    }
+
+
 def _assemble_run(
     config: ExperimentConfig,
     df: pd.DataFrame,
@@ -603,10 +634,35 @@ def _assemble_run(
     test_idx: np.ndarray,
     feature_names: list[str],
     results: dict[str, _SplitResult],
+    *,
+    tuning_settings: dict[str, Any] | None = None,
 ) -> Run:
     """Snapshot final results and provenance once, after evaluation."""
     return Run(
         config=config.model_copy(deep=True),
+        runtime_versions={
+            "python": platform.python_version(),
+            **{
+                package: version(package)
+                for package in (
+                    "azoic",
+                    "numpy",
+                    "pandas",
+                    "scipy",
+                    "scikit-learn",
+                    "glum",
+                    "lightgbm",
+                    "pydantic",
+                    "pyarrow",
+                    "pyyaml",
+                    "typer",
+                    "matplotlib",
+                    "openpyxl",
+                    *(("optuna",) if tuning_settings else ()),
+                )
+            },
+        },
+        tuning_settings=deepcopy(tuning_settings) if tuning_settings is not None else {},
         data_fingerprint=_data_fingerprint(df),
         n_rows=int(len(df)),
         n_train=int(len(train_idx)),
@@ -618,6 +674,7 @@ def _assemble_run(
             name: ModelResult(
                 kind=config.models[name].kind,
                 params=deepcopy(config.models[name].effective_params(config.spec)),
+                resolved_params=_resolved_params(result.estimator),
                 metrics=result.metrics,
                 calibration_table=result.calibration_table,
                 protected_calibration=result.protected_calibration,

@@ -19,6 +19,7 @@ import azoic
 from azoic import FrequencySeverityModel, op_ratio
 from azoic.models import RiskGBM, RiskGLM
 from azoic.preprocessing import AutoBinner, AutoGrouper
+from azoic.reporting import model_card
 
 package_path = Path(azoic.__file__).resolve()
 installed = distribution("azoic")
@@ -154,3 +155,26 @@ pd.testing.assert_frame_equal(X, original)
 
 assert (package_path.parent / "py.typed").is_file()
 print("Public component composition, cloning, nested parameters, pipeline and CV passed")
+
+
+# Final-run provenance uses runtime dependencies only, with no optional integration imports.
+config = azoic.ExperimentConfig(
+    data_path="unused.parquet",
+    spec=azoic.DatasetSpec(target="claim_amount", exposure="exposure", claim_count="claim_count"),
+    features=["constant"],
+    split="random",
+    test_size=0.25,
+    models={"glm": azoic.ModelSpec(params={"family": "poisson", "link": "log", "alpha": 0.0})},
+)
+run = azoic.run_experiment(config, df=repeated)
+assert run.models["glm"].resolved_params["class"] == "azoic.models.RiskGLM"
+assert run.models["glm"].resolved_params["max_iter"] == 100
+assert run.models["glm"].resolved_params["exposure_col"] == "exposure"
+assert "max_iter" not in run.models["glm"].params
+assert run.runtime_versions["azoic"] == installed.version
+assert run.runtime_versions["scikit-learn"] == distribution("scikit-learn").version
+assert "python" in run.runtime_versions and "optuna" not in run.runtime_versions
+assert run.tuning_settings == {}
+assert "runtime versions:" in model_card(run)
+assert "settings in `resolved_params`" in model_card(run)
+print("Final-run constructor/runtime provenance and compact card passed")

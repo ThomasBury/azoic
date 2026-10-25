@@ -22,6 +22,7 @@ violated by a search suggestion.
 
 from __future__ import annotations
 
+import json
 from math import isfinite
 from typing import Any
 
@@ -219,6 +220,7 @@ def tune_experiment(
 
     best_params: dict[str, dict[str, Any]] = {}
     best_values: dict[str, float] = {}
+    studies: dict[str, Any] = {}
     for i, (name, spec) in enumerate(config.models.items()):
         study = optuna.create_study(
             direction="minimize", sampler=optuna.samplers.TPESampler(seed=random_state + i)
@@ -241,6 +243,15 @@ def tune_experiment(
             raise RuntimeError("optuna study completed without a best trial value")
         best_params[name] = dict(best_trial.params)
         best_values[name] = float(best_trial.value)
+        studies[name] = {
+            "sampler": f"{type(study.sampler).__module__}.{type(study.sampler).__qualname__}",
+            "seed": random_state + i,
+            "direction": "minimize",
+            "search_space": {
+                key: json.loads(optuna.distributions.distribution_to_json(distribution))
+                for key, distribution in best_trial.distributions.items()
+            },
+        }
 
     # Re-run with the merged best + identity params -- the canonical fresh Run
     # feeds model_card / export_tariff / log_run unchanged.
@@ -256,7 +267,26 @@ def tune_experiment(
         outer_train_idx,
         outer_test_idx,
     )
-    run = _assemble_run(final_config, df, outer_train_idx, outer_test_idx, feature_names, results)
+    run = _assemble_run(
+        final_config,
+        df,
+        outer_train_idx,
+        outer_test_idx,
+        feature_names,
+        results,
+        tuning_settings={
+            "n_trials": int(n_trials),
+            "calibration_penalty": float(calibration_penalty),
+            "random_state": random_state,
+            "n_jobs": 1,
+            "inner_split": {
+                "split": config.split,
+                "test_size": config.test_size,
+                "random_state": config.random_state,
+            },
+            "models": studies,
+        },
+    )
     return TuneResult(
         best_params=best_params,
         best_values=best_values,
