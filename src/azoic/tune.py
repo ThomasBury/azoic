@@ -177,7 +177,8 @@ def tune_experiment(
     ``config.tuning``; omitted values use YAML, then 20 and 1.0.
     ``return_estimators=True`` also populates ``TuneResult.estimators`` with
     ``{name: fitted_estimator}`` from the final ``run_experiment``.
-    Supply ``df`` to tune an in-memory portfolio; otherwise load
+    Supply only development data: outer test metrics are development validation,
+    not independent final-test evidence. Supply ``df`` for an in-memory portfolio; otherwise load
     ``config.data_path``. Both routes validate and fingerprint the same way.
     """
     if n_trials is None:
@@ -208,8 +209,6 @@ def tune_experiment(
 
     if df is None:
         df = load_data(config.data_path, spec=config.spec)
-    if len(df) == 0:
-        raise ValueError("loaded dataset is empty")
     _validate_portfolio(config, df)
     outer_train_idx, outer_test_idx = _split_indices(config, df)
     inner_train_rel, inner_test_rel = _split_indices(config, df.iloc[outer_train_idx])

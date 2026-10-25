@@ -141,7 +141,7 @@ runtime-validated `ExperimentConfig`.
   manual/quantile intervals are lower-inclusive. Changed tree mappings require
   an explicit missing destination.
 - Results: `Run.config`, `data_fingerprint`, row counts, split indices,
-  `feature_names`, `models`, `runtime_versions`, `tuning_settings`;
+  `feature_names`, `models`, `runtime_versions`, `tuning_settings`, `record_ids`;
   `ModelResult.kind`, `params`, `resolved_params`, `metrics`,
   `calibration_table`, `protected_calibration`. Frozen attributes do not imply
   deep immutability of dictionaries, lists or DataFrames. Experiment/tuning
@@ -189,3 +189,12 @@ Validation policies and public function signatures are unchanged. The
 [first-model starter](../getting-started/first-model.md) and opening file-based
 configuration example are checked against both released 0.5.0 and the checkout;
 the in-memory `df=` workflow still requires the checkout.
+
+Unreleased M57 adds `split_portfolio`, `check_experiment` and `azoic check`,
+optional ID/excluded-column roles, portfolio-basis metadata and `Run.record_ids`.
+Checks require explicit predictors; ordinary fit/tune calls retain feature
+inference. Reports label development evidence, and comparison tables add the
+`evidence` column (including empty tables). CSV consumers with fixed schemas
+must accept this additional column; this schema change requires a minor release.
+The released starter remains unchanged. No artifact persistence or final-test
+scoring/refitting API is supplied by M57.

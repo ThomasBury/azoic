@@ -23,6 +23,44 @@ from tests.conftest import make_synthetic_portfolio
 runner = CliRunner()
 
 
+def test_cli_check_reads_only_and_never_fits(tmp_path, monkeypatch):
+    import json
+
+    from azoic.models import RiskGBM, RiskGLM
+    from azoic.preprocessing import AutoBinner, AutoGrouper
+
+    data = _write_portfolio(tmp_path, n=100)
+    config = _write_yaml(tmp_path, _yaml(str(data)))
+    original = {path.name: path.read_bytes() for path in tmp_path.iterdir()}
+
+    def reject_fit(*args, **kwargs):
+        raise AssertionError("check must not fit")
+
+    for cls in (RiskGLM, RiskGBM, AutoBinner, AutoGrouper):
+        monkeypatch.setattr(cls, "fit", reject_fit)
+    result = runner.invoke(app, ["check", "--config", str(config)])
+    assert result.exit_code == 0, result.output
+    report = json.loads(result.output)
+    assert report["evidence"] == "development" and report["n_rows"] == 100
+    assert report["n_train"] + report["n_validation"] == 100
+    assert {path.name: path.read_bytes() for path in tmp_path.iterdir()} == original
+
+
+def test_cli_check_reports_bounded_outcome_errors_without_repair(tmp_path):
+    data = _write_portfolio(tmp_path, n=100)
+    frame = pd.read_parquet(data)
+    frame.loc[2:8, "exposure"] = 0
+    frame.to_parquet(data)
+    config = _write_yaml(tmp_path, _yaml(str(data)))
+    before = data.read_bytes()
+    result = runner.invoke(app, ["check", "--config", str(config)], terminal_width=240)
+    assert result.exit_code != 0
+    assert "column 'exposure'" in result.output and "7 invalid rows" in result.output
+    message = " ".join(result.output.replace("│", " ").split())
+    assert "[2, 3, 4, 5, 6]" in message
+    assert data.read_bytes() == before
+
+
 def _write_portfolio(tmp_path: Path, n: int = 2000, seed: int = 42) -> Path:
     p = tmp_path / "portfolio.parquet"
     make_synthetic_portfolio(n=n, seed=seed).to_parquet(p)
@@ -599,9 +637,9 @@ def test_cli_tune_options_defer_to_yaml_and_override_when_supplied(
     assert calls[2] == (None, None, None)
 
 
-def test_cli_help_lists_five_commands() -> None:
+def test_cli_help_lists_six_commands() -> None:
     # `tune` is always registered (optuna is imported lazily inside the command
     # body), so --help lists it whether or not the tune extra is installed.
     result = runner.invoke(app, ["--help"])
-    for cmd in ("profile", "fit", "compare", "export-tariff", "tune"):
+    for cmd in ("check", "profile", "fit", "compare", "export-tariff", "tune"):
         assert cmd in result.output

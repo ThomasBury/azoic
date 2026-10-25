@@ -15,6 +15,17 @@ from azoic.workflow import ExperimentConfig, ModelSpec, run_experiment
 from tests.conftest import make_synthetic_portfolio
 
 
+def test_comparison_warns_on_different_declared_portfolio_basis(tmp_path):
+    first = _run(tmp_path)
+    config = first.config.model_copy(deep=True)
+    config.name = "other-valuation"
+    config.spec.currency = "USD"
+    second = first.model_copy(update={"config": config})
+    with pytest.warns(UserWarning, match="portfolio basis"):
+        table = comparison_table([first, second])
+    assert table["evidence"].eq("development").all()
+
+
 def test_preview_preserves_integer_deciles():
     table = pd.DataFrame({"group": [0, 1], "observed": [1.25, 2.5]})
     assert _df_preview_md(table).splitlines()[2:] == ["| 0 | 1.2500 |", "| 1 | 2.5000 |"]

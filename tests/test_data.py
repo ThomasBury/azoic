@@ -11,6 +11,92 @@ from azoic.data import EXPOSURE_FLOOR, DatasetSpec, _validate_outcomes, load_dat
 from tests.conftest import make_synthetic_portfolio
 
 
+def test_split_portfolio_freezes_membership_and_removes_unused_categories():
+    from azoic import split_portfolio
+
+    source = pd.DataFrame(
+        {
+            "id": [3, 1, 4, 2],
+            "region": pd.Categorical(["a", "b", "final-only", "a"]),
+            "cost": [1.0, 2.0, np.nan, 4.0],
+        },
+        index=[9, 9, 7, 6],
+    )
+    original = source.copy(deep=True)
+    development, final = split_portfolio(source, [4], id_col="id")
+    assert development.id.tolist() == [3, 1, 2]
+    assert final.id.tolist() == [4]
+    assert development.index.tolist() == [9, 9, 6]
+    assert development.region.cat.categories.tolist() == ["a", "b"]
+    assert final.region.cat.categories.tolist() == ["final-only"]
+    source.loc[7, "cost"] = 999
+    assert pd.isna(final.cost.iloc[0])
+    development.iloc[0, development.columns.get_loc("cost")] = 100
+    pd.testing.assert_frame_equal(source.drop(columns="cost"), original.drop(columns="cost"))
+    assert source.cost.iloc[0] == 1
+
+
+@pytest.mark.parametrize(
+    "ids, requested, message",
+    [
+        ([1, 1, 2], [2], "unique"),
+        ([1, None, 2], [2], "not be missing"),
+        ([1, 2, 3], [2, 2], "unique"),
+        ([1, 2, 3], [None], "not be missing"),
+        ([1, 2, 3], [4], "must exist"),
+        ([1, 2, 3], ["2"], "must exist"),
+        ([1, 2, 3], [], "both be nonempty"),
+        ([1, 2, 3], [3, 2, 1], "both be nonempty"),
+        ([1.5, 2.5, 3.5], [2], "strings or integers"),
+    ],
+)
+def test_split_portfolio_rejects_ambiguous_membership(ids, requested, message):
+    from azoic import split_portfolio
+
+    frame = pd.DataFrame({"id": ids, "x": [0, 1, 2]})
+    with pytest.raises(ValueError, match=message):
+        split_portfolio(frame, requested, id_col="id")
+
+
+def test_record_id_errors_do_not_expose_identifiers():
+    from azoic import split_portfolio
+
+    frame = pd.DataFrame({"id": ["secret-record"] * 8})
+    with pytest.raises(ValueError) as error:
+        split_portfolio(frame, ["secret-record"], id_col="id")
+    assert "8 invalid rows" in str(error.value)
+    assert "[0, 1, 2, 3, 4]" in str(error.value)
+    assert "secret-record" not in str(error.value)
+
+
+@pytest.mark.parametrize(
+    "update",
+    [
+        {"id_col": "claim_amount"},
+        {"id_col": " "},
+        {"excluded_cols": ["exposure"]},
+        {"excluded_cols": ["id"]},
+        {"excluded_cols": ["review"]},
+        {"excluded_cols": ["rate", "rate"]},
+        {"excluded_cols": [" "]},
+        {"currency": " "},
+        {"adjustments": [""]},
+        {"exposure_unit": "month"},
+    ],
+)
+def test_portfolio_basis_rejects_invalid_roles_or_units(update):
+    with pytest.raises(pydantic.ValidationError):
+        DatasetSpec.model_validate(
+            {
+                "target": "claim_amount",
+                "exposure": "exposure",
+                "id_col": "id",
+                "protected_cols": ["review"],
+                **update,
+            }
+        )
+
+
 @pytest.mark.parametrize("slot", [0, 1, 2])
 @pytest.mark.parametrize("bad", [1.0, [[1.0], [1.0]], [[[1.0, 1.0]]]])
 def test_outcomes_reject_nonvector_inputs(slot, bad) -> None:

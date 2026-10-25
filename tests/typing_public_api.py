@@ -18,11 +18,13 @@ from azoic import (
     Run,
     TuneResult,
     calibration_table,
+    check_experiment,
     comparison_table,
     gini,
     log_run,
     model_card,
     run_experiment,
+    split_portfolio,
     tune_experiment,
 )
 
@@ -32,6 +34,8 @@ class CustomGLM(RiskGLM):
 
 
 def consumer(config: ExperimentConfig, frame: pd.DataFrame, flag: bool):
+    assert_type(check_experiment(config, df=frame), dict[str, Any])
+    assert_type(split_portfolio(frame, [1, 2], id_col="id"), tuple[pd.DataFrame, pd.DataFrame])
     assert_type(RiskGLM().fit(frame, frame["rate"]), RiskGLM)
     assert_type(CustomGLM().fit(frame, frame["rate"]), CustomGLM)
     assert_type(RiskGBM().fit(frame, frame["rate"]), RiskGBM)

@@ -30,6 +30,239 @@ from azoic.workflow import (
 from tests.conftest import make_synthetic_portfolio
 
 
+def test_documented_development_recipe_and_yaml(tmp_path, monkeypatch):
+    import json
+
+    from azoic import check_experiment
+
+    root = Path(__file__).resolve().parents[1]
+    guide = (root / "docs/guide/actuarial-workflow.md").read_text()
+    (code,) = re.findall(r"```python\n(.*?)```", guide, flags=re.S)
+    configuration = (root / "docs/guide/experiment-configuration.md").read_text()
+    yaml_blocks = re.findall(r"```yaml\n(.*?)```", configuration, flags=re.S)
+    yaml_path = tmp_path / "development.yaml"
+    yaml_path.write_text(next(block for block in yaml_blocks if "development-candidates" in block))
+    frame = make_synthetic_portfolio(n=720).assign(period=np.repeat(np.arange(24), 30))
+    frame.to_parquet(tmp_path / "portfolio.parquet", index=False)
+    monkeypatch.chdir(tmp_path)
+    namespace = {}
+    exec(compile(code, str(root / "docs/guide/actuarial-workflow.md"), "exec"), namespace)
+    config = namespace["config"]
+    yaml_config = ExperimentConfig.from_yaml(yaml_path)
+    assert config.model_dump(exclude={"data_path"}) == yaml_config.model_dump(exclude={"data_path"})
+    assert check_experiment(config) == check_experiment(yaml_config)
+    membership = json.loads((tmp_path / "portfolio-membership.json").read_text())
+    assert len(membership["development"]) == 600
+    assert len(membership["final_test"]) == 120
+    assert not set(membership["development"]) & set(membership["final_test"])
+    assert pd.read_parquet("development.parquet").record_id.tolist() == membership["development"]
+    assert pd.read_parquet("final-test.parquet").record_id.tolist() == membership["final_test"]
+    run, estimators = run_experiment(config, return_estimators=True)
+    yaml_run, yaml_estimators = run_experiment(yaml_config, return_estimators=True)
+    assert run.record_ids == yaml_run.record_ids == tuple(membership["development"])
+    X = namespace["development"][["driver_age", "vehicle_age", "region", "exposure"]]
+    np.testing.assert_array_equal(estimators["glm"].predict(X), yaml_estimators["glm"].predict(X))
+
+
+@pytest.mark.parametrize("column", ["record_id", "incumbent_rate", "partition"])
+def test_config_rejects_identifier_and_review_metadata_as_predictors(column):
+    with pytest.raises(ValueError, match="features contains special columns"):
+        ExperimentConfig(
+            data_path="unused.parquet",
+            spec=DatasetSpec(
+                target="claim_amount",
+                exposure="exposure",
+                id_col="record_id",
+                excluded_cols=["incumbent_rate", "partition"],
+            ),
+            features=[column],
+            models={"glm": ModelSpec()},
+        )
+
+
+@pytest.mark.parametrize("runner", ["run", "tune"])
+def test_final_test_outcomes_cannot_change_development_candidates(tmp_path, runner):
+    from azoic import PreprocessingSpec, split_portfolio
+    from azoic.tariff import recalibrate_for_total
+
+    source = make_synthetic_portfolio(n=700).assign(
+        record_id=np.arange(700), incumbent_rate=300.0, partition="source"
+    )
+    final_ids = list(range(560, 700))
+    original = source.copy(deep=True)
+    changed = source.copy(deep=True)
+    changed.loc[560:, "claim_amount"] = np.nan
+    changed.loc[560:, "claim_count"] = -100
+    development, final = split_portfolio(source, final_ids, id_col="record_id")
+    alternate, alternate_final = split_portfolio(changed, final_ids, id_col="record_id")
+    assert final.record_id.tolist() == alternate_final.record_id.tolist() == final_ids
+    pd.testing.assert_frame_equal(development, alternate)
+    config = ExperimentConfig(
+        data_path="unused.parquet",
+        spec=DatasetSpec(
+            target="claim_amount",
+            exposure="exposure",
+            claim_count="claim_count",
+            id_col="record_id",
+            excluded_cols=["incumbent_rate", "partition"],
+            currency="EUR",
+            observation_period="2023–2025",
+            claim_valuation_basis="paid at 2026-01-01",
+            adjustments=["upstream cap: EUR 500000"],
+        ),
+        features=["driver_age", "region"],
+        preprocessing=PreprocessingSpec(
+            binner={"cols": ["driver_age"], "max_bins": 3},
+            grouper={"cols": ["region"], "max_groups": 2},
+        ),
+        models={
+            "glm": ModelSpec(params={"family": "tweedie", "link": "log"}),
+            "gbm": ModelSpec(kind="gbm", preprocess=False, params={"n_estimators": 5}),
+        },
+    )
+    if runner == "tune":
+        pytest.importorskip("optuna")
+        from azoic.tune import tune_experiment
+
+        left = tune_experiment(config, df=development, n_trials=2, return_estimators=True)
+        right = tune_experiment(config, df=alternate, n_trials=2, return_estimators=True)
+        assert left.best_params == right.best_params
+        assert left.best_values == right.best_values
+        first, first_estimators = left.run, left.estimators
+        second, second_estimators = right.run, right.estimators
+    else:
+        first, first_estimators = run_experiment(config, df=development, return_estimators=True)
+        second, second_estimators = run_experiment(config, df=alternate, return_estimators=True)
+    assert first.data_fingerprint == second.data_fingerprint
+    assert first.record_ids == second.record_ids == tuple(range(560))
+    assert first.train_indices == second.train_indices
+    assert first.test_indices == second.test_indices
+    for name in config.models:
+        assert first.models[name].metrics == second.models[name].metrics
+        pd.testing.assert_frame_equal(
+            first.models[name].calibration_table, second.models[name].calibration_table
+        )
+        estimator = first_estimators[name]
+        X = development[list(estimator.feature_names_in_)]
+        prediction = estimator.predict(X)
+        np.testing.assert_array_equal(prediction, second_estimators[name].predict(X))
+        train = list(first.train_indices)
+        observed = development.claim_amount.iloc[train].sum()
+        predicted = np.dot(prediction[train], development.exposure.iloc[train])
+        other_predicted = np.dot(
+            second_estimators[name].predict(X)[train], alternate.exposure.iloc[train]
+        )
+        assert recalibrate_for_total(
+            {"base_rate": 1.0}, predicted_total=predicted, observed_total=observed
+        ) == recalibrate_for_total(
+            {"base_rate": 1.0}, predicted_total=other_predicted, observed_total=observed
+        )
+    left_pipeline, right_pipeline = first_estimators["glm"], second_estimators["glm"]
+    np.testing.assert_array_equal(
+        left_pipeline["binner"].mapping_["driver_age"],
+        right_pipeline["binner"].mapping_["driver_age"],
+    )
+    assert left_pipeline["grouper"].mapping_ == right_pipeline["grouper"].mapping_
+    pd.testing.assert_frame_equal(source, original)
+
+
+def test_check_experiment_is_read_only_and_python_yaml_equivalent(tmp_path, monkeypatch):
+    import yaml
+
+    from azoic import check_experiment
+    from azoic.models import RiskGBM
+    from azoic.preprocessing import AutoBinner, AutoGrouper
+    from azoic.reporting import comparison_table, model_card
+
+    frame = make_synthetic_portfolio(n=200).assign(id=np.arange(200), rate=100, partition="dev")
+    path = tmp_path / "development.parquet"
+    frame.to_parquet(path)
+    before = path.read_bytes()
+    original = frame.copy(deep=True)
+    config = ExperimentConfig(
+        data_path=str(path),
+        features=["driver_age", "region"],
+        spec=DatasetSpec(
+            target="claim_amount",
+            exposure="exposure",
+            id_col="id",
+            excluded_cols=["rate", "partition"],
+            currency="EUR",
+            observation_period="2024",
+            claim_valuation_basis="ultimate",
+            adjustments=["no caps applied"],
+        ),
+        models={"glm": ModelSpec(params={"family": "tweedie", "link": "log"})},
+    )
+    config_path = tmp_path / "experiment.yaml"
+    config_path.write_text(yaml.safe_dump(config.model_dump(mode="json")))
+    yaml_config = ExperimentConfig.from_yaml(config_path)
+
+    def reject_fit(*args, **kwargs):
+        raise AssertionError("check must not fit")
+
+    with monkeypatch.context() as patch:
+        for cls in (RiskGLM, RiskGBM, AutoBinner, AutoGrouper):
+            patch.setattr(cls, "fit", reject_fit)
+        report = check_experiment(config, df=frame)
+        assert report == check_experiment(yaml_config)
+    assert report["features"] == ["driver_age", "region"]
+    assert report["evidence"] == "development"
+    assert report["portfolio_basis"]["currency"] == "EUR"
+    assert path.read_bytes() == before
+    pd.testing.assert_frame_equal(frame, original)
+    first, models = run_experiment(config, df=frame, return_estimators=True)
+    second, yaml_models = run_experiment(yaml_config, return_estimators=True)
+    np.testing.assert_array_equal(
+        models["glm"].predict(frame[["driver_age", "region", "exposure"]]),
+        yaml_models["glm"].predict(frame[["driver_age", "region", "exposure"]]),
+    )
+    assert first.record_ids == second.record_ids == tuple(range(200))
+    assert comparison_table([first])["evidence"].tolist() == ["development"]
+    card = model_card(first)
+    assert "Development evidence only" in card and "ultimate" in card
+    assert "no caps applied" in card and "EUR" in card
+    inferred = config.model_copy(update={"features": None})
+    assert inferred.feature_columns(frame) == [
+        "driver_age",
+        "vehicle_age",
+        "region",
+        "vehicle_brand",
+        "claim_count",
+    ]
+    with pytest.raises(ValueError, match="explicit `features`"):
+        check_experiment(inferred, df=frame)
+
+
+@pytest.mark.parametrize("invalid", ["exposure", "target", "ids", "feature", "split", "columns"])
+def test_check_experiment_rejects_invalid_data_without_mutation(invalid):
+    from azoic import check_experiment
+
+    frame = make_synthetic_portfolio(n=30).assign(id=np.arange(30))
+    config = ExperimentConfig(
+        data_path="unused",
+        features=["driver_age"],
+        spec=DatasetSpec(target="claim_amount", exposure="exposure", id_col="id"),
+        models={"glm": ModelSpec()},
+    )
+    if invalid == "exposure":
+        frame.loc[2, "exposure"] = 0
+    elif invalid == "target":
+        frame.loc[2, "claim_amount"] = np.nan
+    elif invalid == "ids":
+        frame.loc[2, "id"] = 1
+    elif invalid == "feature":
+        frame = frame.drop(columns="driver_age")
+    elif invalid == "split":
+        config.test_size = 0
+    else:
+        frame.columns = ["id"] * len(frame.columns)
+    original = frame.copy(deep=True)
+    with pytest.raises(ValueError):
+        check_experiment(config, df=frame)
+    pd.testing.assert_frame_equal(frame, original)
+
+
 def _write_portfolio(tmp_path: Path, n: int = 4000, seed: int = 42) -> Path:
     p = tmp_path / "portfolio.parquet"
     make_synthetic_portfolio(n=n, seed=seed).to_parquet(p)

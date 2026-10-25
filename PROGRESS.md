@@ -9,20 +9,31 @@ Legend: ☐ pending · ◐ in progress · ☑ done
 
 ## Current focus
 
+- **M57 ☑ — development versus final evaluation (phase 2)** completed locally
+  on 2026-10-25. ID-based portfolio separation, read-only checks, portfolio basis,
+  recorded development IDs and development-evidence reporting passed acceptance.
+- Full gate: Ruff/Ty and 1,406 tests passed (4 skips, 2 expected failures), plus
+  three final predictor-exclusion cases passed separately. Strict docs and
+  installed runtime-only wheel/sdist smokes passed; see the completion checkpoint.
+- **Next implementation: M58 — saved fitted candidates**, in a new session.
+  Keep M58–M62 independently reviewable; do not group persistence, revisions,
+  reporting or final evaluation into this completed isolation phase.
+- M57 Git delivery and iterative Codex bot review are now authorized on
+  `feat/m57-development-final-test`; final-head PR review and CI are the delivery
+  authority. No merge or release is requested. Comparison tables add `evidence`,
+  requiring a minor release; package metadata remains 0.5.0.
+
 - **M56 ☑ — reliable first journey (phase 1)** passed local and hosted
   acceptance on 2026-10-25, based on `main` at `bdce5a1` (merged M55).
-- [PR #18](https://github.com/ThomasBury/azoic/pull/18) is open on
-  `feat/m56-reliable-first-journey`. Git delivery and iterative Codex review are
-  authorized; final-head review and CI in that PR are the delivery authority.
+- Historical M56 delivery: [PR #18](https://github.com/ThomasBury/azoic/pull/18)
+  merged into `main` at `1abfec6`, the base for M57 delivery.
 - Full local and hosted checks passed: 1,372 tests, strict docs, all four
   installed wheel/sdist cases, and all four Linux/Windows starter cases against
   PyPI 0.5.0 and the checkout wheel. Windows starter coverage is now observed.
 - Codex found no issues on `a4fc3b9`. The final documentation update records
   platform evidence and M56 completion; repeat review/CI on its final head
   before handoff. No merge or release is authorized.
-- M57–M62 are recorded in PRD section 6. The next implementation session starts
-  M57 (development versus final evaluation) after reading this checkpoint;
-  do not start it as part of M56 delivery.
+- M56 delivery evidence above is historical; use the M57 completion checkpoint below.
 
 Previous focus (historical):
 
@@ -145,6 +156,105 @@ Previous focus and delivery evidence:
 - **Branch:** `feat/m46-lightgbm-preprocessing`, based on the completed WP5 branch.
 - Previous delivery: WP5 [PR #8](https://github.com/ThomasBury/azoic/pull/8)
   merged into `main` at `a99df81`; this branch was fast-forwarded to that base.
+
+## M57 — Development versus final evaluation ☑ — 2026-10-25
+
+- [x] Read Current focus, M56 completion, PRD M56–M62 and affected callers.
+- [x] Assess grouping: M57 has independent isolation acceptance; keep M58–M62 separate.
+- [x] Freeze final-test membership by unique record ID before experimentation.
+- [x] Exclude identifiers/incumbent/partition metadata and record portfolio assumptions.
+- [x] Add read-only Python/CLI checking using existing validation rules.
+- [x] Label reports/comparisons as development evidence.
+- [x] Verify outcome isolation, Python/YAML equivalence, full checks and strict docs.
+
+### M57 kickoff checkpoint
+
+Clean `main` checkout. Existing workflow/tuning already accept an in-memory
+frame and share outcome/split validation. Add portfolio separation in `data.py`,
+reuse those validators for checking, preserve optional feature inference outside
+the guided check, and record IDs alongside existing positional split evidence.
+Saved fitted runs, tariff revisions, final evaluation and production refitting
+remain M58–M61. Next: implement the shared data/config contracts and regressions.
+
+### M57 implementation checkpoint
+
+Added ID-based `split_portfolio` copies, optional ID/excluded-column roles,
+portfolio-basis metadata and development `Run.record_ids`. Ordinary fit/tune
+continue consuming only the supplied frame; shared validation preserves outcome
+error context. Added `check_experiment`/`azoic check` without fitting or writes;
+guided checks require explicit predictors. Cards/tables/dashboard label development
+evidence, and comparisons consider declared portfolio basis. Added an exact
+Python/YAML separation recipe without changing M56's released starter blocks.
+
+First focused acceptance: 233 tests passed (three existing FSM warnings).
+Ruff and production Ty passed. Both ordinary and tuned outcome-isolation checks
+passed, including mappings, selected settings, metrics, calibration factors and
+predictions. A duplicate-outcome-column error-order regression was found and
+corrected to retain existing one-dimensional error behavior. New CLI/recipe tests,
+full checks, strict docs and installed-runtime smoke remain to run.
+
+### M57 completion checkpoint — 2026-10-25
+
+Completed M57 alone. M58–M62 have distinct consumers and acceptance gates;
+M57's development boundary and ID evidence are the prerequisite for saved runs,
+not a reason to combine those phases. No new dependency, module, orchestration
+class or model family was introduced. Existing outcome rules and the released
+M56 starter blocks are preserved.
+
+Observed checks:
+
+- `OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MPLBACKEND=Agg just check` passed
+  Ruff, production Ty and **1,406 tests, 4 skips, 2 expected failures** in
+  **174.81s** on the locked Python 3.12 environment. Eleven warnings are existing
+  estimator/diagnostic warnings. The initial validation processes were interrupted
+  between turns; this result is from the completed replacement run.
+- Three additional final cases in
+  `test_config_rejects_identifier_and_review_metadata_as_predictors` passed
+  separately after full-suite collection; final Ruff and formatting checks passed.
+  Together, the full run and these cases cover 1,409 distinct passing tests.
+- Ordinary and tuned final-outcome isolation checks passed: reserved final-test
+  invalid outcomes cannot change development mappings, tuning selection, metrics,
+  calibration tables/factors or predictions. Unique IDs, source order, categorical
+  separation, invalid-membership errors and bounded private-safe errors are covered.
+- Read-only Python/CLI checks cannot call model/preprocessor `fit`, mutate input
+  frames, change Parquet bytes or write output files. The exact documented
+  separation recipe and follow-on YAML agree in config, membership, predictions
+  and check results. ID/incumbent/partition columns cannot be explicit predictors.
+- `just docs-build` passed strict docs. Checked **54 local Markdown targets**
+  and the new content in five rendered guide/API pages. M56's opening Python
+  and YAML blocks remain byte-for-byte identical to `HEAD`.
+- `uv build --out-dir /tmp/azoic-m57-dist` built wheel/sdist. Both passed
+  `tests/smoke_distribution.py` using isolated runtime-only installs outside the
+  checkout on Python **3.13**, pandas **3.1.0**: public separation/check APIs,
+  model/preprocessing/composition/provenance checks and all **six** CLI helps.
+  Logs: `/tmp/azoic-m57-{check,docs,build,wheel,sdist}.log` (temporary local evidence).
+- `git diff --check` passed; generated artifacts remain ignored/outside the tree.
+
+Limits: portfolio files and returned DataFrames remain caller-managed/mutable;
+this phase does not enforce final-test file access control. Read-only checks do
+not establish convergence or fit-time mapping validity. Basis metadata records
+upstream assumptions without transformations. Fixed-schema comparison consumers
+must accept the added `evidence` column. No hosted Windows/lowest-direct/Python
+3.14 matrix or real-data tutorial render was rerun for M57; no broader platform
+or professional-user claims follow from these local checks.
+
+Exact next action in a new session: read Current focus, PRD M58 and this
+checkpoint; trace returned estimators, `Run` snapshots/IDs and CLI training
+callers, then mark M58 ◐. Implement trusted same-environment fitted-candidate
+persistence and prove fresh-process prediction equality and saved-run operations
+without fitting. Do not begin M59 or publish a release automatically.
+
+### M57 Git delivery checkpoint — 2026-10-25
+
+The user authorized staging, Conventional Commits, a plain-English PR and
+iterative Codex bot review until findings are resolved. Fetched `origin/main`;
+it matches `HEAD` at `1abfec6`. Isolated the 23 intended files on
+`feat/m57-development-final-test`, reviewed the production diff and connected
+callers/tests, and reconfirmed Ruff and the completed local acceptance evidence.
+The PR will explain portfolio separation, read-only checking, development labels,
+actual validation and the comparison-schema change. Next: staged whitespace
+check, commit, push, open the PR, then record its URL and request final-head
+Codex review. M58, merge and release remain outside this delivery.
 
 ## M56 — Reliable first journey ☑ — 2026-10-25
 

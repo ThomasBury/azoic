@@ -6,22 +6,26 @@ calibration, and business plausibility together.
 
 ## The sequence
 
-1. Validate target, exposure, claim-count, feature, and time columns.
-2. Profile features and decide which variables to keep, bin, group, or drop.
-3. Reserve an untouched temporal test set when an ordered policy-time field
-   exists; otherwise use a documented non-temporal holdout.
-4. Select preprocessing and model parameters only inside the training data.
+1. Declare record IDs, predictor columns, units and claim valuation assumptions.
+2. Reserve the final-test portfolio and save its membership before profiling or
+   experimentation. Use a predeclared time cutoff when appropriate.
+3. Check development data, then profile its predictors and decide what to keep,
+   bin, group or drop.
+4. Select preprocessing and model parameters only inside development training data.
 5. Refit the selected candidates on outer training data, measure training O/P
    for every candidate, and freeze any training-derived level adjustment before
-   inspecting the outer test. Evaluate raw and adjusted candidates on the same
-   untouched test rows.
+   inspecting development validation. Evaluate raw and adjusted candidates on
+   the same development validation rows.
 6. Review diagnostics and relativities before reporting or exporting a tariff.
 
 !!! danger "Leakage boundary"
 
     A final test result is evidence only if outcomes, preprocessing decisions,
-    and tuning trials did not influence that partition. Azoic tuning uses an
-    inner split of outer training data and evaluates outer test data once.
+    and tuning trials did not influence that partition. Supply only development
+    data to `run_experiment` and `tune_experiment`. Their `test` fields mean
+    development validation: repeated candidate comparisons can influence selection.
+    Tuning uses an inner split of development training data. Final-test evaluation
+    of a frozen fit is a separate, still pending M61 operation.
 
 !!! important "Pure-premium weighting"
 
@@ -33,6 +37,83 @@ calibration, and business plausibility together.
 The special columns travel inside `X` so scikit-learn pipelines and
 `GridSearchCV` can route them. Estimators remove those columns before fitting
 features.
+
+## Freeze portfolio membership before experimenting
+
+This section requires the **unreleased checkout**. It follows the synthetic
+[first model](../getting-started/first-model.md), which creates `portfolio.parquet`.
+For your own portfolio, use an existing durable record ID and a documented
+cutoff or an externally chosen ID list independent of claims. The synthetic IDs
+below are assigned once; never regenerate them after sorting or filtering.
+The numbered periods here are synthetic labels, not calendar dates.
+
+```python
+import json
+
+import pandas as pd
+
+from azoic import DatasetSpec, ExperimentConfig, ModelSpec, check_experiment, split_portfolio
+
+portfolio = pd.read_parquet("portfolio.parquet")
+portfolio["record_id"] = [f"policy-{i}" for i in range(len(portfolio))]
+portfolio["partition"] = "development"
+# Reserve the last four synthetic periods before any development decisions.
+final_ids = portfolio.loc[portfolio["period"] >= 20, "record_id"].tolist()
+portfolio.loc[portfolio["record_id"].isin(final_ids), "partition"] = "final-test"
+development, final_test = split_portfolio(portfolio, final_ids, id_col="record_id")
+
+# Run once into a fresh directory; keep these files fixed during experimentation.
+with open("portfolio-membership.json", "x", encoding="utf-8") as stream:
+    json.dump({"development": development["record_id"].tolist(),
+               "final_test": final_test["record_id"].tolist()}, stream, indent=2)
+development.to_parquet("development.parquet", index=False)
+final_test.to_parquet("final-test.parquet", index=False)
+
+config = ExperimentConfig(
+    name="development-candidates",
+    data_path="development.parquet",
+    spec=DatasetSpec(
+        target="claim_amount", exposure="exposure", claim_count="claim_count",
+        time_col="period", id_col="record_id", excluded_cols=["partition"],
+        exposure_unit="year", currency="EUR",
+        observation_period="synthetic periods 0–19",
+        claim_valuation_basis="synthetic simulated ultimate amounts",
+        adjustments=["no external caps or adjustments"],
+    ),
+    features=["driver_age", "vehicle_age", "region"],
+    split="temporal",
+    models={"glm": ModelSpec(params={"family": "tweedie", "link": "log"})},
+)
+print(check_experiment(config))
+```
+
+Keep `final-test.parquet` closed throughout selection; pass `df=development`
+or point `data_path` at `development.parquet` for fitting and tuning. Save the
+membership file before running the check or exploring predictors. The helper
+preserves source row order and index labels, returns separate copies, rejects
+missing/duplicate/unknown IDs and empty partitions, and removes unused category
+levels separately. It does not validate final-test outcomes or change row values.
+Returned DataFrames are mutable: the helper does not enforce file access control
+or prevent a caller from later supplying the wrong portfolio.
+
+`id_col` and `excluded_cols` never enter model fitting. Add incumbent technical
+rates and other partition metadata to `excluded_cols` when present. Names alone
+cannot identify leakage: explicitly list predictors and review them for IDs,
+incumbent rates and information unavailable at the pricing date. Excluded columns
+remain required in the declared training data, but not in prediction frames.
+`Run.record_ids` records the supplied development row IDs; `train_indices` and
+`test_indices` address that tuple in fit/validation order.
+
+Exposure is measured in years; other units must be converted upstream. Currency,
+observation period, claim valuation basis and `adjustments` record your declared
+assumptions in the config and model card. They do not apply inflation, claims
+development, caps or data repair. Unspecified assumptions remain unrecorded.
+
+`check_experiment` and `azoic check --config development.yaml` require a nonempty
+explicit predictor list. They check existing portfolio, column-role and split
+rules plus estimator/preprocessor construction without fitting or writing.
+Backend convergence, fit-time predictor validation and learned mapping behavior
+still require fitting; a successful check is not model acceptance.
 
 ## Read each diagnostic for its own question
 

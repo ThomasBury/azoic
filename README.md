@@ -50,8 +50,9 @@ are evaluated as tied blocks.
 
 Temporal holdouts never split equal timestamps. Tuning selects parameters on an
 inner split of the outer training partition, then refits on outer training data
-and reports the untouched outer test. Exported tariffs reject unknown categorical
-levels and non-finite numeric inputs.
+and reports development validation. Reserve a separate untouched final-test
+portfolio before experimenting; see the [workflow guide](docs/guide/actuarial-workflow.md).
+Exported tariffs reject unknown categorical levels and non-finite numeric inputs.
 
 Positive-objective GBMs can be exported through `azoic export-tariff
 --distill`; the workbook reproduces the distilled GLM student, not the teacher.

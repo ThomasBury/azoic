@@ -14,7 +14,7 @@ shows the task flow before the generated signatures below.
 
 | Module | Public API | Purpose |
 |---|---|---|
-| `azoic.data` | `DatasetSpec`, `load_data` | Special-column contract; Parquet loading with contract validation |
+| `azoic.data` | `DatasetSpec`, `load_data`, `split_portfolio` | Special-column contract; Parquet loading with contract validation |
 | `azoic.profile` | `profile_features`, `screen_features` | Per-column screening stats; recommended keep/drop/group actions |
 | `azoic.preprocessing` | `AutoBinner`, `AutoGrouper` | Inspectable numeric binning and categorical grouping transformers |
 | `azoic.validation` | `make_strata`, `temporal_split` | Exposure-balanced stratum labels; leakage-safe temporal split |
