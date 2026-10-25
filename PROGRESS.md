@@ -12,10 +12,11 @@ Legend: ☐ pending · ◐ in progress · ☑ done
 - **M59 ☑ — controlled mapping and factor revisions** completed locally on
   2026-10-25. Fixed Python/YAML mappings, refitted candidates, audited factor
   revisions, training calibration and matching saved/workbook rates passed.
-- M59 acceptance: Ruff/Ty and **1,439 tests** passed (4 skips, 2 expected
-  failures); final reporting/revision checks passed **44 cases**, including the
-  later dashboard-label regression. Strict docs and final runtime-only wheel/
-  sdist smokes passed. See the M59 completion checkpoint below.
+- M59 delivery acceptance: Ruff/Ty and **1,445 tests** passed (4 skips,
+  2 expected failures); all nine hosted CI jobs passed on `4809aac`. Codex
+  reviewed that implementation with no findings after three precision/type
+  corrections. A final documentation-only correction follows below; the PR
+  holds its final-head review and CI status.
 - **Next implementation: M60 — tariff-review report and incumbent comparison**,
   in a new session. Keep M60–M62 independently reviewable; final evaluation/refit
   and benchmarks/user observation have separate gates. MLflow follow-up is separate.
@@ -225,6 +226,17 @@ keys/values; tariff factor lookup preserves original key types too. Regressions
 cover large integer keys/destinations, missing/unseen routing, fitting and revised
 scoring. **496 connected tests passed, 2 skips**, in **17.17s**; Ruff, Ty,
 formatting and whitespace passed. Next: full local checks and final-head review/CI.
+
+The third correction (`4809aac`) passed full local checks: **1,445 tests,
+4 skips, 2 expected failures** in **184.27s**. All nine hosted CI jobs passed,
+including strict docs, wheel/sdist smokes, low-version Python 3.12, Python 3.14
+and Linux/Windows starter cases. Codex's first final pass stayed marked running
+for over 20 minutes; a fresh pass completed with **no findings** on the same head.
+All three Codex threads are resolved. CodeRabbit separately noted misplaced
+fixed-setting documentation and missing table entries; moved that paragraph
+under preprocessing and added the two setting rows. Next: strict docs and
+final-head Codex/CI for this documentation-only correction, then user handoff.
+M60, merge and release remain outside this delivery.
 
 ## M59 — Controlled mapping and factor revisions ☑ — 2026-10-25
 
