@@ -227,7 +227,7 @@ contracts. Keep flat modules, current dependencies and the default docs theme.
 
 | Milestone / phase | Scope and acceptance |
 | --- | --- |
-| M56 / 1 (in progress) | Reliable first journey: self-contained installed-package starter with explicit predictors, direct GLM, raw-feature GBM, understandable diagnostics and direct GLM export. Remove test-fixture/checkout/Quarto requirements from that journey. Distinguish released examples from checkout-only capabilities. Validate Python 3.12 on Linux and Windows; limit platform claims to observed evidence. Data errors identify columns, invalid-row counts and a bounded sample of row positions without weakening rules. Acceptance: fresh environments execute the documented journey without undocumented setup or repository imports. |
+| M56 / 1 (completed) | Reliable first journey: self-contained installed-package starter with explicit predictors, direct GLM, raw-feature GBM, understandable diagnostics and direct GLM export. Remove test-fixture/checkout/Quarto requirements from that journey. Distinguish released examples from checkout-only capabilities. Validate Python 3.12 on Linux and Windows; limit platform claims to observed evidence. Data errors identify columns, invalid-row counts and a bounded sample of row positions without weakening rules. Acceptance: fresh environments execute the documented journey without undocumented setup or repository imports. |
 | M57 / 2 (pending) | Freeze a final-test portfolio and row membership before experimentation; existing experiment/tuning functions consume development data and label comparisons as development evidence. Require explicit predictors in the guided path, excluding identifiers, incumbent rates and partition metadata. Add a read-only config/data check using existing rules, with no dropping, repair or caps. Record exposure unit, currency, observation period, claim valuation basis and externally applied caps/adjustments. Acceptance: final-test outcome changes cannot alter development mappings, tuning, calibration or predictions; errors remain actionable. |
 | M58 / 3 (pending) | Standard Python persistence for fitted candidates: run/config, preprocessing, estimators, versions, data identity and split membership together; training data excluded by default. CLI comparison/reporting/scoring/export accept saved runs without fitting; config commands remain explicitly training operations. Tuning saves selected config and fitted candidates. Trusted artifacts require a matching environment, not arbitrary cross-version portability. Acceptance: fresh-process prediction equality and proof saved-run comparison/export do not fit. |
 | M59 / 4 (pending) | Fixed per-feature bin/group mappings through Python and YAML, preserving interval closure, typed categories and explicit missing/unseen destinations. Mapping edits create a new candidate and refit its downstream model. Factor replacements record original values and reasons; fitted/revised tariffs stay distinct. Export revised tariffs with preprocessing through the existing validated workbook writer. Recalibration derives from revised predictions on the declared training population and records one multiplier. Acceptance: revise an age boundary, refit, override a factor, review and export matching rates; failed revisions preserve the original candidate/workbook. |
@@ -249,8 +249,9 @@ This remains technical pure premium. Commercial loadings, taxes, discounts,
 retention, claims development and inflation assumptions stay explicit upstream
 or downstream choices. Defer a graphical workbench, generic deployment system,
 new model families, standalone workbook scorer and distributed execution.
-Independent user sessions, Windows execution, million-row benchmarks and a real
-receiving engine are pending evidence, not inferred from engineering tests.
+M56 records observed Linux/Windows starter execution. Independent user sessions,
+million-row benchmarks and a real receiving engine remain pending evidence,
+not inferred from engineering tests.
 
 ### Engineering depth and maintainability (M49–M55)
 

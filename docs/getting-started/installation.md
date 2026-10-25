@@ -15,20 +15,22 @@ dependencies do not conflict with another project.
 
 ## Tested environments
 
-The package metadata permits Python 3.12 or newer. Checkout validation covers these Linux
-environments; it does not establish every Python, platform or dependency combination:
+The package metadata permits Python 3.12 or newer. Validation covers the
+environments below; it does not establish every Python, platform or dependency
+combination:
 
 | Environment | Validation |
 |---|---|
 | Python 3.12, locked all-extras/groups dependencies | Full tests, lint, source types and strict documentation build |
 | Python 3.12, low compatible direct runtime versions | Fresh wheel and sdist installs, model/preprocessing checks, imports/version and all five CLI command helps |
 | Python 3.14, current compatible runtime wheels | The same installed wheel/sdist checks; only Azoic's own sdist may be built from source |
+| Python 3.12, Linux and Windows Server 2025, runtime dependencies | Exact documented starter and file-based configuration against PyPI 0.5.0 and a checkout-built wheel; workbook-rate agreement and CLI fit |
 
-The installed starter has a Python 3.12 CI matrix for Linux and Windows, against
-both the PyPI release and a checkout-built wheel. Adding that job is not evidence
-that Windows passed: Windows execution remains pending until its CI result is
-recorded in `PROGRESS.md`. This does not claim full-suite Windows support or
-validate macOS. The existing broader Linux checks above remain separate.
+The installed starter passed its Python 3.12 CI matrix on Linux and Windows
+Server 2025, against both the PyPI release and a checkout-built wheel. The Windows
+jobs used Python 3.12.10. This validates the starter; the full test suite still
+runs on Linux. macOS is unverified. Exact execution evidence is recorded in
+`PROGRESS.md`.
 
 The checkout requires `glum>=3.4.1` and `typer>=0.27.1`, replacing the earlier
 `glum>=3.0` and `typer>=0.12` declarations. The low-version job reads direct

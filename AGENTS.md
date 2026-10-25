@@ -77,8 +77,9 @@ the configuration guide. Keep these starter blocks compatible with both PyPI
 0.5.0 and a checkout-built wheel until their release target changes explicitly.
 Other guide/API pages describe the unreleased checkout. Outcome errors retain
 column names, counts and at most five zero-based positions, never row values or
-index labels. Linux/Windows starter CI is separate from full Linux validation;
-Windows support cannot be claimed before a successful run is observed.
+index labels. Linux/Windows starter CI is separate from full Linux validation.
+M56 verified the starter on Linux and Windows Server 2025/Python 3.12; broader
+platform claims require corresponding observed checks.
 Current focus is the authority for the active/next milestone. Read
 `PREPROCESSING_FIX_PLAN.md` for the verified bugs, regression scope, PR delivery,
 and release reconciliation. The scope is mirrored in `PRD.md` section 6.
@@ -252,8 +253,9 @@ examples/_quarto.yml  # main path and optional recipes; only sources committed, 
 - The starter matrix in `ci.yml` runs the exact documented Python and YAML on
   Python 3.12, Linux and Windows, against PyPI 0.5.0 and a checkout-built wheel.
   It installs runtime dependencies only outside the checkout and verifies raw
-  GLM workbook rates and Python/config prediction agreement. Keep Windows
-  acceptance pending until execution is observed; adding CI is not a result.
+  GLM workbook rates and Python/config prediction agreement. M56 records the
+  successful Linux/Windows execution; this is starter coverage, not a full
+  Windows-suite claim.
 - `.github/workflows/docs.yml` renders the real-data tutorial and deploys Pages
   on main pushes with locked sync; the fixed `pages` concurrency group cancels
   superseded runs. Real-data rendering stays outside PR validation.
