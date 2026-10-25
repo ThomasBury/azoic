@@ -15,6 +15,7 @@ from types import SimpleNamespace
 import numpy as np
 import pandas as pd
 import pytest
+from click import unstyle
 from typer.testing import CliRunner
 
 from azoic.cli import app
@@ -46,7 +47,16 @@ def test_cli_check_reads_only_and_never_fits(tmp_path, monkeypatch):
     assert {path.name: path.read_bytes() for path in tmp_path.iterdir()} == original
 
 
-def test_cli_check_reports_bounded_outcome_errors_without_repair(tmp_path):
+@pytest.mark.parametrize("force_color", [False, True])
+def test_cli_check_reports_bounded_outcome_errors_without_repair(
+    tmp_path, monkeypatch, force_color
+):
+    if force_color:
+        monkeypatch.setenv("FORCE_COLOR", "1")
+        monkeypatch.delenv("NO_COLOR", raising=False)
+    else:
+        monkeypatch.delenv("FORCE_COLOR", raising=False)
+        monkeypatch.setenv("NO_COLOR", "1")
     data = _write_portfolio(tmp_path, n=100)
     frame = pd.read_parquet(data)
     frame.loc[2:8, "exposure"] = 0
@@ -55,8 +65,11 @@ def test_cli_check_reports_bounded_outcome_errors_without_repair(tmp_path):
     before = data.read_bytes()
     result = runner.invoke(app, ["check", "--config", str(config)], terminal_width=240)
     assert result.exit_code != 0
-    assert "column 'exposure'" in result.output and "7 invalid rows" in result.output
-    message = " ".join(result.output.replace("│", " ").split())
+    if force_color:
+        assert "\x1b[" in result.output
+    output = unstyle(result.output)
+    assert "column 'exposure'" in output and "7 invalid rows" in output
+    message = " ".join(output.replace("│", " ").split())
     assert "[2, 3, 4, 5, 6]" in message
     assert data.read_bytes() == before
 

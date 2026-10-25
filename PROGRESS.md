@@ -12,9 +12,10 @@ Legend: ☐ pending · ◐ in progress · ☑ done
 - **M57 ☑ — development versus final evaluation (phase 2)** completed locally
   on 2026-10-25. ID-based portfolio separation, read-only checks, portfolio basis,
   recorded development IDs and development-evidence reporting passed acceptance.
-- Full gate: Ruff/Ty and 1,406 tests passed (4 skips, 2 expected failures), plus
-  three final predictor-exclusion cases passed separately. Strict docs and
-  installed runtime-only wheel/sdist smokes passed; see the completion checkpoint.
+- Latest full local gate: Ruff/Ty and 1,410 tests passed (4 skips, 2 expected
+  failures) after the hosted CLI color-assertion correction. Strict docs passed;
+  all eight hosted starter/installed-artifact cases passed on the preceding head.
+  Final-head Codex/CI results in PR #19 are the delivery authority.
 - **Next implementation: M58 — saved fitted candidates**, in a new session.
   Keep M58–M62 independently reviewable; do not group persistence, revisions,
   reporting or final evaluation into this completed isolation phase.
@@ -265,6 +266,30 @@ follow-up records the PR before requesting Codex review of its final head.
 Next: wait for Codex and hosted CI, address findings and request another review
 when needed. The PR is the live authority for final review/CI results; no merge
 or release is authorized.
+
+### M57 hosted validation correction — 2026-10-25
+
+Codex completed review of `b67bee4` with no findings and no inline threads:
+[review receipt](https://github.com/ThomasBury/azoic/pull/19#issuecomment-6402006357).
+[CI run 40225099122](https://github.com/ThomasBury/azoic/actions/runs/40225099122)
+passed all eight starter/installed-artifact matrix jobs, but full validation
+failed one new CLI assertion (1,408 tests passed). Rich emits ANSI styling on
+GitHub Actions, which interrupted the expected row-position string despite
+its correct visible content. The earlier local `NO_COLOR=1` environment hid
+that presentation difference.
+
+The test now removes styling with the existing Click `unstyle` API before
+checking the message. It covers plain/forced-color environments and asserts
+that the forced-color output really contains ANSI sequences. Both cases
+passed, including with `GITHUB_ACTIONS=true` and `NO_COLOR` unset. Production
+code, validation policies and error messages are unchanged.
+
+The replacement `just check` passed Ruff, production Ty and **1,410 tests,
+4 skips, 2 expected failures** in **167.96s**. Strict docs, test formatting and
+whitespace checks passed too. Logs: `/tmp/azoic-m57-color-check.log` and
+`/tmp/azoic-m57-color-hosted.log`. Next: commit/push the correction and request
+Codex review and CI on the new head. The PR remains the live final-result
+record; no merge/release is included.
 
 ## M56 — Reliable first journey ☑ — 2026-10-25
 
