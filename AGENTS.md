@@ -64,8 +64,12 @@ concrete `Run.config`. Reporting/logging use postponed `azoic.Run` annotations.
 Constructors store parameters unchanged; RiskGBM validates power/constraints
 during fit, including after `set_params`. Keep the runtime-only public composition
 recipe in the distribution smoke. Do not extract results, publish a checker or
-widen `ModelSpec.kind` without a concrete consumer. M55 provenance remains separate.
-Independent maintainer validation remains pending for M55.
+widen `ModelSpec.kind` without a concrete consumer. M55 records full wrapper/
+preprocessing constructors with sklearn paths in `resolved_params`, runtime
+versions and effective tuning settings only at final assembly. Preserve explicit
+config/params, deep-copy snapshots and leave historical metadata unrecorded;
+logging uses separate provenance prefixes. This is audit evidence, not portable
+replay. Independent maintainer validation remains explicitly pending.
 Current focus is the authority for the active/next milestone. Read
 `PREPROCESSING_FIX_PLAN.md` for the verified bugs, regression scope, PR delivery,
 and release reconciliation. The scope is mirrored in `PRD.md` section 6.

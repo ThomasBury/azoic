@@ -676,3 +676,75 @@ def test_tune_result_keeps_estimator_container_validation():
         TuneResult(**payload, estimators=[component])
     with pytest.raises(ValidationError):
         Run(**{**run.model_dump(), "config": object()})
+
+
+@pytest.mark.parametrize("custom", [False, True])
+def test_tuning_provenance_records_effective_controls_once_per_final_run(
+    tmp_path, monkeypatch, custom
+):
+    from collections import Counter
+    from copy import deepcopy
+    from importlib.metadata import version
+
+    calls = Counter()
+
+    def record_version(package):
+        calls[package] += 1
+        return version(package)
+
+    monkeypatch.setattr("azoic.workflow.version", record_version)
+    tuning = {"n_trials": 5, "calibration_penalty": 9.0}
+    if custom:
+        tuning["search_space"] = {
+            name: {
+                "alpha": {
+                    "type": "categorical",
+                    "choices": [0.01],
+                }
+            }
+            for name in ("a", "b")
+        }
+    config = _config(tmp_path, models={"a": _glm(), "b": _glm()}, tuning=tuning)
+    before = deepcopy(config.model_dump())
+    result = tune_experiment(config, n_trials=2, calibration_penalty=0.0, random_state=17)
+    settings = result.run.tuning_settings
+    assert settings["n_trials"] == 2
+    assert settings["calibration_penalty"] == 0.0
+    assert settings["random_state"] == 17
+    assert settings["n_jobs"] == 1
+    assert settings["inner_split"] == {"split": "random", "test_size": 0.2, "random_state": 42}
+    for name, seed in (("a", 17), ("b", 18)):
+        study = settings["models"][name]
+        assert study["sampler"].endswith(".TPESampler")
+        assert study["seed"] == seed
+        assert study["direction"] == "minimize"
+        space = study["search_space"]
+        if custom:
+            assert space == {
+                "alpha": {
+                    "name": "CategoricalDistribution",
+                    "attributes": {
+                        "choices": [0.01],
+                    },
+                }
+            }
+        else:
+            assert space["alpha"] == {
+                "name": "FloatDistribution",
+                "attributes": {
+                    "low": 1e-6,
+                    "high": 1.0,
+                    "step": None,
+                    "log": True,
+                },
+            }
+            assert set(space) == {"alpha", "l1_ratio"}
+        assert result.run.models[name].resolved_params["alpha"] == result.best_params[name]["alpha"]
+    assert result.run.runtime_versions["optuna"] == version("optuna")
+    assert calls and set(calls.values()) == {1}
+    assert config.model_dump() == before
+    config.tuning.n_trials = 99
+    if custom:
+        config.tuning.search_space["a"]["alpha"].choices.append(0.5)
+        assert settings["models"]["a"]["search_space"]["alpha"]["attributes"]["choices"] == [0.01]
+    assert settings["n_trials"] == 2

@@ -9,6 +9,22 @@ Legend: ☐ pending · ◐ in progress · ☑ done
 
 ## Current focus
 
+- **M55 ☑ — final-run provenance and diagnostic repeat** completed locally
+  2026-10-25. Full constructor settings/classes, runtime versions and effective
+  tuning settings are copied once per final run and exposed in cards/logging.
+- M55 stands alone as the final approved M49–M55 engineering phase. Full checks,
+  strict docs, downstream typing, four installed wheel/sdist runtime cases and
+  the discarded diagnostic-extension exercise passed; see its checkpoint below.
+- Independent maintainer reproduction of M54's documented installed-package
+  component recipe remains explicitly pending. Passing local checks and the
+  single-agent diagnostic repeat do not establish independent maintainability.
+- Git delivery is authorized on `feat/m55-run-provenance`, based on merged M54
+  at `2d63df7`. Open the PR, then obtain final-head Codex review and green CI;
+  address actionable findings and repeat until clear before handoff.
+  No further milestone, merge, release or portable replay work is included.
+
+Previous focus (historical):
+
 - **M54 ☑ — public typing and composition contract** completed locally on
   2026-10-25. Static lazy exports, concrete annotations/overloads, fit-time GBM
   validation and documented component/state/0.x boundaries passed acceptance.
@@ -111,6 +127,156 @@ Previous focus and delivery evidence:
 - **Branch:** `feat/m46-lightgbm-preprocessing`, based on the completed WP5 branch.
 - Previous delivery: WP5 [PR #8](https://github.com/ThomasBury/azoic/pull/8)
   merged into `main` at `a99df81`; this branch was fast-forwarded to that base.
+
+## M55 — Final-run provenance and external evidence ☑ — 2026-10-25
+
+- [x] Read Current focus, PRD sections 3/6, M54 completion and relevant callers.
+- [x] Assess grouping: M55 stands alone as the final approved engineering phase.
+- [x] Snapshot full constructor settings/classes, runtime versions and effective tuning.
+- [x] Expose compact provenance in cards and separate MLflow parameter prefixes.
+- [x] Verify defaults, deep snapshots, ordinary/tuned/FSM/pipeline behavior and old results.
+- [x] Repeat/discard M49 diagnostic extension; record independent evidence honestly.
+- [x] Run full checks, strict docs, installed artifact smokes and final review.
+
+### M55 kickoff checkpoint
+
+Clean `main` at `2d63df7` includes merged M54 PR #16. Traced `_build_model`,
+`_evaluate_split`, `_assemble_run`, both public execution paths, tuning overrides,
+per-model samplers, card/comparison/logging consumers and manually built results.
+Scope reaches workflow/tune/reporting/mlops, their tests, distribution smoke and
+current guide/reference/project records. Existing explicit params/config remain;
+new fields default empty for historical/manual results. No architecture,
+dependency, split, target, validation or release change. Metadata collection must
+remain outside trials. External maintainer observations are unavailable and pending.
+
+### M55 checkpoint — implementation and first acceptance
+
+Added defaulted `ModelResult.resolved_params`, `Run.runtime_versions` and
+`Run.tuning_settings`. Final assembly snapshots wrapper/preprocessing defaults,
+qualified executable identities and sklearn component paths, runtime stack
+versions and effective tuning overrides/search spaces/samplers/seeds. Explicit
+config/params retain their meanings; constructors/functions become names and
+containers are copied. Trial evaluation never collects final-run metadata.
+Cards summarize provenance; MLflow keeps separate version/tuning/resolved prefixes.
+Historical/manual fields stay empty and are shown as unrecorded, never backfilled.
+Updated behavioral checks, runtime distribution smoke, guides and public contract.
+
+First focused acceptance exposed two non-sklearn test doubles (now BaseEstimator
+fixtures) and a new unpenalized GLM fixture's singular categorical design (use a
+fixed positive alpha; numerical solver behavior is outside this phase). Rerun
+pending. Ruff/Ty passed; strict docs passed with no issues in 3.81s. Locked
+all-extras/groups sync passed without dependency/lock changes.
+
+Repeated the M49 exercise in a disposable source copy: exactly the scoring
+metrics entry and card display line changed. Ordinary Run/tuple, one-trial tuned
+Run, cards, comparison table/dashboard table and actual SQLite MLflow reproduced
+predicted holdout amount 7 and O/P 10/7 from independent train totals 21/9.
+Provenance also survived that exercise. Copy/database removed; no exercise metric
+ships. Log: `/tmp/azoic-m55-exercise.log`. Independent maintainer reproduction of
+M54's installed component recipe is unavailable and remains explicitly pending.
+
+Remaining: final focused suite, full `just check`, installed artifacts, evidence/
+links and final diff review. No Git delivery, release, portable replay or external
+maintainer endorsement is part of this implementation.
+
+### M55 checkpoint — installed artifacts and reference acceptance
+
+All four existing CI installed-artifact cases passed from fresh temporary runtime
+venvs, outside the checkout, with no `uv.lock`: wheel/sdist on low-compatible
+Python 3.12 and current compatible Python 3.14. The unchanged CI commands build,
+resolve dependencies, check installed requirements and run full imports/models/
+preprocessing/five CLI commands/public composition plus the new ordinary-run
+provenance/card checks. No optional extras are needed by provenance. Full package
+version lists and smoke output are in `/tmp/azoic-m55-final-{3.12,3.14}-{whl,tar.gz}.log`;
+runner summary: `/tmp/azoic-m55-final-matrix.log`.
+
+Tested direct stack highlights (both artifact types):
+
+- Python 3.12.7: NumPy 2.0.0, pandas 3.0.0, sklearn 1.6.0, glum 3.4.1,
+  LightGBM 4.3.0, Typer 0.27.1; exact glum/Typer floors asserted.
+- Python 3.14.7: NumPy 2.5.4, pandas 3.1.0, sklearn 1.9.1, glum 3.4.1,
+  LightGBM 4.7.0, Typer 0.27.3; dependencies installed from compatible wheels.
+
+These are tested stacks, not every metadata-permitted environment. Downstream
+source typing now checks all three provenance fields; Ruff/Ty pass. All 55
+rule-map pytest selectors and changed Markdown file links resolve. Full suite,
+final strict docs/source review and completion checkpoint remain.
+
+### M55 checkpoint — focused acceptance and full gate
+
+Final affected suites passed **183 tests**, four existing warnings, in **165.07s**
+(`/tmp/azoic-m55-focused.log`). They verify constructor defaults and class paths,
+preprocessing/FSM nesting, copied estimator/config containers, absent historical
+metadata, actual default/custom search distributions, per-model seeds, keyword
+precedence, compact cards and local MLflow prefixes. A metadata call counter
+with two models and two trials each records each package version exactly once
+for the final run. Downstream typing passes with all new fields.
+
+The four installed runtime cases are green (preceding checkpoint). Final strict
+docs passed with no issues in **1.66s**; subsequent guide edits only wrap prose.
+`just check` is running on the final Python source (1355 collected items; Ruff
+and production Ty already green). No dependency/lock, version, module, export,
+workflow kind, target, split, mapping or metric changed. Exercise script, source
+copy and SQLite store are removed; its log remains. Final gate/result review and
+completion handoff are the only remaining engineering work.
+
+### M55 completion checkpoint — 2026-10-25
+
+Acceptance complete:
+
+- Final `just check` exited **0**: Ruff and production Ty passed;
+  **1349 passed, 4 skipped, 2 expected failures**, 11 existing warnings, in
+  **256.60s** on Python 3.12.7. Array-API skips and strict-1D-target expected
+  failures retain project policy. Log: `/tmp/azoic-m55-check.log`.
+- Final strict `just docs-build` exited **0**, no issues, **1.00s**;
+  log `/tmp/azoic-m55-final-docs.log`. Changed Python formatting/whitespace pass,
+  all 55 rule-map test selectors and changed Markdown file links resolve.
+- Focused workflow/tune/reporting/local MLflow suites passed **183** tests.
+  Source downstream typing (also part of the full suite) checks all new fields.
+  Locked all-extras/groups sync passed without dependency/lock changes.
+- Wheel and sdist passed the full runtime smoke outside the checkout on both
+  tested stacks recorded above, including dependency checks/exact floors,
+  model/preprocessing/five-command CLI/public composition and final-run metadata.
+  Ordinary runtime provenance requires no optional integration dependency.
+- The actually executed/discarded M49 repeat reached ordinary/tuned results,
+  cards, table/dashboard comparisons and local SQLite MLflow, preserving the
+  independent predicted amount **7** and O/P **10/7**. Only the arithmetic owner
+  and card label needed extension; generic results/comparison/logging stayed
+  unchanged. Source copy, database and exercise script were removed. No extension
+  metric ships and no independent maintainer endorsement is inferred.
+- Final connected source/consumer/diff review preserves explicit config/params,
+  constructor behavior, return interfaces, lazy exports, trial evaluation,
+  actuarial policies, splits, metrics and mappings. All three new public fields
+  default empty for manual/historical results. Full constructor snapshots contain
+  qualified executable identities, defaults and sklearn paths; runtime/tuning
+  metadata is assembled once after final evaluation. Public containers remain
+  mutable. Exactly 16 intended files changed; no runtime dependency, module,
+  kind, package version or generated artifact was added.
+
+Handoff: M55 engineering is complete locally and uncommitted on `main`; it was
+implemented alone and no further engineering phase is selected. Independent
+maintainer reproduction of the installed component recipe remains pending,
+explicitly allowed by this milestone's scope; no such observations are available.
+Next action: review this change and request Git delivery if desired; separately,
+an independent maintainer should run the published installed-package recipe
+without private imports or coaching and record ambiguities. Hosted CI, real-data
+Quarto rendering, release/publication, portable replay and licensing provenance
+review were not run or initiated. These snapshots support audit, not deterministic
+replay; callers retain data, environment and fitted-model storage responsibilities.
+
+### M55 Git delivery checkpoint — 2026-10-25
+
+The user authorized staging, a Conventional Commit, a plain-English PR and
+iterative Codex bot review until actionable findings are resolved. Fetched
+`origin/main`; it matches the implementation base at `2d63df7`. Isolated the
+16 intended files on `feat/m55-run-provenance`. Reviewed the complete source
+diff, final assembly/tuning/card/logging consumers, tests and recorded acceptance;
+no additional local finding or source correction. The final source already passed
+`just check`, strict docs and all four installed runtime cases in this session.
+Fresh Ruff and staged whitespace checks apply before committing. Next: commit,
+push, create the PR, record its URL, then request final-head Codex review and
+wait for review/CI. Independent maintainer validation remains pending; no merge
+or release is authorized.
 
 ## M54 — Public typing and composition contract ☑ — 2026-10-25
 

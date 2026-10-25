@@ -91,8 +91,38 @@ def model_card(run: azoic.Run) -> str:
             "- protected columns: " + ", ".join(f"`{c}`" for c in cfg.spec.protected_cols),
         )
 
+    lines.append("## Provenance")
+    lines.append("")
+    lines.append(
+        "- runtime versions: "
+        + (
+            ", ".join(f"{key}={value}" for key, value in run.runtime_versions.items())
+            or "unrecorded"
+        )
+    )
+    if run.tuning_settings:
+        settings = run.tuning_settings
+        lines.append(
+            f"- effective tuning: {settings['n_trials']} trials/model, "
+            f"calibration_penalty={settings['calibration_penalty']}, "
+            f"random_state={settings['random_state']}"
+        )
+        for name, study in settings["models"].items():
+            lines.append(f"- `{name}` sampler: `{study['sampler']}` (seed={study['seed']})")
+    else:
+        lines.append("- effective tuning: unrecorded (ordinary runs do not tune)")
+    lines.append("")
+
     for name, res in run.models.items():
         lines.append(_metrics_block_md(name, res.kind, res.params, res.metrics))
+        lines.append("")
+        if res.resolved_params:
+            lines.append(
+                f"- constructor: `{res.resolved_params['class']}` "
+                f"({len(res.resolved_params) - 1} settings in `resolved_params`)"
+            )
+        else:
+            lines.append("- constructors: unrecorded")
         lines.append("")
         lines.append("#### Calibration table (test, first 12 rows)")
         lines.append("")

@@ -85,9 +85,10 @@ for name, result in run.models.items():
 ```
 
 A `Run` includes the validated config, data fingerprint, row counts, feature
-names, and per-model metrics, overall calibration table, and protected-group
-calibration tables when declared. Fitted estimators are returned only when
-requested.
+names, runtime versions, effective tuning settings when tuned, and per-model
+resolved constructor settings, metrics, overall calibration table, and protected-group
+calibration tables when declared. See [provenance and its limits](operations.md).
+Fitted estimators are returned only when requested.
 
 For a notebook portfolio already held in memory, pass
 `run_experiment(config, df=portfolio, return_estimators=True)`;
