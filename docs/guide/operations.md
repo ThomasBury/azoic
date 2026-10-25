@@ -28,6 +28,79 @@ Path("comparison.html").write_text(
 )
 ```
 
+## Save fitted candidates and resume without training
+
+Keep a fitted candidate to review or score it later. The following checkout APIs
+save the existing `Run` and every fitted estimator, including learned bin/group
+mappings, as one standard Python pickle file:
+
+```python
+from azoic import load_run, run_experiment, save_run
+
+run, estimators = run_experiment(config, return_estimators=True)
+save_run(run, estimators, "candidates.pkl")
+
+restored_run, fitted = load_run("candidates.pkl")
+rates = fitted["tweedie-glm"].predict(new_portfolio[restored_run.feature_names])
+```
+
+Use the estimator dictionary returned alongside that same run. Reloading does
+not read `config.data_path`, fit models or relearn mappings. Python prediction
+returns pure-premium rates; multiply by exposure only when period costs are
+needed. Preserve predictor names, order, types and category representation.
+
+The file includes config, versions, data fingerprint, split positions, recorded
+IDs and aggregate diagnostics. Portfolio row frames are excluded; retain them
+separately for audit and export recalibration. IDs, category vocabulary, model
+state and aggregate claims remain sensitive information. New files use temporary
+file permissions (user-only on POSIX); replacements preserve permission bits.
+A failed serialization or replacement preserves the previous artifact.
+
+!!! warning "Trusted files and matching environments only"
+
+    Pickle loading can execute code. Only load files whose source and integrity
+    you trust. Keep the same Azoic source revision and Python/dependency lock;
+    `load_run` rejects differing recorded runtime versions after unpickling.
+    This check does not authenticate the file or make untrusted loading safe.
+    Cross-version portability and arbitrary custom Python components are not
+    supported. See scikit-learn's
+    [persistence guidance](https://scikit-learn.org/stable/model_persistence.html).
+
+The CLI can save ordinary or selected tuned candidates, then consume their
+stored state without training:
+
+```bash
+azoic fit --config experiment.yaml --save-run candidates.pkl --quiet
+azoic tune --config experiment.yaml --save-run tuned.pkl --best-config selected.yaml --quiet
+azoic compare --run candidates.pkl --run tuned.pkl --out comparison.csv
+azoic report --run tuned.pkl --out model-card.md
+azoic predict --run tuned.pkl --model tweedie-glm --data predictors.parquet --out rates.csv
+azoic export-tariff --run tuned.pkl --model tweedie-glm --no-recalibrate --out structural.xlsx
+azoic export-tariff --run tuned.pkl --model tweedie-glm --data development.parquet --out tariff.xlsx
+```
+
+`predictors.parquet` needs the saved predictors and, if declared, unique record
+IDs; outcomes and exposure are unnecessary for rate scoring. The CSV preserves
+input order and contains `predicted_rate` plus the declared ID. Reporting and
+comparison reuse saved development diagnostics; scoring does not evaluate
+final-test outcomes or establish independent performance.
+
+Saved-run GLM recalibration requires the full original development frame,
+including its index, row order, dtypes and categorical metadata. Its fingerprint
+must match before the stored training positions are used. `--no-recalibrate`
+exports structural fitted rates without any data file. Saved-run export never
+fits or distills: GBM distillation remains an explicit `--config --distill`
+training operation.
+
+The selected config is also inside `tuned.pkl`; `--best-config` writes a separate
+YAML with an absolute local data path so relocating that YAML does not change
+its source data. Running it trains a new candidate. `fit`, `tune`, positional
+`compare` configs and `export-tariff --config` remain training operations;
+`compare` rejects mixing positional configs and saved runs. Overrides, mapping
+revision, final evaluation and production refit remain later milestones.
+
+## Interpret saved development evidence
+
 A model card is Markdown and records the experiment data contract, fingerprint,
 split, features, model parameters, held-out metrics, and a calibration preview
 (first 12 rows; write full tables separately when every segment is needed).
@@ -57,7 +130,8 @@ explicit `<model>.params.*`. Historical/manual results default to empty provenan
 cards say **unrecorded**, and logging never substitutes today's environment.
 
 These snapshots support audit, not portable replay or deterministic predictions.
-Keep the input data, environment lock and fitted models yourself. Public
+Keep the input data and environment lock yourself; `save_run` retains the fitted
+models with their Run. Public
 dictionaries and DataFrames remain mutable. The fingerprint includes categorical
 vocabulary
 (even unused levels), its dtype, declared category order, and the ordered flag.

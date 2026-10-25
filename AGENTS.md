@@ -86,7 +86,13 @@ development data to workflow/tuning; their `test` names mean development validat
 `DatasetSpec.id_col`/`excluded_cols` never enter features; basis fields only record
 upstream assumptions. `check_experiment`/`azoic check` require explicit predictors
 and never fit or repair data. `Run.record_ids` aligns with existing split positions.
-Saved runs and frozen final evaluation remain separate M58/M61 work.
+Saved runs follow in M58; frozen final evaluation remains M61 work.
+M58 completed fitted persistence: `workflow.save_run` / `load_run` retain the
+existing Run and fitted estimator dictionary as trusted same-environment pickle, excluding portfolio
+frames. Keep no-fit saved-run report/compare/predict/export separate from config
+training operations. Saved GLM recalibration requires the original fingerprinted
+development frame and saved training positions; saved export cannot distill.
+Keep the released M56 starter unchanged; M59–M62 remain separate.
 Current focus is the authority for the active/next milestone. Read
 `PREPROCESSING_FIX_PLAN.md` for the verified bugs, regression scope, PR delivery,
 and release reconciliation. The scope is mirrored in `PRD.md` section 6.
@@ -130,7 +136,7 @@ src/azoic/
   validation.py     # make_strata, temporal_split
   plots.py          # plot_lorenz, plot_lift, plot_calibration, plot_one_way, plot_double_lift, plot_actual_vs_predicted (matplotlib)
   tariff.py         # distill_gbm; export_tariff(glm_or_pipeline, path)
-  workflow.py       # check_experiment, ExperimentConfig, preprocessing/freq-sev YAML, run_experiment
+  workflow.py       # check_experiment, ExperimentConfig, run_experiment, save_run/load_run
   reporting.py      # model_card, comparison_table/dashboard
   mlops.py          # log_run (mlflow, lazy import)
   tune.py           # tune_experiment (optuna, lazy import) -- v0.2 part 1 / M7
@@ -251,7 +257,7 @@ examples/_quarto.yml  # main path and optional recipes; only sources committed, 
 - `.github/workflows/ci.yml` validates PRs and main pushes on Python 3.12 with
   read-only contents permissions: locked all-extras/groups sync, Ruff, Ty,
   pytest, strict docs, distributions, and installed wheel/sdist model,
-  preprocessing, version, and all-six-command CLI smokes.
+  preprocessing, persistence, version, and all-eight-command CLI smokes.
   Separate runtime-only jobs reuse that smoke outside the checkout for wheel
   and sdist: low compatible direct dependencies from wheel metadata on Python
   3.12 (`lowest-direct`, asserting exact glum/Typer floors), current compatible

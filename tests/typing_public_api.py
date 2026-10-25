@@ -21,9 +21,11 @@ from azoic import (
     check_experiment,
     comparison_table,
     gini,
+    load_run,
     log_run,
     model_card,
     run_experiment,
+    save_run,
     split_portfolio,
     tune_experiment,
 )
@@ -52,6 +54,11 @@ def consumer(config: ExperimentConfig, frame: pd.DataFrame, flag: bool):
     run, estimators = run_experiment(config, return_estimators=True)
     assert_type(run, Run)
     assert_type(estimators, dict[str, RiskGLM | RiskGBM | FrequencySeverityModel | Pipeline])
+    assert_type(save_run(run, estimators, "candidates.pkl"), None)
+    assert_type(
+        load_run("candidates.pkl"),
+        tuple[Run, dict[str, RiskGLM | RiskGBM | FrequencySeverityModel | Pipeline]],
+    )
     assert_type(
         run_experiment(config, return_estimators=flag),
         Run | tuple[Run, dict[str, RiskGLM | RiskGBM | FrequencySeverityModel | Pipeline]],

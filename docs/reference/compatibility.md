@@ -198,3 +198,16 @@ inference. Reports label development evidence, and comparison tables add the
 must accept this additional column; this schema change requires a minor release.
 The released starter remains unchanged. No artifact persistence or final-test
 scoring/refitting API is supplied by M57.
+
+Unreleased M58 adds `save_run(run, estimators, path)` and `load_run(path)` in
+`azoic.workflow` and the package root. Loading returns the existing
+`(Run, estimator_dict)` shape; `Run` and `ModelResult` identities are unchanged.
+Artifacts use standard pickle protocol 5, include fitted preprocessing and
+estimators, and exclude portfolio frames. Only trusted artifacts with the same
+code and environment are supported; recorded version mismatches fail after
+unpickling. This is fitted Python state, not a portable deployment format.
+See the [saved-candidate recipe](../guide/operations.md#save-fitted-candidates-and-resume-without-training).
+`report`, `predict`, `compare --run` and `export-tariff --run` never fit;
+config-based operations keep their explicit training behavior. Existing Python
+run/tuning return types and defaults remain unchanged. Final-test evaluation,
+mapping/factor revisions and production refit are still pending.
