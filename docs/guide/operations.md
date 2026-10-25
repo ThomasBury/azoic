@@ -96,8 +96,8 @@ The selected config is also inside `tuned.pkl`; `--best-config` writes a separat
 YAML with an absolute local data path so relocating that YAML does not change
 its source data. Running it trains a new candidate. `fit`, `tune`, positional
 `compare` configs and `export-tariff --config` remain training operations;
-`compare` rejects mixing positional configs and saved runs. Overrides, mapping
-revision, final evaluation and production refit remain later milestones.
+`compare` rejects mixing positional configs and saved runs. Controlled revisions
+are described below; final evaluation and production refit remain M61 work.
 
 ## Interpret saved development evidence
 
@@ -244,6 +244,76 @@ skipped because MLflow rejects non-finite values. Remote tracking remains an
 environment concern; Azoic does not invent credentials or deployment policy.
 
 ## Export a multiplicative tariff
+
+### Revise factors on a separate candidate
+
+Use `revise_run` after any mapping change has been fitted through a new config.
+It changes factors without fitting, verifies the original development portfolio
+fingerprint and row order, and uses the recorded training positions for optional
+recalibration. Every replacement requires a positive finite factor and a reason.
+The `level` must match the fitted category's scalar type; numeric features use
+`"_per_unit"` and a per-unit multiplier, not a log coefficient.
+
+```python
+from azoic import export_tariff, revise_run, save_run
+from azoic.reporting import model_card
+
+revised_run, revised_models = revise_run(
+    run,
+    estimators,
+    model="tweedie-glm",
+    df=development,
+    replacements=[
+        {
+            "feature": "region",
+            "level": "metro",
+            "factor": 1.2,
+            "reason": "Approved technical adjustment after segment review",
+        }
+    ],
+)
+revised = revised_models["tweedie-glm"]
+revised_rates = revised.predict(new_portfolio[revised_run.feature_names])
+print(model_card(revised_run))
+save_run(revised_run, revised_models, "revised.pkl")
+export_tariff(revised, "revised.xlsx", recalibrate=False)
+```
+
+`RevisedTariff` is a scoring artifact, not an estimator to fit or tune. It holds
+a copy of its fitted source, revised factors and audit evidence. The original
+Run/model remain unchanged. The returned Run recomputes development diagnostics
+from revised predictions; cards and comparisons label the revision. Inspect
+`revised_run.models["tweedie-glm"].revision` for each original/replacement factor,
+reason and the calibration population, totals and multiplier. Public containers
+remain caller-mutable; revise through the factory to keep the evidence aligned.
+
+Recalibration defaults to on and computes one multiplier from the revised
+training predictions. It multiplies the base once; predictions already include
+it. Zero observed training claims give a zero multiplier. Repeated revisions
+retain factor-change history and recompute calibration from the uncalibrated
+revised tariff, rather than multiplying the previous calibration again. Set
+`recalibrate=False` on `revise_run` for structural revised rates. A changed
+reference-category factor is retained explicitly; the original reference basis
+is not renormalized.
+
+Export a revision with `recalibrate=False` because its calibration policy is
+already recorded. The three-sheet writer includes preprocessing mappings,
+original factors/reasons and the recorded multiplier. It preserves the existing
+workbook on failed writes. The saved CLI route follows the same rule:
+
+```bash
+azoic report --run revised.pkl --out revised-card.md
+azoic predict --run revised.pkl --model tweedie-glm --data predictors.parquet --out revised-rates.csv
+azoic export-tariff --run revised.pkl --model tweedie-glm --no-recalibrate --out revised.xlsx
+```
+
+The lower-level `revise_tariff` API returns the same artifact for a direct GLM
+or supported pipeline. Its caller chooses the calibration population explicitly;
+`revise_run` adds saved membership checks, refreshed diagnostics and persistence
+evidence. GBM/FSM factor revision is unsupported: use an explicit fitted GLM
+tariff. Senior review and independent final evaluation remain later phases.
+
+### Export a fitted GLM
 
 A fitted log-link `RiskGLM` or pipeline ending in one can be written to a
 three-sheet workbook:

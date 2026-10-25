@@ -93,6 +93,14 @@ frames. Keep no-fit saved-run report/compare/predict/export separate from config
 training operations. Saved GLM recalibration requires the original fingerprinted
 development frame and saved training positions; saved export cannot distill.
 Keep the released M56 starter unchanged; M59–M62 remain separate.
+M59 completed controlled revisions: native transformer `fixed` settings survive Python/YAML refits.
+Fixed bins declare closure and a missing bin; fixed groups use typed level/group
+records and explicit missing/unseen destinations. Unlisted features learn on
+training rows. `RevisedTariff` is a post-fit scoring artifact, not a new model
+kind. `revise_run` preserves the source, verifies fingerprint/membership,
+refreshes development diagnostics and records factor reasons plus one training
+calibration multiplier. Export revisions with recalibrate=False; never silently
+recalibrate twice. Keep source models, revised tariffs and later final evidence distinct.
 Current focus is the authority for the active/next milestone. Read
 `PREPROCESSING_FIX_PLAN.md` for the verified bugs, regression scope, PR delivery,
 and release reconciliation. The scope is mirrored in `PRD.md` section 6.

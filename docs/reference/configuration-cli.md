@@ -120,6 +120,15 @@ for explicit missing destinations when changing tree mappings.
 
 ## Model kinds
 
+`preprocessing.binner.fixed` and `preprocessing.grouper.fixed` are optional
+per-feature approved mappings that survive clone/refit. Numeric specifications
+contain exactly `edges`, `closure` (`left` or `right`) and `missing` (an existing
+zero-based bin index, or `len(edges) + 1` for a separate `Missing` bin).
+Categorical specifications contain exactly `groups`
+(a list of `{level, group}` scalar records), `missing` and `unseen` destinations.
+Selected features without fixed specifications learn normally. See
+[fixed mapping configuration](../guide/data-preprocessing.md#keep-approved-mappings-fixed-through-refits).
+
 | `kind` | Required structure | Built estimator |
 |---|---|---|
 | `glm` | optional `params` | `RiskGLM` |

@@ -30,6 +30,7 @@ import yaml
 from azoic.data import DatasetSpec, load_data
 from azoic.profile import profile_features, screen_features
 from azoic.reporting import comparison_table, model_card
+from azoic.tariff import RevisedTariff
 from azoic.tariff import distill_gbm as _distill_gbm
 from azoic.tariff import export_tariff as _export_tariff
 from azoic.workflow import (
@@ -218,6 +219,10 @@ def export_tariff(
         if distill:
             raise typer.BadParameter("--distill fits a new student; use --config explicitly")
         run, ests = load_run(saved_run)
+        if model in ests and isinstance(ests[model], RevisedTariff) and recalibrate:
+            raise typer.BadParameter(
+                "revised tariff calibration is recorded; pass --no-recalibrate"
+            )
         cfg = run.config
         df = None
         if recalibrate:
@@ -245,6 +250,10 @@ def export_tariff(
     if model not in ests:
         raise typer.BadParameter(f"model {model!r} not in saved models {list(ests)}")
     est = ests[model]
+    if isinstance(est, RevisedTariff):
+        _export_tariff(est, out, recalibrate=False)
+        typer.echo(f"Wrote revised tariff for {model} to {out}")
+        return
     final_est = est.steps[-1][1] if isinstance(est, Pipeline) else est
     if isinstance(final_est, RiskGBM) and not distill:
         raise typer.BadParameter(

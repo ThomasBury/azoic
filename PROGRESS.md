@@ -9,19 +9,31 @@ Legend: ☐ pending · ◐ in progress · ☑ done
 
 ## Current focus
 
+- **M59 ☑ — controlled mapping and factor revisions** completed locally on
+  2026-10-25. Fixed Python/YAML mappings, refitted candidates, audited factor
+  revisions, training calibration and matching saved/workbook rates passed.
+- M59 acceptance: Ruff/Ty and **1,439 tests** passed (4 skips, 2 expected
+  failures); final reporting/revision checks passed **44 cases**, including the
+  later dashboard-label regression. Strict docs and final runtime-only wheel/
+  sdist smokes passed. See the M59 completion checkpoint below.
+- **Next implementation: M60 — tariff-review report and incumbent comparison**,
+  in a new session. Keep M60–M62 independently reviewable; final evaluation/refit
+  and benchmarks/user observation have separate gates. MLflow follow-up is separate.
+- Git delivery is authorized on `feat/m59-controlled-revisions`, based on
+  merged M58 at `286251e`: stage, commit, open a PR and address Codex review
+  findings until clear. The PR holds the live final-head review and CI status.
+  No later milestone, merge, release or production deployment is included.
+
 - **M58 ☑ — saved fitted candidates (phase 3)** completed locally on 2026-10-25.
   Trusted persistence, selected tuning config and no-fit saved comparison,
   reporting, rate scoring and direct GLM export passed acceptance.
 - M58 full gate: Ruff/Ty and **1,415 tests** passed (4 skips, 2 expected failures);
   strengthened boundary/unseen cases passed separately. Strict docs and final
   runtime-only wheel/sdist smokes passed, including fresh-process no-fit export.
-- **Next implementation: M59 — controlled mapping and factor revisions**, in a
-  new session. Keep M59–M62 independently reviewable; do not group revisions,
-  review reporting, final evaluation/refit or performance/user observation.
-- M58 Git delivery and iterative Codex bot review are authorized. Work is on
-  `feat/m58-saved-candidates` in [PR #20](https://github.com/ThomasBury/azoic/pull/20).
-  Final-head Codex review and CI in that PR are the delivery authority. No merge,
-  release or production deployment is requested.
+- The M58 handoff selected M59; it is now completed above. Keep M60–M62 separate.
+- Historical [PR #20](https://github.com/ThomasBury/azoic/pull/20) merged into
+  `main` at `286251e`, the base for M59. Its review and hosted CI remain the M58
+  delivery authority; this session does not claim hosted checks for M59.
 
 - **M57 ☑ — development versus final evaluation (phase 2)** completed locally
   on 2026-10-25. ID-based portfolio separation, read-only checks, portfolio basis,
@@ -170,6 +182,154 @@ Previous focus and delivery evidence:
 - **Branch:** `feat/m46-lightgbm-preprocessing`, based on the completed WP5 branch.
 - Previous delivery: WP5 [PR #8](https://github.com/ThomasBury/azoic/pull/8)
   merged into `main` at `a99df81`; this branch was fast-forwarded to that base.
+
+### M59 Git delivery checkpoint — 2026-10-25
+
+User authorized staging, a conventional commit, PR creation and iterative Codex
+review. Isolated all M59 changes on `feat/m59-controlled-revisions`, based on
+current `origin/main` at `286251e`. Fresh `just check` passed Ruff/Ty and
+**1,440 tests, 4 skips, 2 expected failures** in **241.67s**. Strict docs,
+`uv run ty check tests/typing_public_api.py` and staged whitespace checks passed.
+Next: push the commit, open the M59 PR and address actionable Codex findings;
+require review and hosted CI on its final head before handoff. No M60, merge or
+release is included.
+
+## M59 — Controlled mapping and factor revisions ☑ — 2026-10-25
+
+- [x] Read Current focus, M58 checkpoint, PRD M59 and affected callers.
+- [x] Assess grouping: complete mapping/refit/revision/export together within M59;
+  leave M60–M62 and MLflow follow-up separate.
+- [x] Add fixed per-feature numeric/category mappings through Python and YAML.
+- [x] Preserve closure, typed categories and explicit missing/unseen destinations.
+- [x] Create separate revised tariffs with original factors/reasons and calibration evidence.
+- [x] Integrate revised candidates with diagnostics, persistence, scoring and workbook export.
+- [x] Verify failed revisions preserve original candidates/workbooks and predictions agree.
+- [x] Run focused/full checks, strict docs and installed smokes; record handoff.
+
+### M59 kickoff checkpoint — 2026-10-25
+
+Clean `main` at `286251e`, including merged M58 PR #20. Implement M59 alone:
+fixed constructor mappings survive workflow refits and YAML; factor edits return
+a separate tariff with audit evidence, retaining the fitted source. Reuse the
+existing split, outcome rules, tariff arithmetic and atomic workbook writer.
+Recalibrate only revised predictions on the recorded training population and
+retain one multiplier. Add a non-fitting revised-run path to refresh diagnostics
+and persist the resulting candidate. No model family, dependency or module is
+needed. Next: implement mappings, tariff revisions and connected consumers.
+
+### M59 implementation checkpoint — 2026-10-25
+
+Added fixed constructor mappings to native transformers, per-feature closure and
+explicit missing/unseen destinations. Workflow YAML passes the same specifications;
+clone/refit retains them. Added a separate non-estimator `RevisedTariff` scoring
+artifact and factor-revision factory in tariff.py, retaining a copied fitted
+source, original factors/reasons and one calibration multiplier. `revise_run`
+checks saved data identity/training positions, recomputes development diagnostics
+without fitting and snapshots revision evidence. Persistence/CLI scoring/export
+and model cards consume revised candidates; export reuses the atomic workbook
+writer and rejects accidental second calibration. No dependency/module/model kind.
+
+Initial 15 M59 regressions passed: closure/typed categories, YAML/Python refit,
+original preservation, revised calibration totals, workbook/Python rates, saved
+scoring, fresh-process equality, zero-total recalibration and failed revisions.
+Connected estimator/preprocessing/tariff/CLI/persistence/root tests are running.
+Remaining: broaden failure/type/tuning probes, complete docs/installed smoke,
+run full acceptance and record exact final results. M59 remains ◐.
+
+### M59 verification checkpoint — 2026-10-25
+
+Connected tests passed: 516 tests, 2 array-API skips. First full `just check`
+passed Ruff/Ty and 1,438 tests (4 skips, 2 expected failures) in 198.60s.
+Added a fixed-map freeze check preserving quantile's separate Missing bin and
+preserved inherited distillation metadata in revision export; a replacement full
+gate is running. The final comparison-label fix passed all 44 reporting/revision
+cases, including 25 M59 cases, in 12.56s. No further production changes planned.
+
+Strict docs passed; checked 27 local Markdown targets and rendered fixed-map/
+revision content. All nine changed Python files pass formatting. Initial wheel
+and sdist runtime-only smokes passed outside the checkout on Python 3.13/pandas
+3.1.0, with fixed mappings, fresh-process saved/revised predictions and no-fit
+CLI export. Rebuilt artifacts after the final display change are being checked.
+Remaining: observe full/final installed results, inspect scope/whitespace and
+record completion plus the exact M60 handoff. No later milestone has started.
+
+### M59 completion checkpoint — 2026-10-25
+
+Completed M59 alone. Mapping/refit and factor/recalibration/export are one
+acceptance journey; review reporting (M60), final evaluation/production refit
+(M61), and measured performance/user observation (M62) have independent consumers
+and gates. No new dependency, module, model kind or orchestration layer. The
+released starter and package version remain unchanged.
+
+Fixed mappings live in transformer constructors, survive clone/refit and accept
+the same Python/YAML records. Fixed intervals declare left/right closure;
+missing can use a numeric interval or a separate Missing bin, preserving frozen
+quantile behavior. Typed categorical level/group records retain string/numeric/
+boolean distinctions and reject equal numeric/boolean aliases. Missing/unseen
+destinations are explicit. Fixed choices replace learned credibility guarantees
+for those features; domain validation remains enforced.
+
+Mapping edits refit a new config/candidate. Factor edits create a separate
+RevisedTariff with a copied fitted source, complete factor history/reasons and
+one current training-calibration multiplier. revise_run validates the saved
+development fingerprint and membership, refreshes diagnostics without fitting
+and preserves recorded training versions/tuning evidence. Saved candidates must
+match their Run's revision evidence. Cards, tables and dashboard bars distinguish
+revisions. The existing workbook writer exports mapping/override evidence and
+the recorded calibration, rejecting a second recalibration; inherited source
+distillation metadata is preserved.
+
+Observed checks:
+
+- `OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MPLBACKEND=Agg just check` passed
+  Ruff, production Ty and **1,439 tests, 4 skips, 2 expected failures** in
+  **238.66s**, on locked Python 3.12. Thirteen warnings are existing diagnostic,
+  dependency and expected unseen-routing warnings. The preceding full run
+  passed 1,438 tests before the separate-Missing preservation case was added.
+- The final one-line dashboard-label change and its new regression were checked
+  with **44 reporting/revision cases**, all passed in **12.56s** (including
+  **25 M59 cases**). The full run plus this final check cover 1,440 distinct
+  passing cases. Final Ruff/Ty, all nine changed-Python formatting checks and
+  whitespace checks passed.
+- Regression evidence covers exact/adjacent numeric boundaries, both interval
+  closures, separate Missing bins, typed categories and distinct missing/unseen
+  routes; Python/YAML equivalence and changed-boundary refit; fixed mappings
+  during tuning; numeric and categorical/reference factor replacements;
+  repeated revisions and zero-total calibration; full training-total agreement;
+  validation-outcome isolation; refreshed diagnostics; original preservation;
+  failed-workbook preservation and mismatched-artifact rejection.
+- Factor revision, saved scoring and CLI export pass with native fit methods
+  blocked. Fresh-process saved predictions agree exactly; reconstructed workbook
+  rates agree with Python at rtol=1e-12. User-provided training population choices
+  remain explicit on the lower-level revise_tariff API.
+- `just docs-build` passed strict docs. Verified **27 local Markdown targets**
+  across the five changed guide/reference pages and rendered mapping/revision
+  content. The documented fixed YAML matches the exercised Python config.
+- Final `uv build --out-dir /tmp/azoic-m59-dist` wheel and sdist each passed the
+  runtime-only installed smoke outside the checkout on **Python 3.13**, pandas
+  **3.1.0**. This covers approved mappings, saved/revised fresh-process scoring,
+  no-fit report/export, ordinary component/provenance checks and all eight CLI
+  helps. The existing uv/uv-build range warning did not prevent either build.
+- Temporary logs: `/tmp/azoic-m59-{check-final,reporting-final,docs,build,wheel,sdist}.log`.
+  Generated outputs remain ignored or outside the checkout. Changes are
+  uncommitted on main; no PR, merge or release was performed for M59.
+
+Limits: fixed decisions do not retain learned credibility/monotonic guarantees;
+destination-only groups can have no direct training experience. Revised tariffs
+require a direct GLM or supported GLM pipeline, not GBM/FSM factor decomposition.
+They are scoring artifacts, not fit/tune estimators. Containers remain mutable;
+use the factories instead of editing recorded state. Pickles require trusted
+sources and the same source revision/environment. Workbook audit columns and
+revision evidence changes require a minor release. No hosted Windows/lowest-
+direct/Python 3.14 matrix, real-data tutorial, independent actuarial review or
+MLflow handoff was performed; no broader claim follows.
+
+Exact next action in a new session: read Current focus, PRD M60 and this
+checkpoint. Trace reporting, ID alignment, saved revised candidates and existing
+plots, then mark M60 ◐. Implement the review report with complete CSV tables and
+incumbent/fitted/recalibrated/revised comparisons on identical record IDs, with
+explicit scales and undefined percentage changes for zero incumbent rates.
+Do not fit/recalibrate while reporting, start M61 or publish a release automatically.
 
 ## M58 — Saved fitted candidates ☑ — 2026-10-25
 

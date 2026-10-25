@@ -86,6 +86,9 @@ config = azoic.ExperimentConfig(
     features=["x"],
     spec=azoic.DatasetSpec(target="amount", exposure="exposure", id_col="id", currency="EUR"),
     models={"glm": azoic.ModelSpec(params={"family": "tweedie", "link": "log"})},
+    preprocessing=azoic.PreprocessingSpec(
+        binner={"cols": ["x"], "fixed": {"x": {"edges": [1.5], "closure": "left", "missing": 0}}}
+    ),
 )
 summary = azoic.check_experiment(config, df=development)
 assert summary["n_rows"] == 3 and summary["evidence"] == "development"
@@ -97,8 +100,24 @@ run, estimators = azoic.run_experiment(config, df=development, return_estimators
 with tempfile.TemporaryDirectory() as folder:
     directory = Path(folder)
     azoic.save_run(run, estimators, directory / "run.pkl")
+    revised_run, revised_models = azoic.revise_run(
+        run,
+        estimators,
+        model="glm",
+        df=development,
+        replacements=[
+            {
+                "feature": "x",
+                "level": "[1.5, inf)",
+                "factor": 1.1,
+                "reason": "synthetic installed revision check",
+            }
+        ],
+    )
+    azoic.save_run(revised_run, revised_models, directory / "revised.pkl")
     development[["id", "x"]].to_parquet(directory / "predictors.parquet")
     expected = estimators["glm"].predict(development[["x"]])
+    revised_expected = revised_models["glm"].predict(development[["x"]])
     code = """
 import numpy as np
 import pandas as pd
@@ -111,6 +130,9 @@ for cls in (RiskGLM, RiskGBM, AutoBinner, AutoGrouper):
     cls.fit = reject
 run, estimators = load_run('run.pkl')
 np.save('rates.npy', estimators['glm'].predict(pd.read_parquet('predictors.parquet')[['x']]))
+revised_run, revised_models = load_run('revised.pkl')
+probe = pd.read_parquet('predictors.parquet')[['x']]
+np.save('revised-rates.npy', revised_models['glm'].predict(probe))
 from azoic.cli import app
 from typer.testing import CliRunner
 for command in (
@@ -120,12 +142,16 @@ for command in (
      '--out', 'rates.csv'],
     ['export-tariff', '--run', 'run.pkl', '--model', 'glm', '--no-recalibrate',
      '--out', 'tariff.xlsx'],
+    ['report', '--run', 'revised.pkl'],
+    ['export-tariff', '--run', 'revised.pkl', '--model', 'glm', '--no-recalibrate',
+     '--out', 'revised.xlsx'],
 ):
     result = CliRunner().invoke(app, command)
     assert result.exit_code == 0, (result.output, result.exception)
 """
     subprocess.run([sys.executable, "-c", code], cwd=directory, check=True)
     np.testing.assert_array_equal(np.load(directory / "rates.npy"), expected)
+    np.testing.assert_array_equal(np.load(directory / "revised-rates.npy"), revised_expected)
 print("Saved-run persistence, fresh-process equality and no-fit CLI consumers passed")
 for cls in (AutoBinner, AutoGrouper):
     kwargs = {"strategy": "tree"} if cls is AutoBinner else {}

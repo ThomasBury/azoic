@@ -13,6 +13,7 @@ from azoic import (
     FrequencySeverityModel,
     ModelResult,
     ModelSpec,
+    RevisedTariff,
     RiskGBM,
     RiskGLM,
     Run,
@@ -24,6 +25,8 @@ from azoic import (
     load_run,
     log_run,
     model_card,
+    revise_run,
+    revise_tariff,
     run_experiment,
     save_run,
     split_portfolio,
@@ -55,9 +58,20 @@ def consumer(config: ExperimentConfig, frame: pd.DataFrame, flag: bool):
     assert_type(run, Run)
     assert_type(estimators, dict[str, RiskGLM | RiskGBM | FrequencySeverityModel | Pipeline])
     assert_type(save_run(run, estimators, "candidates.pkl"), None)
+    assert_type(revise_tariff(RiskGLM(), [], recalibrate=False), RevisedTariff)
+    revised_run, revised_models = revise_run(
+        run, estimators, model="glm", replacements=[], df=frame
+    )
+    assert_type(revised_run, Run)
+    assert_type(
+        revised_models,
+        dict[str, RiskGLM | RiskGBM | FrequencySeverityModel | Pipeline | RevisedTariff],
+    )
     assert_type(
         load_run("candidates.pkl"),
-        tuple[Run, dict[str, RiskGLM | RiskGBM | FrequencySeverityModel | Pipeline]],
+        tuple[
+            Run, dict[str, RiskGLM | RiskGBM | FrequencySeverityModel | Pipeline | RevisedTariff]
+        ],
     )
     assert_type(
         run_experiment(config, return_estimators=flag),

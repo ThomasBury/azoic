@@ -16,7 +16,7 @@ from __future__ import annotations
 import warnings
 from collections.abc import Hashable, Mapping, Sequence
 from numbers import Integral, Real
-from typing import Self, overload
+from typing import Any, Self, overload
 
 import lightgbm as lgb
 import numpy as np
@@ -35,6 +35,26 @@ from azoic.data import EXPOSURE_FLOOR, MIN_EXPOSURE
 from azoic.validation import _weighted_quantile_edges
 
 __all__ = ["AutoBinner", "AutoGrouper"]
+
+
+def _fixed_specs(fixed, cols):
+    if fixed is None:
+        return {}
+    if not isinstance(fixed, Mapping) or set(fixed) - set(cols):
+        raise ValueError("fixed mappings must name selected transformer columns")
+    if any(not isinstance(spec, Mapping) for spec in fixed.values()):
+        raise ValueError("each fixed feature must contain a mapping specification")
+    return fixed
+
+
+def _fixed_level(value):
+    if type(value) not in (str, int, float, bool) or (
+        isinstance(value, float) and not np.isfinite(value)
+    ):
+        raise ValueError(
+            "fixed levels and destinations must be finite scalar strings/numbers/bools"
+        )
+    return value
 
 
 def _check_min_exposure(min_exposure, exp) -> None:
@@ -282,6 +302,11 @@ class AutoBinner(TransformerMixin, BaseEstimator):
         means include missing rows in their routed group. Pooling preserves floors.
     random_state : int | None
         Tree strategy seed, a non-negative 32-bit integer or None.
+    fixed : mapping | None
+        Per-feature ``{edges: [...], closure: 'left'|'right', missing: bin_index}``.
+        Fixed features do not learn edges or enforce learned credibility floors.
+        Use an existing bin index or len(edges) + 1 for a separate Missing bin.
+        Other selected features learn normally.
 
     Attributes
     ----------
@@ -316,6 +341,7 @@ class AutoBinner(TransformerMixin, BaseEstimator):
         target_col: str | None = None,
         monotonic: bool | str = False,
         random_state: int | None = 42,
+        fixed: Mapping[str, Mapping[str, Any]] | None = None,
     ) -> None:
         self.cols = cols
         self.strategy = strategy
@@ -327,6 +353,7 @@ class AutoBinner(TransformerMixin, BaseEstimator):
         self.target_col = target_col
         self.monotonic = monotonic
         self.random_state = random_state
+        self.fixed = fixed
 
     def __sklearn_tags__(self):
         tags = super().__sklearn_tags__()
@@ -353,11 +380,12 @@ class AutoBinner(TransformerMixin, BaseEstimator):
         validate_data(self, X, dtype=None, ensure_all_finite=False)
         X_df, _ = _to_frame(X)
         cols = self._select_cols(X_df)
+        fixed = _fixed_specs(self.fixed, cols)
         exp = _column_array(X_df, self.exposure_col, required=True, minimum=EXPOSURE_FLOOR)
         cc = _column_array(X_df, self.claim_count_col, required=True)
         _check_controls(self, exp, cc)
         target = _resolve_target(X_df, y, self.target_col, exp)
-        if self.strategy == "tree" and target is None:
+        if self.strategy == "tree" and target is None and set(cols) - set(fixed):
             raise ValueError("tree binning requires a target (target_col in X or y)")
         self.mapping_ = {}
         self.trees_ = {}
@@ -367,6 +395,30 @@ class AutoBinner(TransformerMixin, BaseEstimator):
         self.tree_mappings_ = {}
         for col in cols:
             values = self._column_values(X_df, col)
+            if col in fixed:
+                spec = fixed[col]
+                if set(spec) != {"edges", "closure", "missing"}:
+                    raise ValueError("fixed bins require exactly edges, closure and missing")
+                edges = check_array(
+                    spec["edges"], dtype=float, ensure_2d=False, ensure_min_samples=0, copy=True
+                )
+                if edges.ndim != 1 or np.any(np.diff(edges) <= 0):
+                    raise ValueError("fixed bin edges must be a strictly increasing finite vector")
+                route = spec["missing"]
+                if (
+                    isinstance(route, bool)
+                    or not isinstance(route, Integral)
+                    or not 0 <= route <= len(edges) + 1
+                ):
+                    raise ValueError(
+                        "fixed missing destination must be a bin index or the Missing bin"
+                    )
+                if spec["closure"] not in ("left", "right"):
+                    raise ValueError("fixed bin closure must be 'left' or 'right'")
+                self.mapping_[col] = edges
+                self.missing_[col] = int(route)
+                self.closure_[col] = spec["closure"]
+                continue
             if self.strategy == "tree":
                 tree, groups, thresholds = _fit_tree(
                     values,
@@ -403,7 +455,9 @@ class AutoBinner(TransformerMixin, BaseEstimator):
             self.mapping_[col] = edges
         self.category_dtypes_ = {
             col: self._category_dtype(
-                edges, closure=self.closure_[col], missing=col not in self.trees_
+                edges,
+                closure=self.closure_[col],
+                missing=col not in self.trees_ and self.missing_[col] > len(edges),
             )
             for col, edges in self.mapping_.items()
         }
@@ -498,7 +552,8 @@ class AutoBinner(TransformerMixin, BaseEstimator):
                 leaves = _leaf_predictions(self.trees_[col], values)
                 codes = np.array([self.leaf_groups_[col][leaf] for leaf in leaves])
             else:
-                codes = self._codes(values, edges)
+                side = "left" if self.closure_[col] == "right" else "right"
+                codes = np.searchsorted(edges, values, side=side)
                 codes[np.isnan(values)] = self.missing_[col]
             if was_df:
                 out[col] = pd.Categorical.from_codes(codes, dtype=self.category_dtypes_[col])
@@ -649,11 +704,17 @@ class AutoGrouper(TransformerMixin, BaseEstimator):
     Supplied outcomes must be finite after numeric and unit conversion;
     missing outcomes are never treated as zero.
 
+    ``fixed`` accepts per-feature ``{groups: [{level: ..., group: ...}], missing:
+    ..., unseen: ...}``. Scalar category types are retained; missing/unseen
+    destinations are explicit. Equal numeric/boolean aliases are rejected.
+
     Attributes
     ----------
     mapping_, category_dtypes_, group_cols_, n_features_in_, feature_names_in_.
     missing_ : dict[str, object]
         Fitted group label used for missing and unseen levels.
+    unseen_ : dict[str, object]
+        Explicit unseen destinations for fixed mappings; otherwise uses missing_.
     """
 
     mapping_: dict[str, dict[Hashable, Hashable]]
@@ -673,6 +734,7 @@ class AutoGrouper(TransformerMixin, BaseEstimator):
         claim_count_col: str | None = None,
         target_col: str | None = None,
         other_label: str = "Other",
+        fixed: Mapping[str, Mapping[str, Any]] | None = None,
     ) -> None:
         self.cols = cols
         self.strategy = strategy
@@ -683,6 +745,7 @@ class AutoGrouper(TransformerMixin, BaseEstimator):
         self.claim_count_col = claim_count_col
         self.target_col = target_col
         self.other_label = other_label
+        self.fixed = fixed
 
     def __sklearn_tags__(self):
         tags = super().__sklearn_tags__()
@@ -708,7 +771,8 @@ class AutoGrouper(TransformerMixin, BaseEstimator):
         cc = _column_array(X_df, self.claim_count_col, required=True)
         _check_controls(self, exp, cc)
         target = _resolve_target(X_df, y, self.target_col, exp)
-        if self.strategy == "similarity" and target is None:
+        fixed = _fixed_specs(self.fixed, cols)
+        if self.strategy == "similarity" and target is None and set(cols) - set(fixed):
             raise ValueError("similarity grouping requires a target (target_col in X or y)")
         self.mapping_ = {}
         self.category_dtypes_ = {}
@@ -716,9 +780,45 @@ class AutoGrouper(TransformerMixin, BaseEstimator):
         self.leaf_groups_ = {}
         self.levels_ = {}
         self.missing_ = {}
+        self.unseen_ = {}
         self.tree_mappings_ = {}
         for col in cols:
             series = X_df[col]
+            if col in fixed:
+                spec = fixed[col]
+                if set(spec) != {"groups", "missing", "unseen"} or not isinstance(
+                    spec["groups"], list
+                ):
+                    raise ValueError(
+                        "fixed groups require groups (level/group records), missing and unseen"
+                    )
+                mapping = {}
+                for entry in spec["groups"]:
+                    if not isinstance(entry, Mapping) or set(entry) != {"level", "group"}:
+                        raise ValueError("fixed groups must contain level/group records")
+                    level, group = _fixed_level(entry["level"]), _fixed_level(entry["group"])
+                    if level in mapping:
+                        raise ValueError(
+                            "fixed group levels must be unique, including equal numeric/bool values"
+                        )
+                    mapping[level] = group
+                missing, unseen = _fixed_level(spec["missing"]), _fixed_level(spec["unseen"])
+                categories = list(dict.fromkeys([*mapping.values(), missing, unseen]))
+                for value in [*mapping.values(), missing, unseen]:
+                    if not any(
+                        type(value) is type(other) and value == other for other in categories
+                    ):
+                        raise ValueError(
+                            "fixed group destinations must not alias across scalar types"
+                        )
+                self.mapping_[col] = mapping
+                self.missing_[col] = missing
+                self.unseen_[col] = unseen
+                self.category_dtypes_[col] = pd.CategoricalDtype(
+                    categories,
+                    ordered=isinstance(series.dtype, pd.CategoricalDtype) and series.cat.ordered,
+                )
+                continue
             ordered_levels = (
                 list(series.cat.categories)
                 if isinstance(series.dtype, pd.CategoricalDtype) and series.cat.ordered
@@ -870,13 +970,16 @@ class AutoGrouper(TransformerMixin, BaseEstimator):
                     .astype(object)
                     .map(mp)
                     .mask(out[col].isna(), self.missing_[col])
-                    .fillna(self.missing_[col])
+                    .fillna(self.unseen_.get(col, self.missing_[col]))
                     .astype(self.category_dtypes_[col])
                 )
         if unseen:
             details = "; ".join(f"{column}={levels!r}" for column, levels in unseen.items())
+            destination = (
+                "explicit unseen destinations" if self.unseen_ else "fitted missing destinations"
+            )
             warnings.warn(
-                f"AutoGrouper mapped unseen levels to fitted missing destinations: {details}",
+                f"AutoGrouper mapped unseen levels to {destination}: {details}",
                 UserWarning,
                 stacklevel=2,
             )
@@ -933,9 +1036,15 @@ class AutoGrouper(TransformerMixin, BaseEstimator):
                 categories, ordered=self.category_dtypes_[col].ordered
             )
             routes[col] = route
+        unseen_routes = {
+            col: self.unseen_.get(col, routes[col])
+            if replacement[col] == self.mapping_[col] and col not in missing
+            else routes[col]
+            for col in replacement
+        }
         self.mapping_ = replacement
         self.category_dtypes_ = dtypes
         self.trees_, self.leaf_groups_, self.levels_ = trees, leaf_groups, levels
-        self.missing_ = routes
+        self.missing_, self.unseen_ = routes, unseen_routes
         self.tree_mappings_ = {col: self.tree_mappings_[col] for col in trees}
         self.group_cols_ = list(mapping.keys())
