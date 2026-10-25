@@ -197,6 +197,15 @@ requested. Next: address actionable findings and require review plus hosted CI
 on the final head before handoff. The PR is the live status authority. No M60,
 merge or release is included.
 
+Codex found that pandas coerced integer categorical levels to floats when
+combining factor rows from integer and float features, dropping revision reasons
+and original factors from the workbook. Reproduced the failure with an exported
+mixed-category workbook, then preserved the original level objects in the shared
+factor-frame builder. The regression and all connected revision/tariff cases
+passed: **128 tests in 12.54s**. Ruff, Ty, formatting and whitespace passed.
+The preceding `8c3ea33` hosted CI passed all jobs. Full local acceptance and
+Codex/CI on the correction's final head remain the next delivery gate.
+
 ## M59 — Controlled mapping and factor revisions ☑ — 2026-10-25
 
 - [x] Read Current focus, M58 checkpoint, PRD M59 and affected callers.

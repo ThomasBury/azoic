@@ -361,7 +361,7 @@ def _factors_frame(tariff: dict) -> pd.DataFrame:
     return pd.DataFrame(
         rows,
         columns=pd.Index(["feature", "level", "multiplicative_factor", "application"]),
-    )
+    ).assign(level=pd.Series([row["level"] for row in rows], dtype=object))
 
 
 def apply_tariff(tariff: dict, X: pd.DataFrame) -> np.ndarray:

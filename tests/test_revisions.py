@@ -473,6 +473,34 @@ def test_tuned_fixed_mappings_and_typed_numeric_factors(candidate):
         )
 
 
+def test_workbook_preserves_revision_evidence_for_mixed_numeric_categories(tmp_path):
+    frame = pd.DataFrame(
+        {
+            "integer_code": pd.Categorical([1, 1, 2, 2] * 10),
+            "float_code": pd.Categorical([1.0, 2.5, 1.0, 2.5] * 10),
+            "exposure": 1.0,
+        }
+    )
+    model = RiskGLM(family="poisson", link="log", exposure_col="exposure").fit(
+        frame, np.where(frame.integer_code == 1, 2.0, 4.0)
+    )
+    replacements = [
+        {"feature": "integer_code", "level": 1, "factor": 1.2, "reason": "integer decision"},
+        {"feature": "float_code", "level": 1.0, "factor": 1.3, "reason": "float decision"},
+    ]
+    revised = revise_tariff(model, replacements, recalibrate=False)
+    path = tmp_path / "typed-revision.xlsx"
+    export_tariff(revised, path, recalibrate=False)
+    factors = pd.read_excel(path, sheet_name="factors")
+    for change in revised.revision["changes"]:
+        row = factors.loc[
+            (factors.feature == change["feature"]) & (factors.level == change["level"])
+        ].iloc[0]
+        assert row.reason == change["reason"]
+        assert row.original_factor == pytest.approx(change["original_factor"])
+        assert row.multiplicative_factor == change["factor"]
+
+
 def test_revision_calibration_cannot_use_development_validation_outcomes(candidate):
     frame, run, estimators = candidate
     changed = frame.copy()
