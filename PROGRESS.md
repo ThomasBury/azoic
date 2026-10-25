@@ -19,7 +19,8 @@ Legend: ☐ pending · ◐ in progress · ☑ done
   new session. Keep M59–M62 independently reviewable; do not group revisions,
   review reporting, final evaluation/refit or performance/user observation.
 - M58 Git delivery and iterative Codex bot review are authorized. Work is on
-  `feat/m58-saved-candidates`; record the PR and review evidence below. No merge,
+  `feat/m58-saved-candidates` in [PR #20](https://github.com/ThomasBury/azoic/pull/20).
+  Final-head Codex review and CI in that PR are the delivery authority. No merge,
   release or production deployment is requested.
 
 - **M57 ☑ — development versus final evaluation (phase 2)** completed locally
@@ -280,6 +281,15 @@ files on `feat/m58-saved-candidates`, validate staged scope/whitespace and commi
 the completed milestone. Full local acceptance is recorded above; no code has
 changed since that acceptance. Next: push, open the PR, request final-head Codex
 review and observe CI; fix any findings and repeat. No merge/release is included.
+
+Opened [PR #20](https://github.com/ThomasBury/azoic/pull/20), **Save fitted models
+and reuse them without training again**, with implementation commit `b2d73ed`
+(`feat: save fitted candidates for reuse without training`). Fresh Ruff and
+staged whitespace checks passed. The PR describes fitting versus saved-run
+behavior, pickle trust/environment limits, actual acceptance and deferred phases.
+This follow-up records delivery before requesting Codex review of its final head;
+the PR is the live record for that review and hosted CI. Next: wait, fix any
+findings and repeat review until clear. No merge/release is included.
 
 ## M57 — Development versus final evaluation ☑ — 2026-10-25
 
