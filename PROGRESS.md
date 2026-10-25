@@ -206,6 +206,16 @@ passed: **128 tests in 12.54s**. Ruff, Ty, formatting and whitespace passed.
 The preceding `8c3ea33` hosted CI passed all jobs. Full local acceptance and
 Codex/CI on the correction's final head remain the next delivery gate.
 
+The first correction (`f4bceb5`) passed all hosted jobs and fresh local
+`just check`: **1,441 tests, 4 skips, 2 expected failures** in **184.61s**.
+Codex then found the same coercion when fixed groups combine integer and float
+destinations. Reproduced it, then supplied object-typed category indexes during
+fixed fitting and manual mapping updates. Regressions cover integer/boolean
+groups with floats, cloned refits, explicit mapping updates and typed factor
+revisions. Connected preprocessing/revision/tariff checks passed **494 tests,
+2 skips** in **17.04s**; Ruff, Ty and formatting passed. Next: require fresh
+full local checks and final-head Codex/hosted CI before handoff.
+
 ## M59 — Controlled mapping and factor revisions ☑ — 2026-10-25
 
 - [x] Read Current focus, M58 checkpoint, PRD M59 and affected callers.

@@ -12,6 +12,7 @@ import pandas as pd
 import pytest
 import yaml
 from sklearn.base import clone
+from sklearn.pipeline import Pipeline
 from typer.testing import CliRunner
 
 from azoic import (
@@ -134,6 +135,40 @@ def test_fixed_typed_groups_and_distinct_missing_unseen():
     original = deepcopy(fitted.fixed)
     cloned = clone(fitted).fit(frame)
     assert cloned.mapping_ == fitted.mapping_ and fitted.fixed == original
+
+
+@pytest.mark.parametrize("first", [1, True])
+def test_fixed_mixed_numeric_groups_remain_typed_through_revision(first):
+    frame = pd.DataFrame({"code": ["a", "b"] * 20, "exposure": 1.0})
+    grouper = AutoGrouper(
+        cols=["code"],
+        fixed={
+            "code": {
+                "groups": [{"level": "a", "group": first}, {"level": "b", "group": 2.5}],
+                "missing": first,
+                "unseen": 2.5,
+            }
+        },
+    )
+    source = Pipeline(
+        [
+            ("grouper", clone(grouper)),
+            ("glm", RiskGLM(family="poisson", link="log", exposure_col="exposure")),
+        ]
+    ).fit(frame, np.where(frame.code == "a", 2.0, 4.0))
+    fitted = source.named_steps["grouper"]
+    for transformer in (fitted, clone(grouper).fit(frame)):
+        transformer.set_mapping(transformer.mapping_, missing={"code": first})
+        values = transformer.transform(frame).code.tolist()
+        assert type(values[0]) is type(first) and values[0] == first
+        assert type(values[1]) is float and values[1] == 2.5
+    revised = revise_tariff(
+        source,
+        [{"feature": "code", "level": first, "factor": 1.2, "reason": "typed group change"}],
+        recalibrate=False,
+    )
+    assert revised.tariff["categorical"]["code"][first] == 1.2
+    assert np.isfinite(revised.predict(frame)).all()
 
 
 def test_freezing_quantile_mapping_preserves_separate_missing_bin():

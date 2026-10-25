@@ -815,7 +815,7 @@ class AutoGrouper(TransformerMixin, BaseEstimator):
                 self.missing_[col] = missing
                 self.unseen_[col] = unseen
                 self.category_dtypes_[col] = pd.CategoricalDtype(
-                    categories,
+                    pd.Index(categories, dtype=object),
                     ordered=isinstance(series.dtype, pd.CategoricalDtype) and series.cat.ordered,
                 )
                 continue
@@ -1033,7 +1033,7 @@ class AutoGrouper(TransformerMixin, BaseEstimator):
             route = missing.get(col, self.other_label)
             categories = list(dict.fromkeys([*values.values(), route]))
             dtypes[col] = pd.CategoricalDtype(
-                categories, ordered=self.category_dtypes_[col].ordered
+                pd.Index(categories, dtype=object), ordered=self.category_dtypes_[col].ordered
             )
             routes[col] = route
         unseen_routes = {
