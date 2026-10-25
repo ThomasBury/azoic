@@ -137,7 +137,7 @@ def test_fixed_typed_groups_and_distinct_missing_unseen():
     assert cloned.mapping_ == fitted.mapping_ and fitted.fixed == original
 
 
-@pytest.mark.parametrize("first", [1, True])
+@pytest.mark.parametrize("first", [1, True, 2**53 + 1])
 def test_fixed_mixed_numeric_groups_remain_typed_through_revision(first):
     frame = pd.DataFrame({"code": ["a", "b"] * 20, "exposure": 1.0})
     grouper = AutoGrouper(
@@ -169,6 +169,25 @@ def test_fixed_mixed_numeric_groups_remain_typed_through_revision(first):
     )
     assert revised.tariff["categorical"]["code"][first] == 1.2
     assert np.isfinite(revised.predict(frame)).all()
+
+
+def test_fixed_groups_preserve_large_numeric_keys_and_destinations():
+    large = 2**53 + 1
+    frame = pd.DataFrame({"code": pd.Series([large, 2.5, None, "new"], dtype=object)})
+    grouper = AutoGrouper(
+        cols=["code"],
+        fixed={
+            "code": {
+                "groups": [{"level": large, "group": large}, {"level": 2.5, "group": 2.5}],
+                "missing": large,
+                "unseen": 2.5,
+            }
+        },
+    ).fit(frame)
+    with pytest.warns(UserWarning, match="unseen"):
+        values = grouper.transform(frame).code.tolist()
+    assert values == [large, 2.5, large, 2.5]
+    assert [type(value) for value in values] == [int, float, int, float]
 
 
 def test_freezing_quantile_mapping_preserves_separate_missing_bin():

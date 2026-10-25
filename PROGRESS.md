@@ -216,6 +216,16 @@ revisions. Connected preprocessing/revision/tariff checks passed **494 tests,
 2 skips** in **17.04s**; Ruff, Ty and formatting passed. Next: require fresh
 full local checks and final-head Codex/hosted CI before handoff.
 
+The second correction (`6e916c7`) passed all hosted jobs and full local checks:
+**1,443 tests, 4 skips, 2 expected failures** in **184.94s**. Codex then found
+precision loss while mapping a mixed numeric vocabulary containing an integer
+beyond exact float representation. Reproduced both dropped destinations and
+the related tariff lookup failure. Group transforms now use object-typed lookup
+keys/values; tariff factor lookup preserves original key types too. Regressions
+cover large integer keys/destinations, missing/unseen routing, fitting and revised
+scoring. **496 connected tests passed, 2 skips**, in **17.17s**; Ruff, Ty,
+formatting and whitespace passed. Next: full local checks and final-head review/CI.
+
 ## M59 — Controlled mapping and factor revisions ☑ — 2026-10-25
 
 - [x] Read Current focus, M58 checkpoint, PRD M59 and affected callers.

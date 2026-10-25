@@ -968,7 +968,11 @@ class AutoGrouper(TransformerMixin, BaseEstimator):
                 out[col] = (
                     out[col]
                     .astype(object)
-                    .map(mp)
+                    .map(
+                        pd.Series(
+                            list(mp.values()), index=pd.Index(list(mp), dtype=object), dtype=object
+                        )
+                    )
                     .mask(out[col].isna(), self.missing_[col])
                     .fillna(self.unseen_.get(col, self.missing_[col]))
                     .astype(self.category_dtypes_[col])

@@ -399,7 +399,9 @@ def apply_tariff(tariff: dict, X: pd.DataFrame) -> np.ndarray:
             raise ValueError(
                 f"apply_tariff: categorical factors {feat!r} must be positive and finite"
             )
-        factors = X[feat].map(lvl_factors)
+        factors = X[feat].map(
+            pd.Series(level_values, index=pd.Index(list(lvl_factors), dtype=object))
+        )
         if factors.isna().any():
             unknown = X.loc[factors.isna(), feat].drop_duplicates().tolist()
             raise ValueError(
