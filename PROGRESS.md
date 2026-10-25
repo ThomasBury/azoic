@@ -23,6 +23,8 @@ Legend: ☐ pending · ◐ in progress · ☑ done
 - Git delivery is authorized on `feat/m56-reliable-first-journey`, based on
   current `origin/main` at `bdce5a1`: stage, Conventional Commit, open a PR,
   wait for Codex bot review and address actionable findings until clear.
+  [PR #18](https://github.com/ThomasBury/azoic/pull/18) is open; its live
+  final-head review and CI results are the delivery authority.
 - Next action: run the hosted starter matrix, resolve Windows failures if any,
   and record results before closing M56. Require clear final-head Codex review
   and green CI before handoff. No merge, release or M57 implementation is included.
@@ -259,6 +261,16 @@ whitespace checks apply before committing. Next: commit, push, create the PR,
 record its URL and request Codex review; wait for review and hosted CI, including
 both Windows starter jobs. M56 remains ◐ pending those platform results.
 No merge, release or next milestone is authorized.
+
+Opened [PR #18](https://github.com/ThomasBury/azoic/pull/18) with implementation
+commit `a5d4106` (`fix: make the first modelling journey work with Azoic 0.5.0`).
+Its title and description explain the installed-package mismatch, the complete
+starter and file-based configuration, bounded error context, Linux/Windows
+matrix and actual local validation. Fresh Ruff and staged whitespace checks
+passed. This follow-up records the PR before requesting final-head Codex review.
+Next: wait for Codex and hosted CI, fix actionable findings and repeat until
+clear; observe both Windows starter results before closing M56. No merge or
+release is included.
 
 ## M55 — Final-run provenance and external evidence ☑ — 2026-10-25
 
