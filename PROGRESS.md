@@ -291,6 +291,16 @@ This follow-up records delivery before requesting Codex review of its final head
 the PR is the live record for that review and hosted CI. Next: wait, fix any
 findings and repeat review until clear. No merge/release is included.
 
+### MLflow handoff planning checkpoint — 2026-10-25
+
+At the user's request, PRD section 6 now records a pending MLflow follow-up:
+saved-candidate/evidence uploads, complete metadata and diagnostics, reproducible
+build references, invalid-metric status and conditional native model/dataset
+integration. Acceptance requires fresh-process retrieval/scoring from a local
+MLflow store without fitting or uploading portfolio frames by default. No
+implementation started; M58 stays complete and M59 remains the next milestone.
+Next: schedule this follow-up explicitly before implementing it.
+
 ## M57 — Development versus final evaluation ☑ — 2026-10-25
 
 - [x] Read Current focus, M56 completion, PRD M56–M62 and affected callers.

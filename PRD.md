@@ -270,6 +270,69 @@ M56 records observed Linux/Windows starter execution. Independent user sessions,
 million-row benchmarks and a real receiving engine remain pending evidence,
 not inferred from engineering tests.
 
+### Pending follow-up: complete MLflow candidate handoff
+
+Recorded 2026-10-25 after the M58 review. This is pending scope, not an
+implemented capability or a change to the M59–M62 delivery order. M58 completes
+local fitted-candidate persistence; its acceptance does not establish a complete
+MLflow handoff.
+
+Current `mlops.log_run` records experiment/model parameters, recorded runtime
+versions, effective tuning settings and finite metrics when explicitly called.
+It uploads only caller-supplied artifact paths. CLI fit/tune do not invoke it;
+saved candidates, full configuration, split membership, diagnostic tables and
+workbooks are not automatically uploaded. There is no native MLflow model,
+signature, input example or model/dataset-linked metric logging. Existing run
+tracking APIs remain valid; these are completeness gaps.
+
+Keep the follow-up in the existing optional `mlops` integration:
+
+- Provide an explicit logging path for the saved candidate and its Run without
+  fitting, relearning preprocessing or recalibrating. Retain artifact identity,
+  the data fingerprint and the association between the logged run and candidates.
+- Log complete machine-readable configuration, including `DatasetSpec`, portfolio
+  assumptions, selected tuning parameters, exact train/development-validation
+  positions and declared record IDs. Preserve recorded provenance; never infer
+  missing training metadata from the later logging environment.
+- Save complete calibration and protected-group tables, not only card previews.
+  Attach the model card and supplied comparison/report/workbook outputs when
+  available, identifying the candidate and rate scale they describe. Later
+  revision/final-evaluation outputs retain their M59–M61 scope and evidence labels.
+- Record the training source revision and a reproducible dependency/build
+  reference. Published `azoic==0.5.0` alone cannot recreate the unreleased M58
+  checkout. Runtime-version parameters do not replace installable model
+  dependencies or the exact Azoic build.
+- Preserve failed/undefined metric evidence with explicit status and reasons
+  when NaN/infinite values are omitted from numeric metrics. Correct the existing
+  claim that MLflow 3 universally rejects them: handling depends on the store.
+
+For MLflow-native model loading or serving, log each complete fitted pipeline
+through the supported model flavor, with an input/output signature, a suitable
+input example and reproducible dependencies. State that outputs are pure-premium
+rates. Link metrics to the appropriate logged model and training and development
+validation dataset metadata using supported MLflow APIs. Dataset lineage must
+retain Azoic's fingerprint and membership evidence. Make the supported-version
+decision explicit before using MLflow 3-only APIs: the current optional dependency
+floor is `mlflow>=2.14`. Automatic registry publication, deployment, remote-server
+setup and logging every tuning trial are outside this follow-up.
+
+Portfolio row frames remain excluded by default. IDs, category vocabularies,
+diagnostics, fitted state and input examples can disclose information; document
+what is uploaded and use a synthetic or suitably deidentified scoring example.
+Uploading a pickle as a generic artifact does not make it an MLflow model, and
+its trusted-source/matching-environment limits still apply.
+
+Acceptance: use a temporary local SQLite tracking store and artifact directory,
+without network services. Log ordinary and tuned candidates, download their
+artifacts and reproduce exact predictions in a fresh matching process with fit
+methods blocked. Reconcile configuration, split/ID membership, learned mappings,
+diagnostic tables and recorded metrics, including invalid-metric status. For the
+native-model route, load through MLflow and verify the signature, dependencies,
+model/dataset associations and agreement on boundary, missing and unseen inputs.
+Cover GLM, raw GBM and frequency-severity candidates using existing synthetic
+fixtures. Verify no portfolio frame is uploaded by default and errors leave the
+original candidate unchanged. Remote deployment remains separate evidence.
+
 ### Engineering depth and maintainability (M49–M55)
 
 The user-approved replacement plan runs one phase per implementation session in
