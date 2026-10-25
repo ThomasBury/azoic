@@ -9,6 +9,50 @@ permissions:
   contents: read
 
 jobs:
+  starter:
+    name: Starter / ${{ matrix.os }} / ${{ matrix.package }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        package: [release, checkout-wheel]
+    defaults:
+      run:
+        shell: bash
+    env:
+      OMP_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+      MPLBACKEND: Agg
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      - name: Build checkout wheel
+        if: matrix.package == 'checkout-wheel'
+        run: uv build --wheel --out-dir "$RUNNER_TEMP/starter-dist"
+      - name: Install in a fresh user project outside the checkout
+        run: |
+          uv init --python 3.12 "$RUNNER_TEMP/starter-project"
+          cp tests/smoke_starter.py "$RUNNER_TEMP/starter-project/"
+          cp -r docs "$RUNNER_TEMP/starter-docs"
+          cd "$RUNNER_TEMP/starter-project"
+          if [[ "${{ matrix.package }}" == release ]]; then
+            uv add azoic==0.5.0
+          else
+            wheel=(../starter-dist/*.whl)
+            uv add "${wheel[0]}"
+          fi
+          uv pip check
+          uv pip freeze
+      - name: Run documented starter, Python configuration and CLI
+        run: |
+          cd "$RUNNER_TEMP/starter-project"
+          uv run azoic --help
+          uv run python smoke_starter.py ../starter-docs
+
   validate:
     runs-on: ubuntu-latest
     steps:

@@ -1,5 +1,12 @@
 # Model choice and fitting
 
+!!! note "Unreleased checkout documentation"
+
+    This page describes the current source checkout; some APIs differ from the
+    published 0.5.0 package. For a release-compatible journey, start with the
+    [first model](../getting-started/first-model.md). See
+    [installation](../getting-started/installation.md) for the version boundary.
+
 Start with the model whose constraints match the decision, then ask whether a
 more flexible candidate improves held-out evidence enough to justify itself.
 

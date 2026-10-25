@@ -25,28 +25,56 @@ EXPOSURE_FLOOR = MIN_EXPOSURE * (1.0 - 1e-3)
 representations (freMTPL2 stores one-day policies ~163 ulps below 1/366)."""
 
 
+def _raise_for_rows(message: str, invalid: np.ndarray) -> None:
+    if invalid.any():
+        positions = np.flatnonzero(invalid)
+        raise ValueError(
+            f"{message}; {len(positions)} invalid rows; "
+            f"row positions (0-based, first 5): {positions[:5].tolist()}"
+        ) from None
+
+
 def _validate_outcomes(exposure, claim_amount, claim_count=None) -> None:
     """Validate portfolio rows, independently of schema and model-weight policies."""
-    exposure = np.asarray(exposure, dtype=float)
-    claim_amount = np.asarray(claim_amount, dtype=float)
-    arrays = [exposure, claim_amount]
+    outcomes = [("exposure", exposure), ("claim_amount", claim_amount)]
     if claim_count is not None:
-        claim_count = np.asarray(claim_count, dtype=float)
-        arrays.append(claim_count)
-    if any(values.ndim != 1 for values in arrays):
-        raise ValueError("portfolio outcomes must be one-dimensional")
+        outcomes.append(("claim_count", claim_count))
+    arrays, names = [], []
+    for role, values in outcomes:
+        name = f"{role} (column {getattr(values, 'name', role)!r})"
+        if np.ndim(values) != 1:
+            raise ValueError(f"portfolio outcomes must be one-dimensional: {name}")
+        try:
+            array = np.asarray(values, dtype=float)
+        except (TypeError, ValueError):
+            invalid = pd.to_numeric(pd.Series(values), errors="coerce").isna().to_numpy()
+            _raise_for_rows(f"{name} must contain only numeric finite values", invalid)
+            raise
+        arrays.append(array)
+        names.append(name)
     check_consistent_length(*arrays)
-    if not np.isfinite(exposure).all() or np.any(exposure <= 0):
-        raise ValueError("exposure must contain only positive finite values")
-    if np.any(exposure < EXPOSURE_FLOOR):
-        raise ValueError("exposure must be at least 1/366 (one day of exposure)")
-    if not np.isfinite(claim_amount).all() or np.any(claim_amount < 0):
-        raise ValueError("claim_amount must contain only non-negative finite values")
+    exposure, claim_amount = arrays[:2]
+    _raise_for_rows(
+        f"{names[0]} must contain only positive finite values",
+        ~np.isfinite(exposure) | (exposure <= 0),
+    )
+    _raise_for_rows(
+        f"{names[0]} must be at least 1/366 (one day of exposure)", exposure < EXPOSURE_FLOOR
+    )
+    _raise_for_rows(
+        f"{names[1]} must contain only non-negative finite values",
+        ~np.isfinite(claim_amount) | (claim_amount < 0),
+    )
     if claim_count is not None:
-        if not np.isfinite(claim_count).all() or np.any(claim_count < 0):
-            raise ValueError("claim_count must contain only non-negative finite values")
-        if np.any((claim_count == 0) != (claim_amount == 0)):
-            raise ValueError("claim_count and claim_amount rows must be zero or positive together")
+        claim_count = arrays[2]
+        _raise_for_rows(
+            f"{names[2]} must contain only non-negative finite values",
+            ~np.isfinite(claim_count) | (claim_count < 0),
+        )
+        _raise_for_rows(
+            f"{names[2]} and {names[1]} rows must be zero or positive together",
+            (claim_count == 0) != (claim_amount == 0),
+        )
 
 
 class DatasetSpec(BaseModel):

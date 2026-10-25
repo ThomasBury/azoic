@@ -1,5 +1,12 @@
 # freMTPL2 tutorial
 
+!!! note "Unreleased checkout documentation"
+
+    This page describes the current source checkout; some APIs differ from the
+    published 0.5.0 package. For a release-compatible journey, start with the
+    [first model](../getting-started/first-model.md). See
+    [installation](../getting-started/installation.md) for the version boundary.
+
 The tutorial series is the complete Azoic workflow as an executable Quarto
 book: the freMTPL2 chapters walk the public French motor third-party-liability
 portfolio from claims data to an exported multiplicative tariff, and later

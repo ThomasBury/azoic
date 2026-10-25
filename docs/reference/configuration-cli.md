@@ -1,5 +1,12 @@
 # Configuration and CLI reference
 
+!!! note "Unreleased checkout documentation"
+
+    This page describes the current source checkout; some APIs differ from the
+    published 0.5.0 package. For a release-compatible journey, start with the
+    [first model](../getting-started/first-model.md). See
+    [installation](../getting-started/installation.md) for the version boundary.
+
 Use this page when authoring an experiment file or automating a command. For a
 short runnable path, start with the
 [experiment configuration guide](../guide/experiment-configuration.md).

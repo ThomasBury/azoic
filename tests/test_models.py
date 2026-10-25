@@ -1025,3 +1025,18 @@ def test_m40_string_conversion_preserves_numeric_categories_and_missing_values()
     pd.testing.assert_series_equal(converted["numeric"], X["numeric"])
     pd.testing.assert_series_equal(converted["declared"], X["declared"])
     pd.testing.assert_frame_equal(X, original)
+
+
+@pytest.mark.parametrize("estimator", [RiskGLM, RiskGBM])
+@pytest.mark.parametrize("bad", [np.nan, np.inf, -1.0, 0.0, 0.001])
+def test_model_exposure_errors_include_source_positions(estimator, bad):
+    frame = pd.DataFrame(
+        {"risk": [1.0, 2.0, 3.0, 4.0], "duration": [1.0, bad, 1.0, bad]},
+        index=["private-id"] * 4,
+    )
+    with pytest.raises(ValueError) as error:
+        estimator(exposure_col="duration").fit(frame, np.ones(4))
+    message = str(error.value)
+    assert "'duration'" in message
+    assert "2 invalid rows; row positions (0-based, first 5): [1, 3]" in message
+    assert "private-id" not in message

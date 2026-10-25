@@ -218,6 +218,40 @@ declares each used param explicitly.
 
 Each is independently shippable. Done-when = acceptance check.
 
+### Experiment to production tariff (M56–M62)
+
+User-approved roadmap, recorded 2026-10-25 against `bdce5a1`. Implement one
+independently reviewable phase per session in the order below; do not reopen
+M49–M55. Guided Python and YAML share the existing configuration and artifact
+contracts. Keep flat modules, current dependencies and the default docs theme.
+
+| Milestone / phase | Scope and acceptance |
+| --- | --- |
+| M56 / 1 (in progress) | Reliable first journey: self-contained installed-package starter with explicit predictors, direct GLM, raw-feature GBM, understandable diagnostics and direct GLM export. Remove test-fixture/checkout/Quarto requirements from that journey. Distinguish released examples from checkout-only capabilities. Validate Python 3.12 on Linux and Windows; limit platform claims to observed evidence. Data errors identify columns, invalid-row counts and a bounded sample of row positions without weakening rules. Acceptance: fresh environments execute the documented journey without undocumented setup or repository imports. |
+| M57 / 2 (pending) | Freeze a final-test portfolio and row membership before experimentation; existing experiment/tuning functions consume development data and label comparisons as development evidence. Require explicit predictors in the guided path, excluding identifiers, incumbent rates and partition metadata. Add a read-only config/data check using existing rules, with no dropping, repair or caps. Record exposure unit, currency, observation period, claim valuation basis and externally applied caps/adjustments. Acceptance: final-test outcome changes cannot alter development mappings, tuning, calibration or predictions; errors remain actionable. |
+| M58 / 3 (pending) | Standard Python persistence for fitted candidates: run/config, preprocessing, estimators, versions, data identity and split membership together; training data excluded by default. CLI comparison/reporting/scoring/export accept saved runs without fitting; config commands remain explicitly training operations. Tuning saves selected config and fitted candidates. Trusted artifacts require a matching environment, not arbitrary cross-version portability. Acceptance: fresh-process prediction equality and proof saved-run comparison/export do not fit. |
+| M59 / 4 (pending) | Fixed per-feature bin/group mappings through Python and YAML, preserving interval closure, typed categories and explicit missing/unseen destinations. Mapping edits create a new candidate and refit its downstream model. Factor replacements record original values and reasons; fitted/revised tariffs stay distinct. Export revised tariffs with preprocessing through the existing validated workbook writer. Recalibration derives from revised predictions on the declared training population and records one multiplier. Acceptance: revise an age boundary, refit, override a factor, review and export matching rates; failed revisions preserve the original candidate/workbook. |
+| M60 / 5 (pending) | Tariff-review Markdown report plus complete CSV tables using existing plots. Align incumbent technical rates by unique record ID, rejecting missing/duplicate/mismatched membership. Compare incumbent/fitted/recalibrated/revised rates on identical observations with explicit scales. Include training O/P, validation metrics, portfolio/segment totals, exposure/available claims and temporal diagnostics; rate-change distribution, affected segments, mapping/factor changes, rationale and limitations. Zero incumbent rates have explicitly undefined percentage changes. Acceptance: a senior reviewer can explain changes, affected groups and selection without the notebook; no universal approval thresholds or unsupported superiority claims. |
+| M61 / 6 (pending) | Evaluate a frozen fit on supplied final-test data without fitting/recalibration. Separate explicit production refit freezes selected features/settings/approved mappings and fits parameters on the declared full portfolio, then reapplies recorded overrides and calibration policy. Keep a new artifact and comparison to its evaluated predecessor; holdout results stay with that earlier fit. Deliver the three-sheet workbook, versioned specification, fitted Python artifact, batch-scoring recipe and synthetic cases with expected unrounded rates. Specify feature types/units/mappings/closure/missing/unseen behavior/calibration/artifact identity and evaluation/refit evidence. Acceptance: Python scoring works and a receiving engine has unambiguous agreement cases; release/deployment/rollback ownership remains downstream. |
+| M62 / 7 (pending) | Measure roughly one million rows and tens of variables on declared hardware with thread settings, per-stage loading/preprocessing/fitting/diagnostic time and peak memory. Quantify avoided fitting first; cache transformations only if measured dominant and only for an identical training partition/configuration. Observe at least two medior actuaries, one senior and one ML engineer unaided; record failures, help, time and misunderstandings, then fix blockers. Acceptance: personas complete their handoffs unaided; speed claims reflect measurements, with no advance runtime promise. |
+
+Every phase retains existing gates and adds focused behavioral checks. Cover
+Python/YAML equivalence; ordinary/tuned artifact prediction and mapping fidelity;
+manual edits through refit/export; candidate-specific training calibration;
+matching report populations and reconciled totals; failed-write preservation;
+and refit labels that cannot inherit independent holdout claims. Quote cases
+cover exact/neighboring boundaries, missing/unknown inputs, typed levels and
+rate versus period-cost units. Update exports, typing, examples, CLI help,
+compatibility notes and project records with each interface change; apply the
+minor-release policy to breaks.
+
+This remains technical pure premium. Commercial loadings, taxes, discounts,
+retention, claims development and inflation assumptions stay explicit upstream
+or downstream choices. Defer a graphical workbench, generic deployment system,
+new model families, standalone workbook scorer and distributed execution.
+Independent user sessions, Windows execution, million-row benchmarks and a real
+receiving engine are pending evidence, not inferred from engineering tests.
+
 ### Engineering depth and maintainability (M49–M55)
 
 The user-approved replacement plan runs one phase per implementation session in

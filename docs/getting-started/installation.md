@@ -4,9 +4,18 @@ Azoic requires Python 3.12 or newer and pandas 3.0 or newer. pandas 2 is no
 longer supported. Use a virtual environment so its compiled `glum` and LightGBM
 dependencies do not conflict with another project.
 
+!!! note "Release and checkout documentation"
+
+    The [first model](first-model.md) and the opening file-based
+    [configuration example](../guide/experiment-configuration.md) target the
+    published **0.5.0** package. The other guides and generated API reference
+    describe the current **unreleased checkout**. Its package version still
+    reads 0.5.0; that string alone does not establish API equivalence with PyPI.
+    Use a checkout for sections labelled checkout-only.
+
 ## Tested environments
 
-The package metadata permits Python 3.12 or newer. Validation covers these Linux
+The package metadata permits Python 3.12 or newer. Checkout validation covers these Linux
 environments; it does not establish every Python, platform or dependency combination:
 
 | Environment | Validation |
@@ -14,6 +23,12 @@ environments; it does not establish every Python, platform or dependency combina
 | Python 3.12, locked all-extras/groups dependencies | Full tests, lint, source types and strict documentation build |
 | Python 3.12, low compatible direct runtime versions | Fresh wheel and sdist installs, model/preprocessing checks, imports/version and all five CLI command helps |
 | Python 3.14, current compatible runtime wheels | The same installed wheel/sdist checks; only Azoic's own sdist may be built from source |
+
+The installed starter has a Python 3.12 CI matrix for Linux and Windows, against
+both the PyPI release and a checkout-built wheel. Adding that job is not evidence
+that Windows passed: Windows execution remains pending until its CI result is
+recorded in `PROGRESS.md`. This does not claim full-suite Windows support or
+validate macOS. The existing broader Linux checks above remain separate.
 
 The checkout requires `glum>=3.4.1` and `typer>=0.27.1`, replacing the earlier
 `glum>=3.0` and `typer>=0.12` declarations. The low-version job reads direct
@@ -25,17 +40,22 @@ run the full suite or validate optional integrations on Python 3.14.
 
 ## Install from PyPI
 
-In an existing uv project, install the release and check the CLI:
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/) first.
+These project commands work in a Linux terminal and Windows PowerShell; no shell
+activation is needed. In a new directory:
 
 ```bash
+uv init --python 3.12 my-pricing-project
+cd my-pricing-project
 uv add azoic==0.5.0
 uv run python -c "import azoic; print(azoic.__version__)"
 uv run azoic --help
 ```
 
-For a new project, run `uv init --python 3.12 my-pricing-project` and
-`cd my-pricing-project` first. With pip, activate your virtual environment and
-run `python -m pip install azoic==0.5.0`.
+In an existing uv project, run just the last three commands. Then follow the
+[first model](first-model.md); you do not need Git, Quarto or contributor tools.
+With pip, activate a Python 3.12 virtual environment and run
+`python -m pip install azoic==0.5.0`, then `python first_model.py`.
 
 Registry extras use package notation, for example
 `uv add 'azoic[mlops,tune]==0.5.0'` or
@@ -63,7 +83,9 @@ but running the test suite is not required to fit your first model.
 ## Optional extras
 
 Core installation already includes pandas 3.0 or later, scikit-learn 1.6 or
-later, glum, LightGBM, matplotlib, and xlsx export. `RiskGLM`, `RiskGBM`, and `FrequencySeverityModel`
+later, glum, LightGBM, matplotlib, and xlsx export.
+
+**Checkout behavior:** `RiskGLM`, `RiskGBM`, and `FrequencySeverityModel`
 automatically convert pandas `str`, nullable `string`, and `object` predictors
 to categories. Numeric columns and declared category order/unused levels are
 preserved, and caller frames are unchanged. Add only the integration you use.
@@ -131,13 +153,22 @@ network-free. Automated tests and the First Model page remain network-free.
 | Symptom | Cause | Fix |
 |---|---|---|
 | Python version resolution fails | The interpreter is older than 3.12 | Install Python 3.12 and rerun `uv sync` |
-| `No matching distribution` for glum or LightGBM | Unsupported Python or platform wheel | Confirm a supported 64-bit Python 3.12 environment before compiling from source |
+| `No matching distribution` for glum or LightGBM | Unsupported Python or platform wheel | Try 64-bit Python 3.12 and check the dependency wheel availability for your platform |
 | `ModuleNotFoundError: mlflow`, `optuna`, `plotly`, or `s3fs` | The matching optional extra is absent | Install only the extra named in the error |
 | Tutorial MLflow reports an out-of-date database schema after an upgrade | The existing local SQLite store predates the installed MLflow version | Back up the database, then run `uv run mlflow db upgrade sqlite:///examples/_artifacts/fremtpl2/mlflow.db` from the checkout |
 | `quarto: command not found` | Quarto is external to the Python environment | Install Quarto and ensure `quarto` is on `PATH` |
 | `just: command not found` | `just` is a task runner, not a Python dependency | Run the underlying `uv run ...` command shown in `justfile` or install `just` |
 | LightGBM cannot load a shared library | A system OpenMP runtime is missing | Install the platform OpenMP runtime, then reinstall LightGBM |
 | S3 loading reports a missing filesystem implementation | The AWS extra is absent | Run `uv sync --extra aws` and retry the same path |
+
+For the first failed rule, checkout outcome-validation errors identify the
+configured column, invalid-row count and first five **zero-based positions**
+in the supplied frame. For example,
+`row positions ... [0, 8]` means inspect `portfolio.iloc[[0, 8]]`, even if the
+frame has duplicate or non-numeric index labels. Only positions are printed,
+not policy identifiers or claim values. Correct the source data deliberately;
+the loader does not drop, repair or cap it. Released 0.5.0 errors can be less
+detailed.
 
 [Fit a first model](first-model.md){ .md-button .md-button--primary }
 [Read the configuration reference](../reference/configuration-cli.md){ .md-button }

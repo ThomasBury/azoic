@@ -1,5 +1,12 @@
 # Data and preparation API
 
+!!! note "Unreleased checkout documentation"
+
+    This page describes the current source checkout; some APIs differ from the
+    published 0.5.0 package. For a release-compatible journey, start with the
+    [first model](../getting-started/first-model.md). See
+    [installation](../getting-started/installation.md) for the version boundary.
+
 Use these APIs to validate a Parquet data contract, review feature quality,
 learn inspectable mappings, and create leakage-safe split labels. The
 [data profiling and preprocessing guide](../guide/data-preprocessing.md)
