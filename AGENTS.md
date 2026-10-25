@@ -70,6 +70,16 @@ versions and effective tuning settings only at final assembly. Preserve explicit
 config/params, deep-copy snapshots and leave historical metadata unrecorded;
 logging uses separate provenance prefixes. This is audit evidence, not portable
 replay. Independent maintainer validation remains explicitly pending.
+M56–M62 record the experiment-to-production roadmap as new work, one phase per
+session. M56 starts with the installed 0.5.0 GLM/raw-GBM/export journey; its
+canonical code lives in the first-model Markdown page and its follow-on YAML in
+the configuration guide. Keep these starter blocks compatible with both PyPI
+0.5.0 and a checkout-built wheel until their release target changes explicitly.
+Other guide/API pages describe the unreleased checkout. Outcome errors retain
+column names, counts and at most five zero-based positions, never row values or
+index labels. Linux/Windows starter CI is separate from full Linux validation.
+M56 verified the starter on Linux and Windows Server 2025/Python 3.12; broader
+platform claims require corresponding observed checks.
 Current focus is the authority for the active/next milestone. Read
 `PREPROCESSING_FIX_PLAN.md` for the verified bugs, regression scope, PR delivery,
 and release reconciliation. The scope is mirrored in `PRD.md` section 6.
@@ -240,6 +250,12 @@ examples/_quarto.yml  # main path and optional recipes; only sources committed, 
   3.12 (`lowest-direct`, asserting exact glum/Typer floors), current compatible
   dependency wheels on Python 3.14. Only Azoic's own sdist may build from source;
   installs resolve without `uv.lock`, run `uv pip check` and print their versions.
+- The starter matrix in `ci.yml` runs the exact documented Python and YAML on
+  Python 3.12, Linux and Windows, against PyPI 0.5.0 and a checkout-built wheel.
+  It installs runtime dependencies only outside the checkout and verifies raw
+  GLM workbook rates and Python/config prediction agreement. M56 records the
+  successful Linux/Windows execution; this is starter coverage, not a full
+  Windows-suite claim.
 - `.github/workflows/docs.yml` renders the real-data tutorial and deploys Pages
   on main pushes with locked sync; the fixed `pages` concurrency group cancels
   superseded runs. Real-data rendering stays outside PR validation.

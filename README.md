@@ -20,6 +20,15 @@ uv add azoic==0.5.0
 uv run azoic --help
 ```
 
+For a new project, run `uv init --python 3.12 my-pricing-project` and
+`cd my-pricing-project` first. The [self-contained starter](docs/getting-started/first-model.md)
+compares a direct GLM and raw GBM and exports the fitted GLM using the released
+package. No checkout, test fixture or Quarto is required.
+
+The hosted site otherwise documents the unreleased checkout. Features such as
+`run_experiment(..., df=...)` are absent from 0.5.0; use the file-based starter
+configuration with that release. The checkout still reports version 0.5.0.
+
 The full suite runs on locked Python 3.12 dependencies. Separate installed-package
 checks cover low-version Python 3.12 dependencies and Python 3.14 wheels; see
 [tested environments](docs/getting-started/installation.md#tested-environments).

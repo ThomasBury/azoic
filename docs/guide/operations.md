@@ -1,5 +1,12 @@
 # Reporting, comparison, tuning, MLflow, and tariff operations
 
+!!! note "Unreleased checkout documentation"
+
+    This page describes the current source checkout; some APIs differ from the
+    published 0.5.0 package. For a release-compatible journey, start with the
+    [first model](../getting-started/first-model.md). See
+    [installation](../getting-started/installation.md) for the version boundary.
+
 Once candidates have a valid outer-test result, Azoic reuses the same `Run` for
 human-readable reports, comparison, optional experiment tracking, and tariff
 export.

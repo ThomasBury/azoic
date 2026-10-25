@@ -40,6 +40,78 @@ def test_outcomes_accept_optional_counts_and_one_day_tolerance() -> None:
         _validate_outcomes([1.0], [-1.0])
 
 
+@pytest.mark.parametrize(
+    ("column", "bad", "rule"),
+    [
+        ("duration", 0.0, "positive finite"),
+        ("duration", 0.001, "1/366"),
+        ("duration", np.inf, "positive finite"),
+        ("cost", -1.0, "non-negative finite"),
+        ("cost", np.nan, "non-negative finite"),
+        ("count", -1.0, "non-negative finite"),
+        ("count", 0.0, "zero or positive together"),
+        ("cost", "not-a-number", "numeric finite"),
+        ("count", pd.NA, "numeric finite"),
+    ],
+)
+def test_outcome_errors_identify_column_count_and_bounded_positions(column, bad, rule):
+    frame = pd.DataFrame({"duration": [1.0] * 12, "cost": [10.0] * 12, "count": [1.0] * 12})
+    frame[column] = frame[column].astype(object)
+    frame.loc[1:9, column] = bad
+    frame.index = ["private-policy-id"] * len(frame)
+    original = frame.copy(deep=True)
+    with pytest.raises(ValueError, match=rule) as error:
+        _validate_outcomes(frame.duration, frame.cost, frame["count"])
+    message = str(error.value)
+    assert f"column '{column}'" in message
+    assert "9 invalid rows; row positions (0-based, first 5): [1, 2, 3, 4, 5]" in message
+    assert "private-policy-id" not in message and "not-a-number" not in message
+    assert error.value.__suppress_context__
+    pd.testing.assert_frame_equal(frame, original)
+
+
+@pytest.mark.parametrize("entrypoint", ["workflow", "tune", "frequency-severity"])
+def test_outcome_error_context_survives_public_callers(entrypoint, monkeypatch):
+    from azoic.models import FrequencySeverityModel, RiskGLM
+    from azoic.workflow import ExperimentConfig, ModelSpec, run_experiment
+
+    def unexpected_fit(*args, **kwargs):
+        pytest.fail("invalid portfolio reached model fitting")
+
+    monkeypatch.setattr(RiskGLM, "fit", unexpected_fit)
+    frame = pd.DataFrame(
+        {
+            "risk": [1, 2, 3, 4],
+            "duration": [1.0] * 4,
+            "cost": [10.0, -1.0, 10.0, -1.0],
+            "count": [1.0] * 4,
+        },
+        index=[7, 7, 20, 20],
+    )
+    config = ExperimentConfig(
+        data_path="unused.parquet",
+        features=["risk"],
+        spec=DatasetSpec(target="cost", exposure="duration", claim_count="count"),
+        models={"glm": ModelSpec()},
+    )
+    with pytest.raises(ValueError, match="column 'cost'.*2 invalid rows.*\\[1, 3\\]"):
+        if entrypoint == "workflow":
+            run_experiment(config, df=frame)
+        elif entrypoint == "tune":
+            pytest.importorskip("optuna")
+            from azoic.tune import tune_experiment
+
+            tune_experiment(config, df=frame, n_trials=1)
+        else:
+            FrequencySeverityModel(
+                freq=RiskGLM(),
+                sev=RiskGLM(),
+                exposure_col="duration",
+                claim_amount_col="cost",
+                claim_count_col="count",
+            ).fit(frame)
+
+
 def test_dataset_spec_requires_target_and_exposure() -> None:
     spec = DatasetSpec(target="claim_amount", exposure="exposure", claim_count="claim_count")
     assert spec.target == "claim_amount"

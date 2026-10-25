@@ -293,3 +293,9 @@ def test_temporal_split_ordered_categorical_months_sort_chronologically() -> Non
     tr_cut, te_cut = temporal_split(unordered, "year", cutoff=2023)
     assert unordered.iloc[tr_cut]["year"].tolist() == [2023, 2023]
     assert unordered.iloc[te_cut]["year"].tolist() == [2024, 2024]
+
+
+def test_temporal_missing_values_report_positions_not_index_labels():
+    frame = pd.DataFrame({"year": [2020.0, np.nan, 2022.0, np.nan]}, index=[9, 9, 7, 7])
+    with pytest.raises(ValueError, match="'year'.*2 invalid rows.*\\[1, 3\\]"):
+        temporal_split(frame, "year", test_size=0.5)

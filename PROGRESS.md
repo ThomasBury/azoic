@@ -9,6 +9,23 @@ Legend: ☐ pending · ◐ in progress · ☑ done
 
 ## Current focus
 
+- **M56 ☑ — reliable first journey (phase 1)** passed local and hosted
+  acceptance on 2026-10-25, based on `main` at `bdce5a1` (merged M55).
+- [PR #18](https://github.com/ThomasBury/azoic/pull/18) is open on
+  `feat/m56-reliable-first-journey`. Git delivery and iterative Codex review are
+  authorized; final-head review and CI in that PR are the delivery authority.
+- Full local and hosted checks passed: 1,372 tests, strict docs, all four
+  installed wheel/sdist cases, and all four Linux/Windows starter cases against
+  PyPI 0.5.0 and the checkout wheel. Windows starter coverage is now observed.
+- Codex found no issues on `a4fc3b9`. The final documentation update records
+  platform evidence and M56 completion; repeat review/CI on its final head
+  before handoff. No merge or release is authorized.
+- M57–M62 are recorded in PRD section 6. The next implementation session starts
+  M57 (development versus final evaluation) after reading this checkpoint;
+  do not start it as part of M56 delivery.
+
+Previous focus (historical):
+
 - **M55 ☑ — final-run provenance and diagnostic repeat** completed locally
   2026-10-25. Full constructor settings/classes, runtime versions and effective
   tuning settings are copied once per final run and exposed in cards/logging.
@@ -128,6 +145,153 @@ Previous focus and delivery evidence:
 - **Branch:** `feat/m46-lightgbm-preprocessing`, based on the completed WP5 branch.
 - Previous delivery: WP5 [PR #8](https://github.com/ThomasBury/azoic/pull/8)
   merged into `main` at `a99df81`; this branch was fast-forwarded to that base.
+
+## M56 — Reliable first journey ☑ — 2026-10-25
+
+- [x] Read Current focus, M55 checkpoint, PRD scope, release API and callers.
+- [x] Record M56–M62 as a new roadmap; start only M56.
+- [x] Provide a self-contained released-package GLM/GBM/export starter.
+- [x] Replace the configuration guide's repository fixture and label unreleased features.
+- [x] Improve data errors without changing validation policies.
+- [x] Add exact-document starter checks for Linux/Windows Python 3.12.
+- [x] Run focused checks, fresh installed-package journey, full gate and strict docs.
+- [x] Observe successful Windows execution before closing M56.
+
+### M56 kickoff checkpoint
+
+Clean `main` at `bdce5a1`; M55 is merged, despite the historical handoff still
+mentioning its open PR. Traced first-model/install/configuration guides, release
+`v0.5.0`, current CI and distribution smoke, shared outcome validation and its
+workflow/tuning/FSM callers, direct model exposure handling and temporal split.
+Scope reaches docs/README, private error formatting and boundary callers,
+focused tests, starter smoke/CI and living project records. Loader rules,
+weights, fitted behavior and public interfaces remain intact. Next: implement
+the starter and bounded error details, then run source and installed checks.
+
+### M56 checkpoint — implementation and focused checks
+
+The canonical starter now names three predictors, fits a direct GLM and raw
+GBM, prints validation Gini/O/P/fixed-power deviance and calibration, saves its
+synthetic portfolio and exports the retained GLM without recalibration. The
+first file-based YAML/Python/CLI guide reuses that portfolio. Unreleased `df=`,
+model-level preprocessing and provenance are labelled; advanced guide/API pages
+point released-package users to the checked starter. No theme or dependency
+changes. Runtime errors retain source columns and first-five zero-based positions
+through workflow/tuning/FSM, direct numeric model weights and temporal splitting;
+row values/index labels are not included, and numerical validation rules remain.
+
+Added a runtime-only exact-Markdown smoke: independent workbook arithmetic,
+Python/YAML prediction equality and CLI fit, in fresh user projects outside the
+checkout. CI runs it for PyPI 0.5.0 and a checkout-built wheel on Linux/Windows
+Python 3.12. Workflow lint passed using installed actionlint 1.7.12. Locked
+all-extras/groups sync, Ruff and Ty passed. Focused data/model/split/workflow/tuning
+checks: **565 passed, 2 skipped, 2 expected failures**, 59.27s, with the existing
+strict-1D/array-API policies (`/tmp/azoic-m56-focused.log`).
+
+The first local installed check stopped before installation because an unrelated
+pre-existing `/tmp` uv workspace contains a missing member. A task-local excluded
+workspace boundary isolates the fresh projects without changing that external
+workspace. Installed checks are running; full gate and strict docs remain.
+Windows execution is still unobserved, so M56 remains ◐.
+
+### M56 local acceptance and handoff — 2026-10-25
+
+Implementation and all available local checks are green; M56 remains **◐**
+because its required Windows execution has not occurred.
+
+- Final `just check` exited **0**: Ruff, production Ty, **1,372 passed,
+  4 skipped, 2 expected failures**, 11 warnings, **202.80s**, Python 3.12.7.
+  Log: `/tmp/azoic-m56-check.log`. Existing array-API skips and strict-1D-target
+  expected failures retain their policies. The new 23 regressions cover bounded
+  row details, custom column names, duplicate/private index labels, no input
+  mutation, public workflow/tuning/FSM propagation before fit, direct numeric
+  model weights and missing split dates. Conversion exception context is
+  suppressed so invalid cell contents do not leak through a chained traceback.
+- PyPI **0.5.0** and the final checkout-built wheel both passed the exact
+  documented starter, file-based Python configuration and CLI fit in separate
+  runtime-only user projects outside the checkout. `uv pip check` passed.
+  Both used Linux x86_64, Python **3.12.7**, NumPy **2.5.4**, pandas **3.1.0**,
+  sklearn **1.9.1**, glum **3.4.1**, LightGBM **4.7.0**, Typer **0.27.3**.
+  Full dependency lists and initial/final logs:
+  `/tmp/azoic-m56-starter.log`, `/tmp/azoic-m56-final-wheel.log`.
+  Temporary project root: `/tmp/azoic-m56-starter-jcnnnx32`.
+- Smoke checks verify installed-package origins, 5,000 generated rows, disjoint
+  period boundary **18 < 19**, finite positive rates and diagnostics, Parquet
+  equality, both charts and the three-sheet workbook. Independent arithmetic
+  using only workbook cells matches raw GLM rates within `rtol=1e-10`; YAML
+  and direct-Python GLM/GBM predictions agree at that tolerance. GLM validation
+  Gini/O/P/deviance are approximately **0.127 / 1.242 / 133.746**; GBM values
+  **0.111 / 1.365 / 144.613**. These are example outputs, not model-selection
+  or performance claims. No recalibration or saved-candidate API was added.
+- Final strict `just docs-build` exited **0**, no issues, **1.08s**
+  (`/tmp/azoic-m56-final-docs.log`). All **92** changed-Markdown relative source
+  references resolve; rendered starter headings, highlighted code and the
+  diagnostics table are present. An initial HTML assertion expected a
+  `language-python` class, while Zensical emits `highlight`; inspecting the
+  output and checking its actual markup resolved the assertion without a theme
+  change. Actionlint **1.7.12**, changed-file formatting and whitespace pass.
+- No public signatures, package version, dependencies, lockfile, theme or
+  generated artifacts changed. Changes are uncommitted on `main`. M57–M62 are
+  recorded only; no prior milestone was reopened and no publication was made.
+
+Remaining acceptance: run **both Windows/Python 3.12 starter jobs** (PyPI release
+and checkout wheel) after separately authorized Git delivery; address any
+failure and record the actual results before marking M56 ☑. The Linux matrix
+will also run in hosted CI; local Linux results are recorded above. Do not
+claim broad Windows support from workflow syntax or from Linux execution.
+No Windows runtime is available in this session. Independent persona sessions,
+million-row timing and receiving-engine agreement remain later roadmap evidence;
+real-data Quarto rendering and release/publication were not run.
+
+### M56 Git delivery checkpoint — 2026-10-25
+
+The user authorized staging, a Conventional Commit, PR creation and iterative
+Codex bot review until actionable findings are resolved. Fetched `origin/main`;
+it matches `bdce5a1`. Isolated the 26 intended files on
+`feat/m56-reliable-first-journey`. Reviewed the runtime/error-boundary callers,
+regressions, exact-document smoke, CI and documentation diff; no further source
+correction. The same final source passed the full gate, strict docs and both
+installed Linux starter cases earlier in this session. Fresh Ruff and staged
+whitespace checks apply before committing. Next: commit, push, create the PR,
+record its URL and request Codex review; wait for review and hosted CI, including
+both Windows starter jobs. M56 remains ◐ pending those platform results.
+No merge, release or next milestone is authorized.
+
+Opened [PR #18](https://github.com/ThomasBury/azoic/pull/18) with implementation
+commit `a5d4106` (`fix: make the first modelling journey work with Azoic 0.5.0`).
+Its title and description explain the installed-package mismatch, the complete
+starter and file-based configuration, bounded error context, Linux/Windows
+matrix and actual local validation. Fresh Ruff and staged whitespace checks
+passed. This follow-up records the PR before requesting final-head Codex review.
+Next: wait for Codex and hosted CI, fix actionable findings and repeat until
+clear; observe both Windows starter results before closing M56. No merge or
+release is included.
+
+### M56 hosted acceptance and completion — 2026-10-25
+
+[CI run 40217406350](https://github.com/ThomasBury/azoic/actions/runs/40217406350)
+passed all **nine** jobs on `a4fc3b9`. Both published 0.5.0 and checkout-wheel
+starter cases passed on Ubuntu Linux/Python **3.12.15** and Windows Server
+2025/Python **3.12.10**. The Windows logs confirm installed-package origins,
+dependency compatibility, exact Markdown execution, independent workbook-rate
+agreement, Python/YAML prediction equality and CLI fit. They used NumPy 2.5.4,
+pandas 3.1.0, sklearn 1.9.1, glum 3.4.1, LightGBM 4.7.0 and Typer 0.27.3.
+Windows jobs: [wheel](https://github.com/ThomasBury/azoic/actions/runs/40217406350/job/121241445582)
+and [release](https://github.com/ThomasBury/azoic/actions/runs/40217406350/job/121241445748).
+This validates the starter on those Windows environments, not the full suite.
+
+The hosted locked Python 3.12 validation passed Ruff, Ty, **1,372 tests,
+4 skips, 2 expected failures** in **105.82s**, strict docs, distributions and
+both installed-artifact smokes. All four separate low-direct Python 3.12 and
+current-wheel Python 3.14 wheel/sdist cases passed too.
+
+[Codex review](https://github.com/ThomasBury/azoic/pull/18#issuecomment-6400940740)
+completed on `a4fc3b9` with no findings; there were no inline review threads.
+M56 acceptance is complete. The final documentation-only update records this
+observed platform evidence and marks M56 ☑ in PRD/PROGRESS. Strict docs and
+staged whitespace checks apply to that update, followed by another final-head
+Codex review and hosted CI. The PR remains the live authority for those final
+results; no next milestone, merge or release is included.
 
 ## M55 — Final-run provenance and external evidence ☑ — 2026-10-25
 

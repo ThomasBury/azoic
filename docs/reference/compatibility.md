@@ -1,5 +1,12 @@
 # Compatibility and component composition
 
+!!! note "Unreleased checkout documentation"
+
+    This page describes the current source checkout; some APIs differ from the
+    published 0.5.0 package. For a release-compatible journey, start with the
+    [first model](../getting-started/first-model.md). See
+    [installation](../getting-started/installation.md) for the version boundary.
+
 Use Python composition to supply a frequency or severity estimator. Workflow
 `ModelSpec.kind` still supports only its documented GLM, GBM and frequency–severity
 construction; arbitrary Python components are not serialized or tuned through YAML.
@@ -175,3 +182,10 @@ only store parameters so sklearn cloning and parameter search can inspect them.
 Move exception handling that surrounded construction to the fitting call. Valid
 controls, units and predictions are unchanged. This timing change requires a
 minor release under the policy above; M54 does not publish a release.
+
+Unreleased M56 adds column names, invalid-row counts and up to five zero-based
+row positions to portfolio outcome, numeric model-weight and missing-time errors.
+Validation policies and public function signatures are unchanged. The
+[first-model starter](../getting-started/first-model.md) and opening file-based
+configuration example are checked against both released 0.5.0 and the checkout;
+the in-memory `df=` workflow still requires the checkout.

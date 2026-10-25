@@ -34,7 +34,7 @@ from sklearn.utils.validation import (
     validate_data,
 )
 
-from azoic.data import EXPOSURE_FLOOR, _validate_outcomes
+from azoic.data import EXPOSURE_FLOOR, _raise_for_rows, _validate_outcomes
 
 __all__ = ["RiskGLM", "RiskGBM", "FrequencySeverityModel"]
 
@@ -90,17 +90,19 @@ def _pop_weight(X, exposure_col, sample_weight, *, require_exposure=False):
         if w.ndim != 1:
             raise ValueError("sample_weight must be one-dimensional")
         check_consistent_length(X, w)
-        if not np.isfinite(w).all():
-            raise ValueError("sample_weight must contain only finite values")
-        if np.any(w < 0):
-            raise ValueError("sample_weight must contain only non-negative values")
+        source = f" (column {exposure_col!r})" if from_column else ""
+        _raise_for_rows(f"sample_weight{source} must contain only finite values", ~np.isfinite(w))
+        _raise_for_rows(f"sample_weight{source} must contain only non-negative values", w < 0)
         if not w.any():
-            raise ValueError("All sample_weight entries are zero; cannot fit a weighted model.")
-        if require_exposure and from_column and np.any(w < EXPOSURE_FLOOR):
-            raise ValueError(
+            _raise_for_rows(
+                f"All sample_weight entries are zero{source}; cannot fit a weighted model.", w == 0
+            )
+        if require_exposure and from_column:
+            _raise_for_rows(
                 f"exposure_col {exposure_col!r} must be at least 1/366 (one day of "
                 "exposure); sub-day exposures inflate claim_amount/exposure rates "
-                "and destabilize GLM fits"
+                "and destabilize GLM fits",
+                w < EXPOSURE_FLOOR,
             )
     return features, w
 
@@ -587,10 +589,10 @@ class FrequencySeverityModel(RegressorMixin, BaseEstimator):
             raise ValueError("FrequencySeverityModel requires both `freq` and `sev`.")
         self._require_specials(X)
 
+        _validate_outcomes(X[self.exposure_col], X[self.claim_amount_col], X[self.claim_count_col])
         exposure = X[self.exposure_col].to_numpy(dtype=float)
         cc = X[self.claim_count_col].to_numpy(dtype=float)
         ca = X[self.claim_amount_col].to_numpy(dtype=float)
-        _validate_outcomes(exposure, ca, cc)
 
         if y is not None:
             y_rate = np.asarray(y, dtype=float)

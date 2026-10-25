@@ -4,6 +4,13 @@ Azoic is a scikit-learn-compatible toolkit for non-life technical tariff and
 pure-premium modelling. It keeps exposure weighting, actuarial diagnostics,
 reproducible comparisons, and multiplicative tariff export explicit.
 
+!!! note "Documentation version"
+
+    This site describes the unreleased checkout. The [first-model starter](getting-started/first-model.md)
+    and opening [configuration example](guide/experiment-configuration.md)
+    are also checked against the published Azoic 0.5.0 package. Follow those
+    for installed-package onboarding; later checkout features need a source install.
+
 !!! note "Scope"
 
     Azoic models claim frequency, severity, and pure premium. It is not a
@@ -26,7 +33,7 @@ reproducible comparisons, and multiplicative tariff export explicit.
 
     ---
 
-    Generate a local portfolio, fit a Tweedie GLM, and read held-out diagnostics.
+    Generate a portfolio, compare a GLM and raw GBM, and export the fitted GLM.
 
     [Run the first model](getting-started/first-model.md)
 

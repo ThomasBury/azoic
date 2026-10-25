@@ -6,6 +6,8 @@ import numpy as np
 import pandas as pd
 from numpy.typing import ArrayLike
 
+from azoic.data import _raise_for_rows
+
 __all__ = ["make_strata", "temporal_split"]
 
 
@@ -107,8 +109,7 @@ def temporal_split(
     if time_col not in df.columns:
         raise ValueError(f"`time_col` {time_col!r} not in df.columns")
     col = df[time_col]
-    if pd.isna(col).any():
-        raise ValueError(f"`time_col` {time_col!r} contains missing values")
+    _raise_for_rows(f"`time_col` {time_col!r} contains missing values", pd.isna(col).to_numpy())
     values = (
         pd.Series(col.to_numpy())
         if isinstance(col.dtype, pd.CategoricalDtype) and not col.dtype.ordered

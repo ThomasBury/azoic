@@ -4,34 +4,30 @@
 preprocessing, and named candidates in one YAML file. The CLI is a thin shell
 over the same Python workflow.
 
-## Start from the checkout example
+## Start with the installed package
 
-Generate the deterministic example data, then run both configured candidates:
-
-```bash
-uv run python -c "from tests.conftest import make_synthetic_portfolio as m; m(n=20000, seed=42).to_parquet('examples/synthetic.parquet')"
-uv run azoic fit --config examples/tweedie.yaml
-```
-
-The YAML keeps model names stable and lets the workflow derive the exposure
-column from `spec`:
+Run the [first model](../getting-started/first-model.md) to create
+`portfolio.parquet`, then save this as `experiment.yaml` beside that file.
+This first configuration and its Python/CLI commands work with **Azoic 0.5.0**;
+no checkout or test fixture is needed. The two commands below each train fresh
+candidates, so choose Python or CLI for a run.
 
 ```yaml
-name: tweedie-v1
-data_path: synthetic.parquet
+name: first-comparison
+data_path: portfolio.parquet
 
 spec:
   target: claim_amount
   exposure: exposure
   claim_count: claim_count
+  time_col: period
 
 features:
   - driver_age
   - vehicle_age
   - region
-  - vehicle_brand
 
-split: random
+split: temporal
 test_size: 0.2
 random_state: 42
 
@@ -42,6 +38,7 @@ models:
       family: tweedie
       link: log
       tweedie_power: 1.5
+      random_state: 42
   tweedie-gbm:
     kind: gbm
     params:
@@ -51,7 +48,15 @@ models:
       num_leaves: 15
       learning_rate: 0.05
       random_state: 42
+      n_jobs: 1
 ```
+
+```bash
+uv run azoic fit --config experiment.yaml --out model-card.md
+```
+
+The API and model card call the held-out split `test`; treat it as development
+validation while choosing models. A separate untouched final test is still needed.
 
 !!! warning "Specials stay out of `features:`"
 
@@ -63,26 +68,31 @@ models:
 
 `protected_cols` names review-only columns that remain available for held-out
 subgroup calibration but never enter preprocessing or model fitting. Declare it
-only when the data carries such a column -- the checkout example has none.
+only when the data carries such a column -- the starter has none.
 Provide review-ready categorical or pre-banded groups; Azoic preserves their
 labels and does not invent bins or pass/fail thresholds.
 
 Relative `data_path` values resolve from the config file's directory, not the
 process working directory, so a config and its data travel together. Here,
-`synthetic.parquet` beside `examples/tweedie.yaml` resolves to
-`examples/synthetic.parquet`.
+`portfolio.parquet` resolves beside `experiment.yaml`.
 
 ## Run it from Python
 
 ```python
 from azoic.workflow import ExperimentConfig, run_experiment
 
-config = ExperimentConfig.from_yaml("examples/tweedie.yaml")
+config = ExperimentConfig.from_yaml("experiment.yaml")
 run, estimators = run_experiment(config, return_estimators=True)
 
 for name, result in run.models.items():
     print(name, result.metrics)
 ```
+
+## Additional checkout capabilities
+
+The rest of this section describes the **unreleased checkout**, not the 0.5.0
+installation. In particular, 0.5.0 lacks `df=`, per-model `preprocess: false`,
+and the full constructor/runtime provenance fields below.
 
 A `Run` includes the validated config, data fingerprint, row counts, feature
 names, runtime versions, effective tuning settings when tuned, and per-model
@@ -114,12 +124,17 @@ models:
 ## Use task-oriented CLI commands
 
 ```bash
-azoic profile --data portfolio.parquet --target claim_amount --exposure exposure
-azoic fit --config experiment.yaml --out model-card.md
-azoic compare baseline.yaml candidate.yaml --out comparison.csv
-azoic tune --config experiment.yaml --trials 20 --out tuned-card.md
-azoic export-tariff --config experiment.yaml --model tweedie-glm --out tariff.xlsx
+uv run azoic profile --data portfolio.parquet --target claim_amount --exposure exposure
+uv run azoic fit --config experiment.yaml --out model-card.md
+uv run azoic compare baseline.yaml candidate.yaml --out comparison.csv
+uv run azoic tune --config experiment.yaml --trials 20 --out tuned-card.md
+uv run azoic export-tariff --config experiment.yaml --model tweedie-glm --out tariff.xlsx
 ```
+
+`fit`, `compare`, `tune` and `export-tariff` train from their configurations.
+They do not reuse the objects from an earlier command. In particular, exporting
+the original YAML after tuning uses its original settings. The starter's Python
+export retains the actual fitted GLM instead.
 
 !!! info "Extras stay task-specific"
 
