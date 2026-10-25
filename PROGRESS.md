@@ -19,8 +19,9 @@ Legend: ☐ pending · ◐ in progress · ☑ done
   component recipe remains explicitly pending. Passing local checks and the
   single-agent diagnostic repeat do not establish independent maintainability.
 - Git delivery is authorized on `feat/m55-run-provenance`, based on merged M54
-  at `2d63df7`. Open the PR, then obtain final-head Codex review and green CI;
-  address actionable findings and repeat until clear before handoff.
+  at `2d63df7`. [PR #17](https://github.com/ThomasBury/azoic/pull/17) is open;
+  its live status is the authority for final-head Codex review and CI. Address
+  actionable findings and repeat until clear before handoff.
   No further milestone, merge, release or portable replay work is included.
 
 Previous focus (historical):
@@ -277,6 +278,16 @@ Fresh Ruff and staged whitespace checks apply before committing. Next: commit,
 push, create the PR, record its URL, then request final-head Codex review and
 wait for review/CI. Independent maintainer validation remains pending; no merge
 or release is authorized.
+
+Opened [PR #17](https://github.com/ThomasBury/azoic/pull/17) with implementation
+commit `456c2d4` (`feat: record model settings and runtime versions in runs`).
+Its title and description explain the missing defaults/runtime/tuning evidence,
+the new snapshots and consumers, actual validation and pending independent
+maintainer reproduction. Fresh Ruff and staged whitespace checks passed.
+This follow-up records the PR before requesting Codex review on the final head.
+Next: wait for Codex and hosted CI, fix actionable findings and repeat review
+until clear. The PR holds final review/CI evidence; merging and release remain
+outside scope.
 
 ## M54 — Public typing and composition contract ☑ — 2026-10-25
 
