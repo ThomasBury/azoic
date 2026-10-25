@@ -21,7 +21,8 @@ Legend: ☐ pending · ◐ in progress · ☑ done
   and benchmarks/user observation have separate gates. MLflow follow-up is separate.
 - Git delivery is authorized on `feat/m59-controlled-revisions`, based on
   merged M58 at `286251e`: stage, commit, open a PR and address Codex review
-  findings until clear. The PR holds the live final-head review and CI status.
+  findings until clear. [PR #21](https://github.com/ThomasBury/azoic/pull/21)
+  holds the live final-head review and CI status.
   No later milestone, merge, release or production deployment is included.
 
 - **M58 ☑ — saved fitted candidates (phase 3)** completed locally on 2026-10-25.
@@ -190,9 +191,11 @@ review. Isolated all M59 changes on `feat/m59-controlled-revisions`, based on
 current `origin/main` at `286251e`. Fresh `just check` passed Ruff/Ty and
 **1,440 tests, 4 skips, 2 expected failures** in **241.67s**. Strict docs,
 `uv run ty check tests/typing_public_api.py` and staged whitespace checks passed.
-Next: push the commit, open the M59 PR and address actionable Codex findings;
-require review and hosted CI on its final head before handoff. No M60, merge or
-release is included.
+Implementation commit `e5b16a6` is pushed and
+[PR #21](https://github.com/ThomasBury/azoic/pull/21) is open. Codex review was
+requested. Next: address actionable findings and require review plus hosted CI
+on the final head before handoff. The PR is the live status authority. No M60,
+merge or release is included.
 
 ## M59 — Controlled mapping and factor revisions ☑ — 2026-10-25
 
