@@ -106,8 +106,17 @@ candidates on original fingerprinted development data, align incumbent technical
 rates by unique IDs and reject mixed basis/split membership. Require a new output
 directory and retain complete CSV evidence, explicit candidate scales and
 undefined percentage changes for every zero incumbent. Never fit or recalibrate
-while reporting. Selection/rationale are human declarations; final evaluation/refit
-and measured performance/user studies remain M61/M62.
+while reporting. Selection/rationale are human declarations. M61 separates `workflow.evaluate_final`
+from explicit `refit_production`: final evidence belongs to the selected frozen
+fit; production stores predecessor evidence and `_full` training metrics only.
+Require predeclared disjoint final IDs and exact original full-portfolio identity.
+Freeze native preprocessing, clone only model parameters, reapply latest typed
+factor overrides and recompute the recorded calibration policy once on full rows.
+`tariff.export_production` writes a new versioned specification/workbook/trusted
+artifact/recipe/agreement bundle without fitting or recalibration. All model kinds
+can evaluate/refit; the workbook bundle requires an exportable log-link GLM.
+Keep M62 measurements/persona observation and downstream engine/deployment evidence
+separate.
 Current focus is the authority for the active/next milestone. Read
 `PREPROCESSING_FIX_PLAN.md` for the verified bugs, regression scope, PR delivery,
 and release reconciliation. The scope is mirrored in `PRD.md` section 6.
@@ -272,7 +281,7 @@ examples/_quarto.yml  # main path and optional recipes; only sources committed, 
 - `.github/workflows/ci.yml` validates PRs and main pushes on Python 3.12 with
   read-only contents permissions: locked all-extras/groups sync, Ruff, Ty,
   pytest, strict docs, distributions, and installed wheel/sdist model,
-  preprocessing, persistence, version, and all-eight-command CLI smokes.
+  preprocessing, persistence, version, and all-eleven-command CLI smokes.
   Separate runtime-only jobs reuse that smoke outside the checkout for wheel
   and sdist: low compatible direct dependencies from wheel metadata on Python
   3.12 (`lowest-direct`, asserting exact glum/Typer floors), current compatible

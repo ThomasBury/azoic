@@ -25,7 +25,7 @@ calibration, and business plausibility together.
     data to `run_experiment` and `tune_experiment`. Their `test` fields mean
     development validation: repeated candidate comparisons can influence selection.
     Tuning uses an inner split of development training data. Final-test evaluation
-    of a frozen fit is a separate, still pending M61 operation.
+    of a frozen fit is a [separate saved-artifact operation](operations.md#freeze-final-evidence-then-refit-production-explicitly).
 
 !!! important "Pure-premium weighting"
 

@@ -9,6 +9,19 @@ Legend: ☐ pending · ◐ in progress · ☑ done
 
 ## Current focus
 
+- **M61 ☑ — frozen final evaluation and production handoff** completed locally
+  on 2026-10-26. Frozen final scoring, explicit full refit with approved mappings/
+  factors/calibration, and versioned workbook/artifact/specification/agreement
+  delivery passed. Final gate: Ruff/Ty and **1,502 tests** (4 skips, 2 expected
+  failures); strict docs and runtime-only wheel/sdist smokes passed.
+- **Next implementation: M62 — measured performance and observed user handoffs**,
+  in a new session. Keep its hardware/thread/stage-memory measurements and human
+  observation evidence separate from M61 engineering checks. Do not infer real
+  receiving-engine agreement, deployment readiness or user acceptance from these
+  tests. M61 Git delivery is authorized on `feat/m61-production-handoff`: stage,
+  commit, create the PR and address Codex bot findings until the latest head is
+  clear. Merge, release and deployment remain outside this delivery.
+
 - **M59 ☑ — controlled mapping and factor revisions** completed locally on
   2026-10-25. Fixed Python/YAML mappings, refitted candidates, audited factor
   revisions, training calibration and matching saved/workbook rates passed.
@@ -23,9 +36,8 @@ Legend: ☐ pending · ◐ in progress · ☑ done
 - M60 latest local gate: Ruff/Ty and **1,472 tests** passed (4 skips, 2 expected
   failures); strict docs passed. Initial runtime-only wheel/sdist smokes passed. The latter
   exercised fresh-process no-fit review on Python 3.13/pandas 3.1.0.
-- **Next implementation: M61 — frozen final evaluation and production handoff**,
-  in a new session. Keep M61/M62 separate: final evaluation/refit and measured
-  performance/user observation have different acceptance gates. MLflow remains separate.
+- Historical M60 handoff selected M61; its completion is recorded above.
+  M61/M62 remain separate acceptance phases. MLflow remains separate.
 - M60 Git delivery is authorized on `feat/m60-tariff-review`: stage, commit,
   create the PR and address Codex bot findings until the latest head is clear.
   [PR #22](https://github.com/ThomasBury/azoic/pull/22) holds the live review and
@@ -245,6 +257,160 @@ fixed-setting documentation and missing table entries; moved that paragraph
 under preprocessing and added the two setting rows. Next: strict docs and
 final-head Codex/CI for this documentation-only correction, then user handoff.
 M60, merge and release remain outside this delivery.
+
+## M61 — Frozen final evaluation and production handoff ☑ — 2026-10-26
+
+- [x] Read Current focus, PRD M61/M62 and latest M60 checkpoint; trace consumers.
+- [x] Assess grouping: keep M61 alone; M62 needs measured and human evidence.
+- [x] Add frozen final evaluation with explicit ID membership and no fitting/calibration.
+- [x] Add separate production refit preserving mappings/settings and recorded revisions.
+- [x] Add versioned specification, saved artifact, workbook and synthetic agreement cases.
+- [x] Update Python/CLI documentation, exports, typing and installed-package smoke.
+- [x] Run focused acceptance, full checks, strict docs and installed artifact verification.
+
+### M61 kickoff checkpoint — 2026-10-26
+
+Clean main. Reuse Run/persistence, frozen native preprocessing, RevisedTariff and
+atomic three-sheet export. Final evaluation binds the selected fitted state and
+reserved IDs; production refit creates new evidence and never inherits holdout
+metrics. Preserve source artifacts and reject existing handoff directories.
+No M62 work, new dependencies, model kinds, publication or deployment.
+Next: implement workflow boundaries and handoff, then focused behavioral checks.
+
+### M61 implementation checkpoint — 2026-10-26
+
+Implemented copied final evidence on the selected frozen Run with explicit
+reserved IDs, state/data fingerprints and no fitting/calibration. Explicit full
+refit verifies both source populations, freezes native transformations, clones
+model settings and reapplies latest factor overrides/calibration once. New
+production Run stores full-training metrics and separately attributed predecessor
+evidence. Added new-directory versioned specification, atomic three-sheet
+workbook, trusted artifact, synthetic agreement/rejection cases and batch recipe.
+Three thin saved-artifact CLI commands, evidence labels, lazy exports, downstream
+typing, runtime-only distribution smoke and public/project docs are updated.
+
+Initial 15 focused cases passed; expanded model-kind/CLI/export/type tests also
+passed (27 cases including public API checks). A save/load test caught NumPy
+buffer ownership changing raw serialization identity: one trusted roundtrip now
+normalizes state before hashing and the persisted GLM/GBM/FSM paths pass.
+Locked all-extras/groups sync passed without lock changes. Current focused suite
+also independently calculates JSON mapping/factor rates against workbook values.
+Next: finish focused acceptance, run full `just check`, strict docs, wheel/sdist
+runtime-only smokes, inspect the bundle and record actual results. M61 remains ◐
+until green. No M62, Git delivery, release or external engine claim.
+
+### M61 completion checkpoint — 2026-10-26
+
+Completed M61 alone. The PRD and Current focus explicitly keep M62 separate:
+performance measurements and observed persona sessions have different acceptance
+from frozen evidence, refitting and a reviewable engineering handoff.
+
+`workflow.evaluate_final` returns a copied Run with separate selected-candidate
+final evidence. It requires explicit reserved unique IDs disjoint from recorded
+development membership, preserves the original fit, and never fits or calibrates.
+Fitted/configuration/data fingerprints bind that evidence. Repeated evaluation
+of the returned evaluated Run is rejected; external reuse of older copies remains
+a procedural control, not something this library can police.
+
+`refit_production` is explicit fitting on exactly the original development/final
+union. Values, schema, source indices and saved membership must match; full row
+order may differ. Native preprocessing is copied/frozen and recorded in fixed
+constructor/config mappings; only the final estimator is cloned/fitted. Latest
+typed factor replacements and the recorded calibration policy are reapplied once
+on the full training population. Original candidate/evaluation remain unchanged.
+The production Run has `_full` training metrics, no own final_evaluation, and
+separately attributed predecessor final evidence/revision history plus same-full-
+population total and rate-change comparisons. All current model kinds pass.
+
+`tariff.export_production` requires an exportable log-link GLM and a fresh output
+directory. It writes `azoic.production.1` specification JSON, the existing three-
+sheet workbook, trusted `production.pkl`, synthetic agreement/rejection JSON and
+`score.py`. The specification records input kinds/declared units, ordered typed
+mappings, exact edges/closure/missing/unseen routing, factors/base/formula,
+calibration already included in the base, runtime/configuration, predecessor/
+refit evidence and file hashes. Caller-authored synthetic predictors seed exact/
+neighboring edges, known levels, missing/unseen and nonfinite input probes.
+The batch recipe verifies cases in a fresh process, or scores rates and optional
+period costs without rounding. Failed writes clean staging; existing bundles
+are preserved. This does not distill a GBM or validate a real receiving engine.
+
+Added `evaluate-final`, `refit-production`, `export-production` saved-artifact CLI
+commands, root exports, static consumers, all-eleven-command helps and installed
+runtime smoke coverage. Cards/tables distinguish final/development/production
+training evidence; development dashboard/review reject production artifacts.
+Revisions must precede final evaluation. Public guide/reference, PRD and AGENTS
+record the contracts. The released 0.5.0 starter and package version are unchanged;
+these are unreleased minor-release schema/API additions.
+
+Observed verification:
+
+- Locked all-extras/groups sync passed without lock changes.
+- Final `OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MPLBACKEND=Agg just check`
+  passed Ruff, Ty and **1,502 tests, 4 skips, 2 expected failures** in **241.16s**
+  on locked Python 3.12.7. This includes **30 M61 regressions**. Expected warnings
+  cover existing diagnostics/dependencies and deliberate unseen agreement probes.
+- Focused checks independently recompute final deviance/O-P/totals, frozen mapping
+  output and JSON/workbook factor arithmetic. They cover changed IDs, source
+  rows, basis, settings and fitted state; GLM/GBM/FSM save/load/refit; latest
+  replacements/calibration; no-fit evaluation/export; failed bundle writes and
+  existing-output safety. Separate Python processes refit an evaluated artifact
+  and export its persisted production artifact. Final connected production/
+  profile/reporting checks passed **56 tests in 28.20s** after explicit workbook
+  closure in the new test.
+- One intervening full run passed 1,501 tests but captured two warnings where the
+  existing dashboard test expected one. It passed in isolation and in the 56-test
+  connected run. Added diagnostic messages to that assertion; the subsequent
+  full run passed. The extra warning was not identified/reproduced; do not claim
+  a confirmed runtime bug or root-cause fix from that transient result.
+- Strict docs passed in **2.54s** before this execution-record completion; local
+  Markdown targets were checked. The exact new documented Python block executed
+  from saved index-free development/final partitions and produced the full bundle.
+  Its inspected specification contained correct closure/missing routes, explicit
+  calibration inclusion and predecessor evidence. Inspection artifacts are under
+  `/tmp/azoic-m61-recipe`, outside version control.
+- Final wheel and sdist built and passed runtime-only smokes outside the checkout
+  on **Python 3.13 / pandas 3.1.0**, including all eleven helps, fresh-process
+  agreement verification and batch rates/period-cost equality. Existing model,
+  preprocessing, composition, persistence, review and provenance checks also passed.
+  The existing uv/uv-build range warning did not prevent either distribution build.
+- Completion-record strict docs passed in **0.77s**; final Ruff, formatting of
+  all 19 checked source/test files and `git diff --check` passed. All **35 local
+  Markdown file targets** across the five changed guide/reference pages exist.
+- Logs: `/tmp/azoic-m61-{check-acceptance,connected-final,docs-final,docs-completion,build-final,wheel-final,sdist-final,recipe}.log`.
+
+Limits: trusted same-code/environment pickle only; fingerprints are integrity
+comparisons, not authentication or portable replay. Bundle IDs, learned levels
+and aggregate evidence require portfolio data controls. Preserve original saved
+partition values/dtypes/indices when assembling the full refit frame; the guide
+concatenates those exact frames. External selection/one-time use, actuarial
+approval, actual receiving-engine agreement, downstream release/deployment and
+rollback remain human/downstream responsibilities. No hosted CI, Windows/
+lowest-direct/Python 3.14 matrix, real-data tutorial, M62 benchmark/persona study,
+Git delivery or publication was performed in this session.
+
+Exact next action in a new session: read Current focus, PRD M62 and this
+checkpoint. Mark M62 ◐, declare hardware/thread settings and the roughly
+million-row/tens-of-variables workload, measure loading/preprocessing/fitting/
+diagnostics time and peak memory, and quantify avoided fitting before considering
+caching. Arrange/observe two medior actuaries, one senior and one ML engineer
+unaided; record actual failures, help, time and misunderstandings and fix blockers.
+Keep unobserved human/engine evidence pending. Do not publish/deploy automatically.
+
+### M61 Git delivery checkpoint — 2026-10-26
+
+The user authorized staging, Conventional Commits, a plain-English PR and
+iteration on Codex review until the latest head is clear. The completed M61
+change is isolated on `feat/m61-production-handoff`, based on merged M60 at
+`7d60256`; fetched origin/main matches that base. Existing local acceptance is
+1,502 passing tests (4 skips, 2 expected failures), Ruff/Ty, strict docs and
+runtime-only wheel/sdist smokes, with a final 56-test connected check. No runtime
+changes have followed those green checks. The intermittent warning-count event
+is documented in the completion checkpoint; its later reruns passed.
+
+Next: inspect the staged diff, commit/push, create the PR and wait for Codex
+review plus hosted CI. Fix actionable findings with focused regressions and
+applicable gates, then push and request another pass. Pending review is not
+approval. M62, merge, release and deployment are not part of this delivery.
 
 ## M60 — Tariff-review report and incumbent comparison ☑ — 2026-10-26
 

@@ -201,12 +201,24 @@ for cls in (AutoBinner, AutoGrouper):
     transformer.set_mapping(transformer.mapping_)
     pd.testing.assert_frame_equal(expected, transformer.transform(frame))
     assert transformer.missing_["x"] is not None
-for command in ("check", "profile", "fit", "compare", "report", "predict", "export-tariff", "tune"):
+for command in (
+    "check",
+    "profile",
+    "fit",
+    "compare",
+    "report",
+    "predict",
+    "export-tariff",
+    "tune",
+    "evaluate-final",
+    "refit-production",
+    "export-production",
+):
     result = subprocess.run(
         ["azoic", command, "--help"], check=True, capture_output=True, text=True
     )
     assert "Usage:" in result.stdout, command
-print("Preprocessing outcome/column contracts, constant bins, and all eight CLI helps passed")
+print("Preprocessing outcome/column contracts, constant bins, and all eleven CLI helps passed")
 
 # Public, runtime-only composition recipe; also published in the compatibility guide.
 X = pd.DataFrame(
@@ -273,3 +285,62 @@ assert run.tuning_settings == {}
 assert "runtime versions:" in model_card(run)
 assert "settings in `resolved_params`" in model_card(run)
 print("Final-run constructor/runtime provenance and compact card passed")
+
+
+# Final evaluation and production handoff work from installed runtime dependencies only.
+full = pd.DataFrame(
+    {
+        "id": np.arange(80),
+        "x": np.tile(np.arange(8), 10).astype(float),
+        "e": 1.0,
+        "amount": np.tile([0.0, 10.0, 20.0, 0.0, 40.0, 0.0, 60.0, 80.0], 10),
+    }
+)
+development, final = azoic.split_portfolio(full, list(range(60, 80)), id_col="id")
+config = azoic.ExperimentConfig(
+    data_path="not-read.parquet",
+    features=["x"],
+    spec=azoic.DatasetSpec(target="amount", exposure="e", id_col="id", currency="EUR"),
+    preprocessing=azoic.PreprocessingSpec(binner={"cols": ["x"], "max_bins": 3}),
+    models={"glm": azoic.ModelSpec(params={"family": "tweedie", "link": "log"})},
+)
+run, estimators = azoic.run_experiment(config, df=development, return_estimators=True)
+evaluated = azoic.evaluate_final(
+    run,
+    estimators,
+    model="glm",
+    df=final,
+    final_test_ids=final.id.tolist(),
+    rationale="Installed selection",
+)
+with tempfile.TemporaryDirectory() as folder:
+    directory = Path(folder)
+    azoic.save_run(evaluated, estimators, directory / "evaluated.pkl")
+    evaluated, estimators = azoic.load_run(directory / "evaluated.pkl")
+    production, fitted = azoic.refit_production(
+        evaluated, estimators, df=full, rationale="Installed refit"
+    )
+    assert not production.final_evaluation and production.n_test == 0
+    path = azoic.export_production(
+        production,
+        fitted,
+        cases=pd.DataFrame({"x": [1.0, 3.0]}),
+        feature_units={"x": "dimensionless"},
+        out=directory / "bundle",
+    )
+    subprocess.run([sys.executable, str(path.parent / "score.py")], cwd=directory, check=True)
+    full[["id", "x", "e"]].to_parquet(directory / "input.parquet")
+    subprocess.run(
+        [
+            sys.executable,
+            str(path.parent / "score.py"),
+            str(directory / "input.parquet"),
+            str(directory / "rates.csv"),
+        ],
+        cwd=directory,
+        check=True,
+    )
+    output = pd.read_csv(directory / "rates.csv")
+    np.testing.assert_allclose(output.predicted_rate, fitted["glm"].predict(full[["x"]]))
+    np.testing.assert_allclose(output.predicted_period_cost, output.predicted_rate * full.e)
+print("Frozen final evaluation, full refit and fresh-process production agreement/scoring passed")

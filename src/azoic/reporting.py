@@ -53,6 +53,16 @@ def _df_preview_md(df: pd.DataFrame, n: int = 12) -> str:
 
 
 def _metrics_block_md(name: str, kind: str, params: dict, metrics: dict) -> str:
+    if any(key.endswith("_full") for key in metrics):
+        return "\n".join(
+            [
+                f"### Model: `{name}` ({kind})",
+                "",
+                "Full training evidence only:",
+                "",
+                *[f"- {key}: {_fmt(value, 6)}" for key, value in metrics.items()],
+            ]
+        )
     lines = [
         f"### Model: `{name}` ({kind})",
         "",
@@ -78,7 +88,13 @@ def model_card(run: azoic.Run) -> str:
         "",
         "## Experiment",
         "",
-        "Development evidence only: `test` means development validation, not the final test.",
+        (
+            "Production refit: full training evidence only; "
+            "final-test results belong to the predecessor."
+            if run.production
+            else "Development evidence only: `test` means development validation, "
+            "not the final test."
+        ),
         "",
         f"- name: `{cfg.name}`",
         f"- data: `{cfg.data_path}`",
@@ -89,6 +105,35 @@ def model_card(run: azoic.Run) -> str:
         f"- features ({len(run.feature_names)}): " + ", ".join(f"`{c}`" for c in run.feature_names),
         "",
     ]
+    if run.final_evaluation:
+        evaluation = run.final_evaluation
+        lines.extend(
+            [
+                "## Frozen final evaluation",
+                "",
+                f"- selected: `{evaluation['model']}`; {evaluation['rationale']}",
+                f"- fitted identity: `{evaluation['fitted_fingerprint']}`",
+                f"- final data fingerprint: `{evaluation['data_fingerprint']}`",
+                *[
+                    f"- final {key}: {_fmt(value, 6)}"
+                    for key, value in evaluation["metrics"].items()
+                ],
+                "",
+            ]
+        )
+    if run.production:
+        lines.extend(
+            [
+                "## Production lineage",
+                "",
+                f"- rationale: {run.production['rationale']}",
+                "- predecessor fitted identity: "
+                f"`{run.production['predecessor_fitted_fingerprint']}`",
+                f"- mapping policy: {run.production['mapping_policy']}",
+                f"- calibration policy: {run.production['calibration_policy']}",
+                "",
+            ]
+        )
     if cfg.spec.protected_cols:
         lines.insert(
             -1,
@@ -146,7 +191,11 @@ def model_card(run: azoic.Run) -> str:
         else:
             lines.append("- constructors: unrecorded")
         lines.append("")
-        lines.append("#### Calibration table (test, first 12 rows)")
+        lines.append(
+            "#### Calibration table (full training, first 12 rows)"
+            if run.production
+            else "#### Calibration table (test, first 12 rows)"
+        )
         lines.append("")
         lines.append(_df_preview_md(res.calibration_table))
         lines.append("")
@@ -172,6 +221,7 @@ def comparison_table(runs: Iterable[azoic.Run]) -> pd.DataFrame:
     runs = list(runs)
     contexts = [
         (
+            bool(run.production),
             run.data_fingerprint,
             run.config.spec.target,
             run.config.spec.exposure,
@@ -203,7 +253,9 @@ def comparison_table(runs: Iterable[azoic.Run]) -> pd.DataFrame:
             "config": run.config.name,
             "model": name,
             "kind": result.kind,
-            "evidence": "development (revised tariff)" if result.revision else "development",
+            "evidence": "production_refit (full training)"
+            if run.production
+            else ("development (revised tariff)" if result.revision else "development"),
             **result.metrics,
         }
         for run in runs
@@ -233,6 +285,9 @@ def comparison_dashboard(runs: Iterable[azoic.Run]) -> str:
             "comparison_dashboard requires the `plot` extra (`uv sync --extra plot`)"
         ) from error
 
+    runs = list(runs)
+    if any(run.production for run in runs):
+        raise ValueError("production refits have full-training metrics; use comparison_table")
     table = comparison_table(runs)
     labels = table["config"].astype(str) + " / " + table["model"].astype(str)
     labels.loc[table["evidence"] == "development (revised tariff)"] += " (revised)"
@@ -348,6 +403,8 @@ def tariff_review(
     out = Path(out)
     if out.exists():
         raise FileExistsError(f"review output already exists: {out}")
+    if any(run.production or run.final_evaluation for run, _ in runs.values()):
+        raise ValueError("tariff review requires development candidates before final evaluation")
     reference = next(iter(runs.values()))[0]
     spec = reference.config.spec
     id_col = spec.id_col

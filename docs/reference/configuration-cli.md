@@ -547,3 +547,19 @@ scale factor later, label those adjusted diagnostics separately.
   supply harmless placeholders and drop them before the final estimator.
 
 ::: azoic.cli
+
+## Final evaluation and production commands
+
+`evaluate-final --run --model --data --membership --rationale --out` scores the
+selected frozen fit on the reserved portfolio without fitting or calibration.
+The membership JSON contains a `final_test` list saved before experimentation.
+`refit-production --run --data --rationale --out` is a separate fitting operation:
+it freezes preprocessing and refits selected settings on the original full
+portfolio, then reapplies approved factors and calibration policy.
+`export-production --run --cases --units --out` writes a new production GLM
+handoff directory without fitting, distilling or recalibrating.
+
+The new saved outputs and bundle directories must not already exist. Input and
+write failures produce parameter errors. These commands take saved artifacts,
+not configuration YAML; training configs remain the development fit/tune path.
+See the [complete recipe and file contracts](../guide/operations.md#freeze-final-evidence-then-refit-production-explicitly).

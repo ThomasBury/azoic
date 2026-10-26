@@ -235,7 +235,7 @@ def test_comparison_dashboard_preserves_mixed_context_rows_and_warns_once(tmp_pa
     )
     with pytest.warns(UserWarning, match="evaluation context") as caught:
         html = comparison_dashboard(iter([baseline, candidate]))
-    assert len(caught) == 1
+    assert len(caught) == 1, [(type(item.message).__name__, str(item.message)) for item in caught]
     assert "smoke" in html and "candidate" in html
 
 

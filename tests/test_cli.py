@@ -650,9 +650,21 @@ def test_cli_tune_options_defer_to_yaml_and_override_when_supplied(
     assert calls[2] == (None, None, None)
 
 
-def test_cli_help_lists_eight_commands() -> None:
+def test_cli_help_lists_commands() -> None:
     # `tune` is always registered (optuna is imported lazily inside the command
     # body), so --help lists it whether or not the tune extra is installed.
     result = runner.invoke(app, ["--help"])
-    for cmd in ("check", "profile", "fit", "compare", "report", "predict", "export-tariff", "tune"):
+    for cmd in (
+        "check",
+        "profile",
+        "fit",
+        "compare",
+        "report",
+        "predict",
+        "export-tariff",
+        "tune",
+        "evaluate-final",
+        "refit-production",
+        "export-production",
+    ):
         assert cmd in result.output

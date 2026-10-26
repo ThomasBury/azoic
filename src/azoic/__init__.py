@@ -51,6 +51,7 @@ if TYPE_CHECKING:
     from .tariff import RevisedTariff as RevisedTariff
     from .tariff import apply_tariff as apply_tariff
     from .tariff import distill_gbm as distill_gbm
+    from .tariff import export_production as export_production
     from .tariff import export_tariff as export_tariff
     from .tariff import extract_tariff as extract_tariff
     from .tariff import recalibrate_for_total as recalibrate_for_total
@@ -70,7 +71,9 @@ if TYPE_CHECKING:
     from .workflow import Run as Run
     from .workflow import TuningSpec as TuningSpec
     from .workflow import check_experiment as check_experiment
+    from .workflow import evaluate_final as evaluate_final
     from .workflow import load_run as load_run
+    from .workflow import refit_production as refit_production
     from .workflow import revise_run as revise_run
     from .workflow import run_experiment as run_experiment
     from .workflow import save_run as save_run
@@ -128,10 +131,13 @@ _EXPORTS = {
             "save_run",
             "load_run",
             "revise_run",
+            "evaluate_final",
+            "refit_production",
         ),
         "tariff": (
             "distill_gbm",
             "export_tariff",
+            "export_production",
             "extract_tariff",
             "apply_tariff",
             "recalibrate_for_total",

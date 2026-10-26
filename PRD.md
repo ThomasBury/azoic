@@ -232,7 +232,7 @@ contracts. Keep flat modules, current dependencies and the default docs theme.
 | M58 / 3 (completed locally) | Standard Python persistence for fitted candidates: run/config, preprocessing, estimators, versions, data identity and split membership together; training data excluded by default. CLI comparison/reporting/scoring/export accept saved runs without fitting; config commands remain explicitly training operations. Tuning saves selected config and fitted candidates. Trusted artifacts require a matching environment, not arbitrary cross-version portability. Acceptance: fresh-process prediction equality and proof saved-run comparison/export do not fit. |
 | M59 / 4 (completed locally) | Fixed per-feature bin/group mappings through Python and YAML, preserving interval closure, typed categories and explicit missing/unseen destinations. Mapping edits create a new candidate and refit its downstream model. Factor replacements record original values and reasons; fitted/revised tariffs stay distinct. Export revised tariffs with preprocessing through the existing validated workbook writer. Recalibration derives from revised predictions on the declared training population and records one multiplier. Acceptance: revise an age boundary, refit, override a factor, review and export matching rates; failed revisions preserve the original candidate/workbook. |
 | M60 / 5 (completed locally) | Tariff-review Markdown report plus complete CSV tables using existing plots. Align incumbent technical rates by unique record ID, rejecting missing/duplicate/mismatched membership. Compare incumbent/fitted/recalibrated/revised rates on identical observations with explicit scales. Include training O/P, validation metrics, portfolio/segment totals, exposure/available claims and temporal diagnostics; rate-change distribution, affected segments, mapping/factor changes, rationale and limitations. Zero incumbent rates have explicitly undefined percentage changes. Acceptance: a senior reviewer can explain changes, affected groups and selection without the notebook; no universal approval thresholds or unsupported superiority claims. |
-| M61 / 6 (pending) | Evaluate a frozen fit on supplied final-test data without fitting/recalibration. Separate explicit production refit freezes selected features/settings/approved mappings and fits parameters on the declared full portfolio, then reapplies recorded overrides and calibration policy. Keep a new artifact and comparison to its evaluated predecessor; holdout results stay with that earlier fit. Deliver the three-sheet workbook, versioned specification, fitted Python artifact, batch-scoring recipe and synthetic cases with expected unrounded rates. Specify feature types/units/mappings/closure/missing/unseen behavior/calibration/artifact identity and evaluation/refit evidence. Acceptance: Python scoring works and a receiving engine has unambiguous agreement cases; release/deployment/rollback ownership remains downstream. |
+| M61 / 6 (completed locally) | Evaluate a frozen fit on supplied final-test data without fitting/recalibration. Separate explicit production refit freezes selected features/settings/approved mappings and fits parameters on the declared full portfolio, then reapplies recorded overrides and calibration policy. Keep a new artifact and comparison to its evaluated predecessor; holdout results stay with that earlier fit. Deliver the three-sheet workbook, versioned specification, fitted Python artifact, batch-scoring recipe and synthetic cases with expected unrounded rates. Specify feature types/units/mappings/closure/missing/unseen behavior/calibration/artifact identity and evaluation/refit evidence. Acceptance: Python scoring works and a receiving engine has unambiguous agreement cases; release/deployment/rollback ownership remains downstream. |
 | M62 / 7 (pending) | Measure roughly one million rows and tens of variables on declared hardware with thread settings, per-stage loading/preprocessing/fitting/diagnostic time and peak memory. Quantify avoided fitting first; cache transformations only if measured dominant and only for an identical training partition/configuration. Observe at least two medior actuaries, one senior and one ML engineer unaided; record failures, help, time and misunderstandings, then fix blockers. Acceptance: personas complete their handoffs unaided; speed claims reflect measurements, with no advance runtime promise. |
 
 M57 implementation uses `data.split_portfolio` with predeclared final-test IDs
@@ -250,7 +250,8 @@ recalibration requires the original fingerprint-matched development frame and
 uses recorded training positions; saved export rejects student distillation.
 Only trusted artifacts in the matching code/environment are supported. Exact
 recorded version checks occur after unpickling and are not a security boundary.
-Final evaluation/refit remain M61 work; M59 revisions and M60 review are separate.
+M58 does not evaluate final portfolios or refit production; M61 supplies those
+separate operations below. M59 revisions and M60 review remain distinct.
 
 M59 implementation adds per-feature transformer `fixed` specifications: numeric
 edges/closure/missing bin, and typed categorical level/group records with explicit
@@ -274,6 +275,20 @@ and rationale are declared by the author; reporting never fits or recalibrates.
 Scales use recorded revision/calibration state, zero incumbent percentage changes
 are undefined and existing compact cards/comparisons remain unchanged. Raw segment
 levels can make large bundles; M62 measurement remains separate.
+
+M61 implements `workflow.evaluate_final` and `refit_production` as separate
+operations on saved Run/fitted-estimator pairs. Final evidence binds the selected
+fitted state, explicit reserved membership and data identity without fitting or
+calibration. Production refit freezes native transformations, clones final model
+settings and reapplies latest typed overrides/calibration policy on exactly the
+original development/final-test union. Its own metrics are full-training only;
+predecessor final evidence remains separately attributed. `tariff.export_production`
+creates a new `azoic.production.1` specification, existing three-sheet workbook,
+trusted fitted artifact, batch recipe and synthetic agreement cases with explicit
+units and typed mappings. Evaluation/refit cover current model kinds; the workbook
+handoff requires an exportable log-link GLM. CLI commands consume saved artifacts.
+Caller-authored synthetic inputs seed boundary/missing/unseen/rejection cases;
+external engine agreement, deployment and M62 measurements remain separate.
 
 Every phase retains existing gates and adds focused behavioral checks. Cover
 Python/YAML equivalence; ordinary/tuned artifact prediction and mapping fidelity;
