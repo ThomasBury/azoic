@@ -115,6 +115,8 @@ with tempfile.TemporaryDirectory() as folder:
         ],
     )
     azoic.save_run(revised_run, revised_models, directory / "revised.pkl")
+    development.to_parquet(directory / "development.parquet")
+    development[["id"]].assign(old_rate=10.0).iloc[::-1].to_parquet(directory / "incumbent.parquet")
     development[["id", "x"]].to_parquet(directory / "predictors.parquet")
     expected = estimators["glm"].predict(development[["x"]])
     revised_expected = revised_models["glm"].predict(development[["x"]])
@@ -143,6 +145,10 @@ for command in (
     ['export-tariff', '--run', 'run.pkl', '--model', 'glm', '--no-recalibrate',
      '--out', 'tariff.xlsx'],
     ['report', '--run', 'revised.pkl'],
+    ['report', '--review', '--run', 'run.pkl', '--run', 'revised.pkl',
+     '--data', 'development.parquet', '--incumbent', 'incumbent.parquet',
+     '--incumbent-rate', 'old_rate', '--selected', 'revised/glm',
+     '--rationale', 'Synthetic installed review', '--out', 'review'],
     ['export-tariff', '--run', 'revised.pkl', '--model', 'glm', '--no-recalibrate',
      '--out', 'revised.xlsx'],
 ):
@@ -150,6 +156,10 @@ for command in (
     assert result.exit_code == 0, (result.output, result.exception)
 """
     subprocess.run([sys.executable, "-c", code], cwd=directory, check=True)
+    evidence = pd.read_csv(directory / "review" / "records.csv")
+    for label, rates in (("run/glm", expected), ("revised/glm", revised_expected)):
+        np.testing.assert_allclose(evidence.loc[evidence.candidate == label, "rate"], rates)
+    assert (directory / "review" / "review.md").exists()
     np.testing.assert_array_equal(np.load(directory / "rates.npy"), expected)
     np.testing.assert_array_equal(np.load(directory / "revised-rates.npy"), revised_expected)
 print("Saved-run persistence, fresh-process equality and no-fit CLI consumers passed")

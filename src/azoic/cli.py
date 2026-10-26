@@ -29,7 +29,7 @@ import yaml
 
 from azoic.data import DatasetSpec, load_data
 from azoic.profile import profile_features, screen_features
-from azoic.reporting import comparison_table, model_card
+from azoic.reporting import comparison_table, model_card, tariff_review
 from azoic.tariff import RevisedTariff
 from azoic.tariff import distill_gbm as _distill_gbm
 from azoic.tariff import export_tariff as _export_tariff
@@ -145,11 +145,64 @@ def compare(
 
 @app.command()
 def report(
-    saved_run: Path = typer.Option(..., "--run", help="Trusted saved run (pickle)."),
-    out: Path | None = typer.Option(None, "--out", help="Write Markdown model card here."),
+    saved_runs: list[Path] = typer.Option(..., "--run", help="Trusted saved runs (repeatable)."),
+    out: Path | None = typer.Option(None, "--out", help="Card file, or new review directory."),
+    review: bool = typer.Option(
+        False, "--review", help="Write full tariff review with CSVs/plots."
+    ),
+    data: Path | None = typer.Option(
+        None, "--data", help="Original development Parquet for review."
+    ),
+    incumbent: Path | None = typer.Option(None, "--incumbent", help="ID/rate Parquet for review."),
+    incumbent_rate: str | None = typer.Option(
+        None, "--incumbent-rate", help="Technical rate column."
+    ),
+    selected: str | None = typer.Option(
+        None, "--selected", help="Selected file-stem/model or incumbent."
+    ),
+    rationale: str | None = typer.Option(None, "--rationale", help="Human selection rationale."),
+    limitations: list[str] | None = typer.Option(
+        None, "--limitation", help="Review limits; repeatable."
+    ),
+    segments: list[str] | None = typer.Option(
+        None, "--segment", help="Raw segment columns; repeatable."
+    ),
 ) -> None:
-    """Report stored development diagnostics without loading data or fitting."""
-    run, _ = load_run(saved_run)
+    """Report frozen development candidates without fitting or recalibrating."""
+    if review:
+        if any(
+            value is None for value in (out, data, incumbent, incumbent_rate, selected, rationale)
+        ):
+            raise typer.BadParameter(
+                "--review requires --out, --data, --incumbent, --incumbent-rate, "
+                "--selected and --rationale"
+            )
+        if len({path.stem for path in saved_runs}) != len(saved_runs):
+            raise typer.BadParameter("review run file stems must be unique")
+        assert out is not None and data is not None and incumbent is not None
+        assert incumbent_rate is not None and selected is not None and rationale is not None
+        try:
+            path = tariff_review(
+                {path.stem: load_run(path) for path in saved_runs},
+                df=pd.read_parquet(data),
+                incumbent=pd.read_parquet(incumbent),
+                incumbent_rate=incumbent_rate,
+                out=out,
+                selected=selected,
+                rationale=rationale,
+                limitations=limitations or (),
+                segments=segments or (),
+            )
+        except (ValueError, FileExistsError) as error:
+            raise typer.BadParameter(str(error)) from None
+        typer.echo(f"Wrote tariff review to {path}")
+        return
+    if len(saved_runs) != 1 or any(
+        value is not None
+        for value in (data, incumbent, incumbent_rate, selected, rationale, limitations, segments)
+    ):
+        raise typer.BadParameter("multiple runs and review options require --review")
+    run, _ = load_run(saved_runs[0])
     md = model_card(run)
     if out is not None:
         out.write_text(md, encoding="utf-8")

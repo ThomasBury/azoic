@@ -101,6 +101,13 @@ kind. `revise_run` preserves the source, verifies fingerprint/membership,
 refreshes development diagnostics and records factor reasons plus one training
 calibration multiplier. Export revisions with recalibrate=False; never silently
 recalibrate twice. Keep source models, revised tariffs and later final evidence distinct.
+M60 adds `reporting.tariff_review` and `azoic report --review`: score frozen
+candidates on original fingerprinted development data, align incumbent technical
+rates by unique IDs and reject mixed basis/split membership. Require a new output
+directory and retain complete CSV evidence, explicit candidate scales and
+undefined percentage changes for every zero incumbent. Never fit or recalibrate
+while reporting. Selection/rationale are human declarations; final evaluation/refit
+and measured performance/user studies remain M61/M62.
 Current focus is the authority for the active/next milestone. Read
 `PREPROCESSING_FIX_PLAN.md` for the verified bugs, regression scope, PR delivery,
 and release reconciliation. The scope is mirrored in `PRD.md` section 6.
@@ -145,7 +152,7 @@ src/azoic/
   plots.py          # plot_lorenz, plot_lift, plot_calibration, plot_one_way, plot_double_lift, plot_actual_vs_predicted (matplotlib)
   tariff.py         # distill_gbm; export_tariff(glm_or_pipeline, path)
   workflow.py       # check_experiment, ExperimentConfig, run_experiment, save_run/load_run
-  reporting.py      # model_card, comparison_table/dashboard
+  reporting.py      # model_card, comparison_table/dashboard, tariff_review
   mlops.py          # log_run (mlflow, lazy import)
   tune.py           # tune_experiment (optuna, lazy import) -- v0.2 part 1 / M7
   cli.py            # Typer entry point

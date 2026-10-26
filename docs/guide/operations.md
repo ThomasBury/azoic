@@ -218,6 +218,100 @@ Frequency-severity tuning remains unsupported.
     Increase the penalty only when calibration loss is too small to affect trial
     ordering; do not tune it on the final test result.
 
+## Prepare a tariff review with an incumbent
+
+This unreleased checkout API writes a self-contained development review: a
+Markdown decision record, full CSV evidence and the existing lift/one-way plots.
+It scores fitted candidates without fitting or recalibrating them. Keep final-test
+data reserved for the later frozen evaluation; repeated development validation
+cannot establish independent superiority.
+
+Use the original development frame in its saved order. Every run must record
+`spec.id_col`, the same IDs, fingerprint, portfolio basis and training/validation
+membership. Different predictors, fixed mappings and fitted factors are allowed.
+The incumbent table must contain that same ID column and exactly those unique,
+nonmissing IDs, in any order. Supply **technical pure-premium rates per year** on
+the same currency/claim basis, with commercial loadings removed upstream.
+Missing/duplicate/extra IDs and invalid rates raise before writing a bundle.
+
+```python
+import pandas as pd
+from azoic import load_run, tariff_review
+
+# These artifacts were fitted/revised beforehand; loading never fits.
+fitted = load_run("fitted.pkl")
+recalibrated = load_run("recalibrated.pkl")
+revised = load_run("revised.pkl")
+
+report = tariff_review(
+    {"fitted": fitted, "recalibrated": recalibrated, "revised": revised},
+    df=pd.read_parquet("development.parquet"),
+    incumbent=pd.read_parquet("incumbent.parquet"),  # ID plus technical_rate
+    incumbent_rate="technical_rate",
+    out="tariff-review-01",  # new directory; its parent must exist
+    selected="revised/tweedie-glm",
+    rationale="Retain the reviewed age mapping and documented factor changes. "
+              "Training level reconciles; review validation segments before approval.",
+    limitations=["Sparse segments remain uncertain; independent final evaluation is pending."],
+    segments=["driver_age", "region"],
+)
+print(report)  # tariff-review-01/review.md
+```
+
+Candidate labels are `alias/model`; `selected` may also be `incumbent`. The
+selection and rationale are the author's declaration, not an automatic approval.
+To create a recalibrated candidate beforehand, call `revise_run` with
+`replacements=[]` and `recalibrate=True`, using its recorded training population
+as in the [revision recipe](#revise-factors-on-a-separate-candidate). Save that
+returned pair separately. Report scales distinguish raw fitted, recalibrated,
+revised and structural revised predictions; the recorded multiplier is never
+applied twice. A new mapping is a separate refit, not a report-time edit.
+
+The equivalent saved-run command uses each file's unique stem as its alias:
+
+```bash
+azoic report --review --run fitted.pkl --run recalibrated.pkl --run revised.pkl \
+  --data development.parquet --incumbent incumbent.parquet \
+  --incumbent-rate technical_rate --selected revised/tweedie-glm \
+  --rationale "Reviewed age mapping and factor changes; final evaluation pending." \
+  --segment driver_age --segment region --out tariff-review-01
+```
+
+Without `--review`, `azoic report --run fitted.pkl` retains the compact model card
+and needs no data. Review directories must be new: an existing directory is
+rejected, and CSV/plot failures leave no partial bundle. Keep the bundle with
+its saved artifacts and environment; it contains record IDs and outcomes.
+
+| CSV | Complete evidence |
+|---|---|
+| `candidates.csv` | Candidate scale, recorded multiplier, config, runtime/tuning and revision evidence; factor availability |
+| `records.csv` | Identical IDs/order and split for every rate, ID types, exposure/outcomes, annual rate, period cost and incumbent change |
+| `totals.csv` | Whole development, training and validation totals, available counts, changed rows/exposure, O/P, Gini and fixed-power Tweedie deviance/D² |
+| `calibration.csv` | Validation risk-decile calibration, exposure and available counts |
+| `segments.csv` | Raw segment levels on identical rows, totals, available counts, changed records and aggregate incumbent changes |
+| `temporal.csv` | Period totals, available counts and diagnostics within each partition; empty when no `time_col` is declared |
+| `rate_changes.csv` | Percentage-change bands, unchanged rows and explicitly undefined zero-incumbent cases, with counts/exposure and costs |
+| `mappings.csv`, `mapping_changes.csv` | Native preprocessing snapshots and before/after changes relative to the first candidate |
+| `factors.csv`, `factor_changes.csv`, `revision_history.csv` | Complete log-link GLM factors/base, changes relative to the first candidate, and recorded replacement reasons |
+
+Markdown previews stop at twelve rows; CSVs retain every row and unrounded
+rates. Review the linked full tables before choosing a tariff. Empty cells mean
+undefined or unavailable values: percentage change is undefined for **every zero
+incumbent**, including zero-to-zero. Absolute differences remain defined.
+Nonpositive predictions give infinite fixed-power deviance and undefined D²;
+zero predicted totals give undefined O/P. Claim-free groups can have undefined D².
+These are exposed, not replaced with favorable scores.
+
+Segments default to the first run's raw predictors; protected columns are always
+included. Raw numeric values can produce large tables; pass a short explicit
+`segments` list for focused reviews. Groups stay identical across candidates;
+they are not each model's learned bins. Missing raw levels retain their totals.
+The report shows lift plots for every candidate and one-way plots for the selected
+candidate. GBM/FSM candidates retain metrics and rate comparisons but have no
+multiplicative factor decomposition. Temporal tables are descriptive when the
+underlying split is random. Change bands are descriptive, not universal approval
+thresholds, and no superiority claim follows from this report alone.
+
 ## Log a completed run to MLflow
 
 ```python

@@ -17,14 +17,20 @@ Legend: ☐ pending · ◐ in progress · ☑ done
   reviewed that implementation with no findings after three precision/type
   corrections. A final documentation-only correction follows below; the PR
   holds its final-head review and CI status.
-- **Next implementation: M60 — tariff-review report and incumbent comparison**,
-  in a new session. Keep M60–M62 independently reviewable; final evaluation/refit
-  and benchmarks/user observation have separate gates. MLflow follow-up is separate.
-- Git delivery is authorized on `feat/m59-controlled-revisions`, based on
-  merged M58 at `286251e`: stage, commit, open a PR and address Codex review
-  findings until clear. [PR #21](https://github.com/ThomasBury/azoic/pull/21)
-  holds the live final-head review and CI status.
-  No later milestone, merge, release or production deployment is included.
+- **M60 ☑ — tariff-review report and incumbent comparison** completed locally
+  on 2026-10-26. Frozen candidates, strict incumbent ID/context alignment,
+  complete Markdown/CSV/plot evidence and saved CLI review passed acceptance.
+- M60 full gate: Ruff/Ty and **1,469 tests** passed (4 skips, 2 expected
+  failures); strict docs and runtime-only wheel/sdist smokes passed. The latter
+  exercised fresh-process no-fit review on Python 3.13/pandas 3.1.0.
+- **Next implementation: M61 — frozen final evaluation and production handoff**,
+  in a new session. Keep M61/M62 separate: final evaluation/refit and measured
+  performance/user observation have different acceptance gates. MLflow remains separate.
+- M60 Git delivery is authorized on `feat/m60-tariff-review`: stage, commit,
+  create the PR and address Codex bot findings until the latest head is clear.
+  PR review/hosted checks are pending; merge/release are outside this delivery.
+  Historical M59 [PR #21](https://github.com/ThomasBury/azoic/pull/21) merged
+  into main at `b6c2de4`, the starting point for this implementation.
 
 - **M58 ☑ — saved fitted candidates (phase 3)** completed locally on 2026-10-25.
   Trusted persistence, selected tuning config and no-fit saved comparison,
@@ -237,6 +243,138 @@ fixed-setting documentation and missing table entries; moved that paragraph
 under preprocessing and added the two setting rows. Next: strict docs and
 final-head Codex/CI for this documentation-only correction, then user handoff.
 M60, merge and release remain outside this delivery.
+
+## M60 — Tariff-review report and incumbent comparison ☑ — 2026-10-26
+
+- [x] Read Current focus, PRD scope, M59 completion and affected consumers.
+- [x] Assess grouping: M60 is independently reviewable; leave M61/M62 separate.
+- [x] Implement no-fit report, strict population alignment and complete evidence tables.
+- [x] Add focused regression/installed checks and public Python/CLI documentation.
+- [x] Run full acceptance and record completion/handoff.
+
+### M60 kickoff checkpoint — 2026-10-26
+
+Clean main at `b6c2de4` (merged M59 PR #21). Implement M60 alone: a fresh-directory
+Markdown/CSV/plot review bundle from fitted/saved candidates and original development
+data, with strict unique-ID incumbent alignment and identical development membership.
+Use explicit rate scales and saved revision/calibration evidence; never fit or
+recalibrate in reporting. Selection/rationale remain human declarations. Touch
+reporting, root exports/typing, the report CLI, behavioral and distribution checks,
+task/reference documentation and project records. Keep M56 starter/version unchanged.
+Next: implement report validation, reconciled tables and existing-plot assembly.
+
+### M60 implementation checkpoint — 2026-10-26
+
+Added `tariff_review` in existing reporting/root exports and `report --review`
+without changing plain cards or training operations. The bundle scores saved
+candidates only, rejects differing development fingerprints/basis/ID membership/
+splits and aligns incumbent rows by unique IDs. Full CSVs cover annual rates and
+period costs, three partition totals and O/P/deviance/ranking, counts, raw segments,
+periods, rate-change bands, mapping/factor comparisons and revision reasons.
+The human selection/rationale, scales, undefined zero-incumbent percentages and
+limits are in Markdown; existing plots provide validation lift and selected
+one-way views. A sibling staging directory is renamed only after all saves;
+existing bundles are rejected. No new dependency/module/model kind.
+
+Initial focused suite: **19 passed in 17.97s**. Connected reporting, persistence,
+revision, import/typing and review suite: **77 passed in 48.17s**, two existing
+unseen-routing warnings. Full arithmetic is independently recomputed from rates,
+exposures and outcomes, including training calibration and segment/period/band
+reconciliation. Failed CSV/plot writes leave no bundle. Installed smoke now
+exercises fresh-process CLI review with native fitting blocked. Python/CLI,
+reference, compatibility and AGENTS docs describe the contract.
+
+Next: finish boundary checks, run final full checks, strict docs and installed
+wheel/sdist smokes; inspect generated evidence/plots and record results. M60
+remains ◐ until those checks pass. M61/M62 and Git delivery are unstarted.
+
+### M60 completion checkpoint — 2026-10-26
+
+Completed M60 alone. Reporting has its own frozen-candidate/population/evidence
+acceptance; M61 final evaluation/production refit and M62 measurements/persona
+observation remain independently reviewable. No new dependencies, modules,
+model kinds or changes to the released starter/package version.
+
+`reporting.tariff_review` (also a lazy root export) and `azoic report --review`
+write a new review directory from saved/fitted candidates and the original
+development frame. IDs are unique and exact; incumbent order is irrelevant,
+while saved development order/fingerprint, basis and partition membership must
+match. Existing cards/comparisons retain their behavior. Reporting never fits,
+recalibrates or repairs observations. Candidate scales/multipliers come from
+recorded artifacts. Human selection/rationale and limitations remain explicit.
+
+The bundle includes complete candidate/provenance, per-record rates and period
+costs, development/training/validation totals and diagnostics, available counts,
+raw segments and period evidence, rate-change bands, mapping/factor differences
+against the first candidate, and revision reasons. Zero incumbents have undefined
+percentage changes including zero-to-zero; absolute changes stay defined. Zero
+predictions retain undefined O/P/D² or infinite fixed-power deviance as applicable.
+Existing lift/one-way functions render the plots. CSVs retain full rows and
+precision; Markdown previews are bounded. Existing directories are rejected;
+failed CSV/plot saves remove staging and preserve earlier bundles.
+
+Observed acceptance:
+
+- Locked `uv sync --locked --all-extras --all-groups` passed without lock changes.
+- `OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MPLBACKEND=Agg just check` passed
+  Ruff, production Ty and **1,469 tests, 4 skips, 2 expected failures** in
+  **206.65s** on locked Python 3.12.7. All 13 warnings are existing diagnostic,
+  unseen-routing or dependency cases. This includes **24 M60 regressions**.
+- M60 cases independently recompute record predictions, training calibration,
+  portfolio totals and segment/period/change-band reconciliation. They cover
+  shuffled/duplicate/missing/extra incumbent IDs, missing/negative/nonfinite
+  rates, mixed fingerprint/basis/IDs/partitions, source-frame changes, raw GBM,
+  missing segment levels, unavailable count/time roles, zero predictions,
+  malformed/overflow predictions, CSV/plot failures and existing-output safety.
+  Saved CLI review blocks fitting and calibration methods. Lazy exports,
+  resolved type hints and the downstream static consumer passed in the full gate.
+- `just docs-build` passed strict docs in **2.66s**; **25 local Markdown file
+  targets** in the four changed pages were verified against the working tree.
+  Python/CLI usage, output schema, units/scales and compatibility are documented.
+- `uv build --out-dir /tmp/azoic-m60-dist` built wheel and sdist. Both passed
+  the runtime-only smoke outside the checkout on **Python 3.13 / pandas 3.1.0**,
+  including fresh-process saved review with fitting blocked and independent
+  CSV-to-artifact rate equality. Existing model/preprocessing/composition,
+  persistence/export/provenance and all-eight-command helps also passed. The
+  existing uv/uv-build range warning did not prevent either build.
+- Inspected generated Markdown/full-table links and a rendered selected-region
+  one-way PNG. Generated evidence remains in temporary/ignored locations.
+  Final seven-file formatting, Ruff, Ty and `git diff --check` passed after
+  the documentation-only completion record; final strict docs passed in **2.44s**.
+- Logs: `/tmp/azoic-m60-{check,docs,build,wheel,sdist,integration,focused}.log`.
+
+Limits: CSVs contain record IDs/outcomes and need portfolio data controls. Raw
+numeric segment levels can make large bundles; explicit segment selection is
+available, while automatic bucketing/caching/performance promises await measured
+need. Incumbent currency/technical/claim basis is an explicit caller assumption,
+not inferred from rate values. Factor decomposition applies to log-link GLMs;
+GBM/FSM retain rate/diagnostic evidence only. No independent actuarial approval,
+user observation, real-data tutorial rendering, hosted Windows/lowest-direct/
+Python 3.14 matrix or M61 final-test/refit evidence is claimed. No Git delivery,
+publication or deployment was performed; changes remain uncommitted on main.
+
+Exact next action in a new session: read Current focus, PRD M61 and this
+checkpoint. Trace frozen candidate scoring, ID/data checks, revisions, persistence
+and three-sheet export. Mark M61 ◐ before implementing no-fit/no-recalibration
+final-test evaluation, then the separate explicit full-portfolio production refit
+and agreement-case/specification handoff. Keep holdout evidence attached to its
+original evaluated fit. Do not begin M62 or publish automatically.
+
+### M60 Git delivery checkpoint — 2026-10-26
+
+The user authorized staging, Conventional Commits, a plain-English PR and
+iterating on Codex bot feedback until clear. Isolated the completed M60 diff on
+`feat/m60-tariff-review`, based on merged M59 at `b6c2de4`; remote main matches
+that base. This delivery includes the full M60 implementation, regression and
+installed-artifact checks, public documentation and project records. No later
+milestone, merge or release is included.
+
+The completed implementation passed Ruff/Ty, 1,469 tests (4 skips, 2 expected
+failures), strict docs and runtime-only wheel/sdist smokes in the same session.
+No runtime changes have followed those checks. Next: verify the staged diff,
+commit and push, open the PR, then wait for Codex review and hosted CI on its
+latest head. Review findings require focused regressions and applicable gates
+before pushing fixes and requesting another pass. Pending review is not approval.
 
 ## M59 — Controlled mapping and factor revisions ☑ — 2026-10-25
 

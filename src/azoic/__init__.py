@@ -47,6 +47,7 @@ if TYPE_CHECKING:
     from .reporting import comparison_dashboard as comparison_dashboard
     from .reporting import comparison_table as comparison_table
     from .reporting import model_card as model_card
+    from .reporting import tariff_review as tariff_review
     from .tariff import RevisedTariff as RevisedTariff
     from .tariff import apply_tariff as apply_tariff
     from .tariff import distill_gbm as distill_gbm
@@ -137,7 +138,7 @@ _EXPORTS = {
             "RevisedTariff",
             "revise_tariff",
         ),
-        "reporting": ("model_card", "comparison_table", "comparison_dashboard"),
+        "reporting": ("model_card", "comparison_table", "comparison_dashboard", "tariff_review"),
         "mlops": ("log_run",),
         "tune": ("tune_experiment", "TuneResult"),
     }.items()
