@@ -25,6 +25,8 @@ Legend: ☐ pending · ◐ in progress · ☑ done
   receiving-engine agreement, deployment readiness or user acceptance from these
   tests. M62 Git delivery is authorized on `feat/m62-performance-handoffs`: stage,
   commit, open a PR and address Codex findings until its latest head is clear.
+  [PR #24](https://github.com/ThomasBury/azoic/pull/24) is the live authority for
+  the latest-head review and hosted checks.
   The milestone remains ◐ until the four observed practitioner handoffs pass.
 - M61 Git delivery is authorized on `feat/m61-production-handoff`: stage,
   commit, create the PR and address Codex bot findings until the latest head is
@@ -398,6 +400,17 @@ wheel/sdist runtime smokes and three million-row benchmark executions. Validate
 the staged diff and focused regressions before committing. Await final-head
 Codex review and hosted checks; keep actual human observation pending. Merge,
 release and deployment are outside this delivery.
+
+Committed the complete engineering/session-preparation change as `c57e595`
+(`feat: measure workflow performance and speed up preprocessing`) and opened
+[PR #24](https://github.com/ThomasBury/azoic/pull/24) with that title and a plain
+English problem/change/validation description. Staged diff checks and Ruff passed;
+the complete focused preprocessing/benchmark suite passed **368 tests**, 2 skips,
+in 16.63 s. No generated evidence was staged. The PR was created as a draft
+while recording this delivery reference; mark it ready after pushing this
+checkpoint so Codex reviews the complete latest head. Await the actual bot
+result and hosted checks, fixing findings before declaring readiness. Human
+observation remains pending independently of PR review.
 
 ## M61 — Frozen final evaluation and production handoff ☑ — 2026-10-26
 
