@@ -636,8 +636,11 @@ The new handoff directory contains:
 | `score.py` | With no arguments, verifies agreement cases; with input Parquet/output CSV arguments, batch scores rates and optional exposure-period costs |
 
 JSON uses `{"$float": "inf"}`, `-inf` or `nan` for nonfinite values; `null` is
-missing. Category levels remain typed scalar records. Agreement uses relative
-tolerance `1e-12` and absolute tolerance zero; rates are never rounded. Period
+missing. Category levels remain typed scalar records. Raw categorical predictors
+also record their fitted category vocabulary and ordering; probe construction
+and both recipe modes restore that categorical dtype, including integer/boolean
+categories. Unseen raw values are rejected before conversion can turn them into
+missing values. Agreement uses relative tolerance `1e-12` and absolute tolerance zero; rates are never rounded. Period
 cost is rate times exposure in years. The recipe preserves input order and
 available IDs. An existing handoff directory is rejected; failed writes remove
 staging and preserve earlier bundles. The specification and saved run include

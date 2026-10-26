@@ -888,6 +888,16 @@ def export_production(
                         },
                     }
                 )
+    transformed_features = {feature for step in transforms for feature in step["features"]}
+    raw_categories: dict[str, dict[str, Any]] = {
+        feature: {
+            "categories": list(levels),
+            "ordered": isinstance(cases[feature].dtype, pd.CategoricalDtype)
+            and cases[feature].cat.ordered,
+        }
+        for feature, levels in tariff["categorical"].items()
+        if feature in cases and feature not in transformed_features
+    }
     probes = [(f"synthetic-{i}", row) for i, row in enumerate(cases.to_dict("records"))]
     baseline = probes[0][1]
     for transform in transforms:
@@ -925,8 +935,12 @@ def export_production(
                     probes.append((f"{feature}-level-{i}", {**baseline, feature: level}))
     agreement = []
     for label, values in probes:
-        frame = pd.DataFrame([values])
+        frame = pd.DataFrame([values], columns=run.feature_names)
         try:
+            for feature, schema in raw_categories.items():
+                if (frame[feature].notna() & ~frame[feature].isin(schema["categories"])).any():
+                    raise ValueError(f"unknown raw category for {feature!r}")
+                frame[feature] = frame[feature].astype(pd.CategoricalDtype(**schema))
             expected = np.asarray(estimator.predict(frame), dtype=float)
             if expected.shape != (1,) or not np.isfinite(expected).all() or (expected < 0).any():
                 raise ValueError("invalid predicted rate")
@@ -964,6 +978,7 @@ def export_production(
                 else "typed_category",
                 "synthetic_dtype": str(cases[feature].dtype),
                 "unit": feature_units[feature],
+                **raw_categories.get(feature, {}),
             }
             for feature in run.feature_names
         ],
@@ -1054,13 +1069,25 @@ from azoic import load_run
 root = Path(__file__).resolve().parent
 run, estimators = load_run(root / "production.pkl")
 model = next(iter(estimators.values()))
+specification = json.loads((root / "specification.json").read_text())
+categories = {feature["name"]: pd.CategoricalDtype(feature["categories"], feature["ordered"])
+              for feature in specification["features"] if "categories" in feature}
+
+def predict(frame):
+    frame = frame[run.feature_names].copy()
+    for feature, dtype in categories.items():
+        if (frame[feature].notna() & ~frame[feature].isin(dtype.categories)).any():
+            raise ValueError(f"unknown raw category for {feature!r}")
+        frame[feature] = frame[feature].astype(dtype)
+    return model.predict(frame)
+
 if len(sys.argv) == 1:
     def decode(value):
         return float(value["$float"]) if isinstance(value, dict) and "$float" in value else value
     for case in json.loads((root / "agreement.json").read_text()):
         frame = pd.DataFrame([{key: decode(value) for key, value in case["input"].items()}])
         try:
-            rate = model.predict(frame)
+            rate = predict(frame)
         except (ValueError, TypeError):
             assert case["outcome"] == "reject", case["case"]
         else:
@@ -1071,7 +1098,7 @@ else:
     if len(sys.argv) != 3:
         raise SystemExit("usage: python score.py [input.parquet output.csv]")
     frame = pd.read_parquet(sys.argv[1])
-    rates = np.asarray(model.predict(frame[run.feature_names]), dtype=float)
+    rates = np.asarray(predict(frame), dtype=float)
     if rates.shape != (len(frame),) or not np.isfinite(rates).all() or (rates < 0).any():
         raise ValueError("expected one finite nonnegative rate per row")
     output = pd.DataFrame({"predicted_rate": rates})

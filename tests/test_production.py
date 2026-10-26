@@ -585,3 +585,112 @@ export_production(run, models, cases=pd.DataFrame({'driver_age': [30.], 'region'
         [sys.executable, "-c", code, str(tmp_path)], capture_output=True, text=True
     )
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_raw_typed_categorical_handoff_preserves_schema_and_rejects_unseen(journey, tmp_path):
+    full, _, _, run, _ = journey
+    full = full.copy()
+    full["ordered_int"] = pd.Categorical(
+        np.resize([2, 1, 3], len(full)), categories=[2, 1, 3], ordered=True
+    )
+    full["flag"] = pd.Categorical(
+        np.resize([True, False], len(full)), categories=[True, False], ordered=True
+    )
+    config = run.config.model_copy(deep=True)
+    config.preprocessing = None
+    config.features = ["ordered_int", "flag", "vehicle_age"]
+    run, models = run_experiment(config, df=full.iloc[:480], return_estimators=True)
+    run = evaluate_final(
+        run,
+        models,
+        model="glm",
+        df=full.iloc[480:],
+        final_test_ids=full.record_id.iloc[480:].tolist(),
+        rationale="Selected",
+    )
+    production, fitted = refit_production(run, models, df=full, rationale="Approved")
+    cases = pd.DataFrame(
+        {
+            "ordered_int": pd.Categorical([2, 1], categories=[2, 1, 3], ordered=True),
+            "flag": pd.Categorical([True, False], categories=[True, False], ordered=True),
+            "vehicle_age": [4.0, 6.0],
+        }
+    )
+    path = export_production(
+        production,
+        fitted,
+        cases=cases,
+        feature_units={"ordered_int": "category", "flag": "category", "vehicle_age": "years"},
+        out=tmp_path / "bundle",
+    )
+    specification = json.loads(path.read_text())
+    feature_schemas = {feature["name"]: feature for feature in specification["features"]}
+    assert feature_schemas["ordered_int"]["categories"] == [2, 1, 3]
+    assert feature_schemas["flag"]["categories"] == [True, False]
+    assert feature_schemas["ordered_int"]["ordered"] is True
+    agreements = json.loads((path.parent / "agreement.json").read_text())
+    assert all(
+        case["outcome"] == "rate" for case in agreements if case["case"].startswith("synthetic-")
+    )
+    assert all(
+        case["outcome"] == "reject" for case in agreements if case["case"].endswith("-unseen")
+    )
+    result = subprocess.run(
+        [sys.executable, str(path.parent / "score.py")], capture_output=True, text=True
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    # Record-oriented engines can supply scalar columns; the recipe restores the fitted schema.
+    records = pd.DataFrame(cases.to_dict("records"))
+    records.to_parquet(tmp_path / "inputs.parquet")
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(path.parent / "score.py"),
+            str(tmp_path / "inputs.parquet"),
+            str(tmp_path / "rates.csv"),
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    np.testing.assert_allclose(
+        pd.read_csv(tmp_path / "rates.csv").predicted_rate, fitted["glm"].predict(cases), rtol=1e-12
+    )
+    records["ordered_int"] = 999
+    records.to_parquet(tmp_path / "unseen.parquet")
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(path.parent / "score.py"),
+            str(tmp_path / "unseen.parquet"),
+            str(tmp_path / "unseen.csv"),
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    assert not (tmp_path / "unseen.csv").exists()
+
+
+@pytest.mark.parametrize("production_card", [False, True])
+def test_final_cards_keep_protected_columns_under_experiment(journey, production_card):
+    from azoic import model_card
+
+    full, development, final, run, _ = journey
+    config = run.config.model_copy(deep=True)
+    config.spec.protected_cols = ["vehicle_brand"]
+    run, models = run_experiment(config, df=development, return_estimators=True)
+    run = evaluate_final(
+        run,
+        models,
+        model="glm",
+        df=final,
+        final_test_ids=final.record_id.tolist(),
+        rationale="Selected",
+    )
+    if production_card:
+        run, _ = refit_production(run, models, df=full, rationale="Approved")
+    card = model_card(run)
+    experiment = card.split("## Experiment", 1)[1].split("\n## ", 1)[0]
+    assert "- protected columns: `vehicle_brand`" in experiment
+    assert card.count("- protected columns:") == 1

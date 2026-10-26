@@ -105,6 +105,11 @@ def model_card(run: azoic.Run) -> str:
         f"- features ({len(run.feature_names)}): " + ", ".join(f"`{c}`" for c in run.feature_names),
         "",
     ]
+    if cfg.spec.protected_cols:
+        lines.insert(
+            -1,
+            "- protected columns: " + ", ".join(f"`{c}`" for c in cfg.spec.protected_cols),
+        )
     if run.final_evaluation:
         evaluation = run.final_evaluation
         lines.extend(
@@ -133,11 +138,6 @@ def model_card(run: azoic.Run) -> str:
                 f"- calibration policy: {run.production['calibration_policy']}",
                 "",
             ]
-        )
-    if cfg.spec.protected_cols:
-        lines.insert(
-            -1,
-            "- protected columns: " + ", ".join(f"`{c}`" for c in cfg.spec.protected_cols),
         )
 
     lines.extend(["## Portfolio basis", ""])

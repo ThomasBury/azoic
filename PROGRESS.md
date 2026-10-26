@@ -20,7 +20,9 @@ Legend: ☐ pending · ◐ in progress · ☑ done
   receiving-engine agreement, deployment readiness or user acceptance from these
   tests. M61 Git delivery is authorized on `feat/m61-production-handoff`: stage,
   commit, create the PR and address Codex bot findings until the latest head is
-  clear. Merge, release and deployment remain outside this delivery.
+  clear. [PR #23](https://github.com/ThomasBury/azoic/pull/23) is the authority
+  for latest-head review and hosted checks; see the review checkpoint below.
+  Merge, release and deployment remain outside this delivery.
 
 - **M59 ☑ — controlled mapping and factor revisions** completed locally on
   2026-10-25. Fixed Python/YAML mappings, refitted candidates, audited factor
@@ -411,6 +413,48 @@ Next: inspect the staged diff, commit/push, create the PR and wait for Codex
 review plus hosted CI. Fix actionable findings with focused regressions and
 applicable gates, then push and request another pass. Pending review is not
 approval. M62, merge, release and deployment are not part of this delivery.
+
+### M61 PR review checkpoint — 2026-10-26
+
+Committed the complete M61 change as `920dc5f` (`feat: add final evaluation and
+production tariff handoff`) and opened [PR #23](https://github.com/ThomasBury/azoic/pull/23),
+`feat: evaluate frozen models and prepare production tariffs`. Codex review
+started automatically on that head; all nine jobs in hosted CI run `40329804432`
+passed, including full validation, Linux/Windows starters and Python 3.12-low/
+Python 3.14 installed wheel/sdist checks. Codex returned one P2 finding: preserve
+raw integer/boolean categorical schema when constructing agreement probes and
+in the generated scorer.
+
+Added a regression using ordered integer and boolean categories; it failed on
+the missing category specification before the fix. Probe construction now uses
+the fitted raw vocabulary, retaining categorical dtype/level order, and rejects
+unknown nonmissing values before pandas can convert them to missing. The
+specification records raw categories/ordering; both recipe modes restore that
+schema. Native preprocessing destinations remain unchanged. Fresh-process
+agreement/batch scoring and unseen rejection are covered, including mixed
+native bins plus raw categories in the installed-distribution smoke.
+
+All **31 production regressions** passed after the categorical fix, as did
+Ruff/Ty. CodeRabbit additionally identified a misplaced protected-column bullet:
+new card sections were appended before the old relative insertion. A new
+regression failed before moving that insertion back into Experiment; final and
+production card cases now check the correct section. This is a card-layout fix
+only. The categorical correction passed full `just check`: Ruff/Ty and **1,503 tests**
+(4 skips, 2 expected failures) in **220.82s**. The subsequent card-layout change
+and both new heading cases passed the final **52-test production/reporting** run
+in **30.09s**, with final Ruff/Ty and formatting green. Strict docs passed in
+**2.67s**. Rebuilt wheel and sdist passed the runtime-only smoke outside the
+checkout on Python 3.13/pandas 3.1.0, including integer/boolean raw categories
+alongside native binning, fresh-process agreement and batch-rate equality.
+Logs are `/tmp/azoic-m61-{typed-before,typed-after,protected-before,review-check,review-focused,review-docs-final,review-wheel,review-sdist}.log`.
+
+The correction commit includes the reproduced Codex categorical finding and
+the separately reproduced CodeRabbit heading finding. Request Codex review and
+inspect hosted CI on the correction head before declaring readiness. The live
+[PR #23](https://github.com/ThomasBury/azoic/pull/23) is the authority for final-
+head review/CI; any subsequent commit requires those checks again. The next
+human action after a clear review is the merge decision; no merge, release,
+deployment or M62 work is included in this delivery.
 
 ## M60 — Tariff-review report and incumbent comparison ☑ — 2026-10-26
 

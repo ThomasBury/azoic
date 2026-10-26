@@ -296,10 +296,14 @@ full = pd.DataFrame(
         "amount": np.tile([0.0, 10.0, 20.0, 0.0, 40.0, 0.0, 60.0, 80.0], 10),
     }
 )
+full["level"] = pd.Categorical(np.resize([2, 1, 3], len(full)), categories=[2, 1, 3], ordered=True)
+full["flag"] = pd.Categorical(
+    np.resize([True, False], len(full)), categories=[True, False], ordered=True
+)
 development, final = azoic.split_portfolio(full, list(range(60, 80)), id_col="id")
 config = azoic.ExperimentConfig(
     data_path="not-read.parquet",
-    features=["x"],
+    features=["x", "level", "flag"],
     spec=azoic.DatasetSpec(target="amount", exposure="e", id_col="id", currency="EUR"),
     preprocessing=azoic.PreprocessingSpec(binner={"cols": ["x"], "max_bins": 3}),
     models={"glm": azoic.ModelSpec(params={"family": "tweedie", "link": "log"})},
@@ -324,12 +328,12 @@ with tempfile.TemporaryDirectory() as folder:
     path = azoic.export_production(
         production,
         fitted,
-        cases=pd.DataFrame({"x": [1.0, 3.0]}),
-        feature_units={"x": "dimensionless"},
+        cases=pd.DataFrame({"x": [1.0, 3.0], "level": [2, 1], "flag": [True, False]}),
+        feature_units={"x": "dimensionless", "level": "category", "flag": "category"},
         out=directory / "bundle",
     )
     subprocess.run([sys.executable, str(path.parent / "score.py")], cwd=directory, check=True)
-    full[["id", "x", "e"]].to_parquet(directory / "input.parquet")
+    full[["id", "x", "level", "flag", "e"]].to_parquet(directory / "input.parquet")
     subprocess.run(
         [
             sys.executable,
@@ -341,6 +345,8 @@ with tempfile.TemporaryDirectory() as folder:
         check=True,
     )
     output = pd.read_csv(directory / "rates.csv")
-    np.testing.assert_allclose(output.predicted_rate, fitted["glm"].predict(full[["x"]]))
+    np.testing.assert_allclose(
+        output.predicted_rate, fitted["glm"].predict(full[["x", "level", "flag"]])
+    )
     np.testing.assert_allclose(output.predicted_period_cost, output.predicted_rate * full.e)
 print("Frozen final evaluation, full refit and fresh-process production agreement/scoring passed")
