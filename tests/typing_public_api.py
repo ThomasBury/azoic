@@ -1,5 +1,6 @@
 """Downstream typing consumer, checked by test_init; never executed."""
 
+from pathlib import Path
 from typing import Any, assert_type
 
 import numpy as np
@@ -30,6 +31,7 @@ from azoic import (
     run_experiment,
     save_run,
     split_portfolio,
+    tariff_review,
     tune_experiment,
 )
 
@@ -90,6 +92,18 @@ def consumer(config: ExperimentConfig, frame: pd.DataFrame, flag: bool):
     )
     assert_type(gini(frame["amount"], frame["rate"]), float)
     assert_type(calibration_table(frame["amount"], frame["rate"]), pd.DataFrame)
+    assert_type(
+        tariff_review(
+            {"fit": (run, estimators)},
+            df=frame,
+            incumbent=frame,
+            incumbent_rate="old_rate",
+            out="review",
+            selected="fit/glm",
+            rationale="Review evidence",
+        ),
+        Path,
+    )
     assert_type(model_card(run), str)
     assert_type(comparison_table([run]), pd.DataFrame)
     assert_type(log_run(run), str)

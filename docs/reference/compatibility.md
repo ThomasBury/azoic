@@ -209,8 +209,8 @@ unpickling. This is fitted Python state, not a portable deployment format.
 See the [saved-candidate recipe](../guide/operations.md#save-fitted-candidates-and-resume-without-training).
 `report`, `predict`, `compare --run` and `export-tariff --run` never fit;
 config-based operations keep their explicit training behavior. Existing Python
-run/tuning return types and defaults remain unchanged. Final-test evaluation,
-mapping/factor revisions and production refit are still pending.
+run/tuning return types and defaults remain unchanged. Final-test evaluation and
+production refit remain separate work; mapping/factor revisions follow below.
 
 Unreleased M59 adds optional fixed mappings to native transformer constructors,
 `RevisedTariff` / `revise_tariff`, and `workflow.revise_run` (also root exports).
@@ -224,6 +224,17 @@ revised workbooks add audit columns and export their recorded calibration once.
 Fixed groups use typed scalar records and explicit missing/unseen destinations;
 fixed bins declare interval closure. See the
 [revision recipe](../guide/operations.md#revise-factors-on-a-separate-candidate).
-These are technical tariff edits and development evidence; review reporting and
-final evaluation/refit remain M60/M61 work. Interface/schema changes require a
+These are technical tariff edits and development evidence; frozen final evaluation
+and production refit remain M61 work. Interface/schema changes require a
 minor release under the Azoic policy.
+
+Unreleased M60 adds `reporting.tariff_review` (also a lazy root export), returning
+the path to a new Markdown/CSV/PNG review bundle. It accepts named Run/estimator
+pairs, the original development frame and an ID-aligned incumbent rate table;
+mixed contexts are rejected rather than warned about. Ordinary comparison/card
+schemas are unchanged. `azoic report --review` adds the same no-fit journey;
+plain `report --run` retains its previous behavior. Review CSVs are a new public
+schema; incompatible future changes follow the minor-release policy. Bundles
+contain IDs/outcomes. This is development review evidence, not final evaluation,
+production refit or automated approval. See the
+[review contract](../guide/operations.md#prepare-a-tariff-review-with-an-incumbent).

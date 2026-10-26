@@ -47,7 +47,7 @@ def test_package_reexports_module_public_apis():
 
 def test_reporting_annotations_resolve_without_eager_workflow_imports():
     for module_name, functions in (
-        ("reporting", ["model_card", "comparison_table", "comparison_dashboard"]),
+        ("reporting", ["model_card", "comparison_table", "comparison_dashboard", "tariff_review"]),
         ("mlops", ["log_run"]),
     ):
         subprocess.run(
@@ -65,6 +65,8 @@ for name in {functions!r}:
     annotation = hints.get("run")
     if annotation is not None:
         assert annotation is azoic.Run
+    elif name == "tariff_review":
+        assert typing.get_args(typing.get_args(hints["runs"])[1])[0] is azoic.Run
     else:
         assert typing.get_args(hints["runs"]) == (azoic.Run,)
 from azoic.workflow import Run, ModelResult

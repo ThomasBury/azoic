@@ -416,7 +416,7 @@ models:
 | `azoic profile` | `--data`, `--target`, `--exposure` | `--claim-count`, `--time-col`, `--out` | Screening table to stdout or CSV; `--data` preserves local paths and `s3://` URI strings |
 | `azoic fit` | `--config` | `--save-run`, `--out`, `--quiet` | Trains; Markdown model card and optional fitted pickle |
 | `azoic compare` | Config paths **or** repeated `--run` | `--out` | Config paths train; saved runs reuse diagnostics without fitting; stdout or CSV |
-| `azoic report` | `--run` | `--out` | Saved Markdown model card without fitting or loading data |
+| `azoic report` | `--run` | `--out`; review: `--review`, repeated `--run`, `--data`, `--incumbent`, `--incumbent-rate`, `--selected`, `--rationale`, `--segment`, `--limitation` | Saved card; review mode writes a new Markdown/CSV/plot directory from original development data without fitting/recalibration |
 | `azoic predict` | `--run`, `--model`, `--data`, `--out` | None | CSV of pure-premium `predicted_rate`, with declared ID, in input order; never fits |
 | `azoic tune` | `--config` | `--trials` (YAML or 20), `--calibration-penalty` (YAML or 1.0), `--save-run`, `--best-config`, `--out`, `--quiet` | Trains; selected params/config, card and optional fitted pickle |
 | `azoic export-tariff` | Exactly one of `--config` or `--run`, plus `--model`, `--out` | `--distill` (config only), `--data` (saved recalibration), `--recalibrate/--no-recalibrate` | Three-sheet xlsx; saved GLM route never fits |
@@ -442,6 +442,17 @@ returned together by `run_experiment(..., return_estimators=True)` or tuning.
 IDs and learned state remain. Save the original data and environment separately.
 `--best-config` writes tuning's selected config with an absolute local data path;
 it is also included in the saved run. Executing that YAML trains a new fit.
+
+`report --review` requires `--out` (a new directory), `--data` (original
+fingerprinted development Parquet), `--incumbent` (ID/rate Parquet),
+`--incumbent-rate`, `--selected` and `--rationale`. Each repeated `--run` must
+have a unique file stem; labels are `stem/model`. The selected label may be
+`incumbent`. Repeat `--segment` for raw segment columns and `--limitation` for
+author-declared limitations. Review-mode file read/write failures are reported
+as CLI errors. All runs and incumbent rates must match development
+ID membership and basis; report-time fitting/recalibration never occurs. See the
+[review recipe](../guide/operations.md#prepare-a-tariff-review-with-an-incumbent)
+for scales, full-table contents and zero-incumbent interpretation.
 
 ## In-memory Python input
 
