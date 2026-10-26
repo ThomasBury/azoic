@@ -20,15 +20,17 @@ Legend: ☐ pending · ◐ in progress · ☑ done
 - **M60 ☑ — tariff-review report and incumbent comparison** completed locally
   on 2026-10-26. Frozen candidates, strict incumbent ID/context alignment,
   complete Markdown/CSV/plot evidence and saved CLI review passed acceptance.
-- M60 full gate: Ruff/Ty and **1,469 tests** passed (4 skips, 2 expected
-  failures); strict docs and runtime-only wheel/sdist smokes passed. The latter
+- M60 latest local gate: Ruff/Ty and **1,472 tests** passed (4 skips, 2 expected
+  failures); strict docs passed. Initial runtime-only wheel/sdist smokes passed. The latter
   exercised fresh-process no-fit review on Python 3.13/pandas 3.1.0.
 - **Next implementation: M61 — frozen final evaluation and production handoff**,
   in a new session. Keep M61/M62 separate: final evaluation/refit and measured
   performance/user observation have different acceptance gates. MLflow remains separate.
 - M60 Git delivery is authorized on `feat/m60-tariff-review`: stage, commit,
   create the PR and address Codex bot findings until the latest head is clear.
-  PR review/hosted checks are pending; merge/release are outside this delivery.
+  [PR #22](https://github.com/ThomasBury/azoic/pull/22) holds the live review and
+  hosted checks. All nine CI jobs passed on the initial `091ceec` head; use
+  the PR for final-head review and CI status. Merge/release are outside this delivery.
   Historical M59 [PR #21](https://github.com/ThomasBury/azoic/pull/21) merged
   into main at `b6c2de4`, the starting point for this implementation.
 
@@ -375,6 +377,36 @@ No runtime changes have followed those checks. Next: verify the staged diff,
 commit and push, open the PR, then wait for Codex review and hosted CI on its
 latest head. Review findings require focused regressions and applicable gates
 before pushing fixes and requesting another pass. Pending review is not approval.
+
+### M60 PR review checkpoint — 2026-10-26
+
+Committed the full M60 change as `091ceec` (`feat: add tariff review reports and
+incumbent comparisons`) and opened [PR #22](https://github.com/ThomasBury/azoic/pull/22),
+`feat: add review reports comparing fitted and current tariffs`. All nine hosted
+CI jobs passed on that head, including locked full validation, Linux/Windows
+starter jobs and Python 3.12 low-direct/Python 3.14 installed wheel/sdist smokes.
+Codex started automatically on PR opening; its first result is pending.
+
+CodeRabbit identified a valid review-mode CLI error-handling gap: missing input
+files and failed report writes escaped as raw OSErrors. Three new regressions
+failed before the fix (saved-run read, Parquet read, CSV save). Broadened the
+existing catch from FileExistsError to OSError, preserving the reporter's cleanup
+and output-preservation behavior. Documented the CLI error contract. The new
+saved-run cases also exposed a test-only shared-fixture mutation: restoring a
+mocked Pipeline.predict method left a bound method in the persisted fixture.
+Prediction-failure cases now mock a private deep copy instead of the shared
+candidate. All **27 review regressions passed in 20.22s** after that correction.
+
+`OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MPLBACKEND=Agg just check` then passed
+Ruff/Ty and **1,472 tests, 4 skips, 2 expected failures** in **197.61s**. Strict
+docs passed in **2.94s**; whitespace checks passed. Logs are
+`/tmp/azoic-m60-{cli-errors-before,cli-errors-after,cli-errors-final,review-check-final,review-docs}.log`.
+The earlier connected run's two fixture-induced failures and the interrupted
+first full retry are superseded by these green checks.
+
+Next delivery action: commit/push the focused CLI/test correction, reply to the
+finding and request Codex review of that head. The live PR is the final-head
+review/CI authority; no later milestone or merge/release is part of delivery.
 
 ## M59 — Controlled mapping and factor revisions ☑ — 2026-10-25
 

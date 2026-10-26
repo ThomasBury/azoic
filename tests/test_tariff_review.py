@@ -362,7 +362,8 @@ def test_review_missing_segments_raw_gbm_and_multiple_models(journey, tmp_path):
 
 @pytest.mark.parametrize("issue", ["negative", "nonfinite", "column", "overflow"])
 def test_review_rejects_invalid_predictions(journey, tmp_path, monkeypatch, issue):
-    _, _, runs = journey
+    frame, incumbent, runs = journey
+    runs = deepcopy(runs)
     estimator = runs["fitted"][1]["glm"]
     if issue == "column":
         monkeypatch.setattr(estimator, "predict", lambda X: np.ones((len(X), 1)))
@@ -370,5 +371,53 @@ def test_review_rejects_invalid_predictions(journey, tmp_path, monkeypatch, issu
         value = {"negative": -1, "nonfinite": np.nan, "overflow": 1e308}[issue]
         monkeypatch.setattr(estimator, "predict", lambda X: np.full(len(X), value))
     with pytest.raises(ValueError, match="finite"):
-        review(journey, tmp_path / "review")
+        review((frame, incumbent, runs), tmp_path / "review")
     assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.parametrize("failure", ["run", "data", "save"])
+def test_review_cli_reports_filesystem_errors(journey, tmp_path, monkeypatch, failure):
+    frame, incumbent, runs = journey
+    artifact = tmp_path / "fitted.pkl"
+    data = tmp_path / "development.parquet"
+    current = tmp_path / "incumbent.parquet"
+    save_run(*runs["fitted"], artifact)
+    frame.to_parquet(data)
+    incumbent.to_parquet(current)
+    if failure == "run":
+        artifact.unlink()
+    elif failure == "data":
+        data.unlink()
+    else:
+
+        def fail(*args, **kwargs):
+            raise OSError("simulated review save failure")
+
+        monkeypatch.setattr(pd.DataFrame, "to_csv", fail)
+    result = CliRunner().invoke(
+        app,
+        [
+            "report",
+            "--review",
+            "--run",
+            str(artifact),
+            "--data",
+            str(data),
+            "--incumbent",
+            str(current),
+            "--incumbent-rate",
+            "old_rate",
+            "--selected",
+            "fitted/glm",
+            "--rationale",
+            "Review filesystem errors",
+            "--segment",
+            "region",
+            "--out",
+            str(tmp_path / "review"),
+        ],
+    )
+    assert result.exit_code == 2, (result.output, result.exception)
+    assert "Invalid value" in result.output
+    assert not isinstance(result.exception, OSError)
+    assert not (tmp_path / "review").exists()

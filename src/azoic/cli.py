@@ -193,7 +193,7 @@ def report(
                 limitations=limitations or (),
                 segments=segments or (),
             )
-        except (ValueError, FileExistsError) as error:
+        except (ValueError, OSError) as error:
             raise typer.BadParameter(str(error)) from None
         typer.echo(f"Wrote tariff review to {path}")
         return

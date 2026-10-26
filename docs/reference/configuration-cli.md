@@ -448,7 +448,8 @@ fingerprinted development Parquet), `--incumbent` (ID/rate Parquet),
 `--incumbent-rate`, `--selected` and `--rationale`. Each repeated `--run` must
 have a unique file stem; labels are `stem/model`. The selected label may be
 `incumbent`. Repeat `--segment` for raw segment columns and `--limitation` for
-author-declared limitations. All runs and incumbent rates must match development
+author-declared limitations. Review-mode file read/write failures are reported
+as CLI errors. All runs and incumbent rates must match development
 ID membership and basis; report-time fitting/recalibration never occurs. See the
 [review recipe](../guide/operations.md#prepare-a-tariff-review-with-an-incumbent)
 for scales, full-table contents and zero-incumbent interpretation.
