@@ -563,3 +563,6 @@ The new saved outputs and bundle directories must not already exist. Input and
 write failures produce parameter errors. These commands take saved artifacts,
 not configuration YAML; training configs remain the development fit/tune path.
 See the [complete recipe and file contracts](../guide/operations.md#freeze-final-evidence-then-refit-production-explicitly).
+
+The installed `azoic` command and `python -m azoic.cli` expose the same eleven
+commands, including all three final-evaluation/production operations.

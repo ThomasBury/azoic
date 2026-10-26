@@ -9,6 +9,8 @@ export-tariff`` writes a 3-sheet xlsx from a fitted GLM. M7 acceptance:
 
 from __future__ import annotations
 
+import subprocess
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -668,3 +670,14 @@ def test_cli_help_lists_commands() -> None:
         "export-production",
     ):
         assert cmd in result.output
+
+
+@pytest.mark.parametrize("command", ["evaluate-final", "refit-production", "export-production"])
+def test_module_execution_registers_production_commands(command):
+    result = subprocess.run(
+        [sys.executable, "-m", "azoic.cli", command, "--help"],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "Usage:" in result.stdout

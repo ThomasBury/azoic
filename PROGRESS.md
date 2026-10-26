@@ -456,6 +456,33 @@ head review/CI; any subsequent commit requires those checks again. The next
 human action after a clear review is the merge decision; no merge, release,
 deployment or M62 work is included in this delivery.
 
+### M61 second review checkpoint — 2026-10-26
+
+Pushed `f6ab222` (`fix: preserve categorical handoff inputs and card sections`),
+replied to and resolved the original Codex/CodeRabbit threads. All nine hosted
+CI jobs passed again on that head. CodeRabbit confirmed the card-heading fix.
+Codex's requested second review returned one further P2: module execution called
+`app()` before the three new command definitions, so `python -m azoic.cli` could
+not dispatch them even though the installed script/imported app could.
+
+Added direct subprocess regressions for each new module command: all three
+failed before the correction. Moved the existing module-launch block below every
+registration; command behavior and training logic are unchanged. The installed-
+distribution smoke now checks all eleven helps through both entry points.
+
+Final local `just check` passed Ruff/Ty and **1,508 tests, 4 skips, 2 expected
+failures** in **349.07s**. The connected CLI/production/reporting run passed
+**81 tests in 42.41s**. Strict docs passed in **3.21s**. Rebuilt wheel/sdist
+runtime-only smokes passed outside the checkout on Python 3.13/pandas 3.1.0,
+including all eleven script/module helps and production persistence/scoring.
+Logs: `/tmp/azoic-m61-module-{before,after,check,docs,build,wheel,sdist}.log`.
+
+Commit/push this tested correction, reply to the finding and request another
+latest-head review. The live PR remains the authority for final review/CI;
+any further commit requires that verification again. After a clear latest-head
+review and green CI, the next human action is the merge decision. No merge,
+release, deployment or M62 work is included.
+
 ## M60 — Tariff-review report and incumbent comparison ☑ — 2026-10-26
 
 - [x] Read Current focus, PRD scope, M59 completion and affected consumers.

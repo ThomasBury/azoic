@@ -399,10 +399,6 @@ def tune(
         typer.echo(md)
 
 
-if __name__ == "__main__":
-    app()
-
-
 @app.command("evaluate-final")
 def evaluate_final_command(
     saved_run: Path = typer.Option(..., "--run", help="Trusted selected development run."),
@@ -493,3 +489,7 @@ def export_production_command(
     except (OSError, ValueError, TypeError) as error:
         raise typer.BadParameter(str(error)) from None
     typer.echo(str(path))
+
+
+if __name__ == "__main__":
+    app()

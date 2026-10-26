@@ -214,11 +214,12 @@ for command in (
     "refit-production",
     "export-production",
 ):
-    result = subprocess.run(
-        ["azoic", command, "--help"], check=True, capture_output=True, text=True
-    )
-    assert "Usage:" in result.stdout, command
-print("Preprocessing outcome/column contracts, constant bins, and all eleven CLI helps passed")
+    for entrypoint in (["azoic"], [sys.executable, "-m", "azoic.cli"]):
+        result = subprocess.run(
+            [*entrypoint, command, "--help"], check=True, capture_output=True, text=True
+        )
+        assert "Usage:" in result.stdout, (entrypoint, command)
+print("Preprocessing contracts, constant bins and all eleven CLI helps (script/module) passed")
 
 # Public, runtime-only composition recipe; also published in the compatibility guide.
 X = pd.DataFrame(
