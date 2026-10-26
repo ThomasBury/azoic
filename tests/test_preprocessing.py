@@ -1401,6 +1401,38 @@ def test_nominal_native_splits_pool_nonadjacent_labels():
     assert mapping["A"] == mapping["C"] != mapping["B"] == mapping["D"]
 
 
+@pytest.mark.parametrize("cls", [AutoBinner, AutoGrouper])
+def test_native_leaf_lookup_uses_leaf_ids_and_preserves_typed_categories(cls):
+    values = [0.0, 1.0, 2.0, 3.0, np.nan] if cls is AutoBinner else [1, "A", ("B", 2), "C", None]
+    frame = pd.DataFrame({"x": values * 40})
+    targets = [1, 50, 10, 100, 3] if cls is AutoBinner else [100, 1, 50, 1, 3]
+    fitted = cls(cols=["x"]).fit(frame, targets * 40)
+    if cls is AutoBinner:
+        probes = [np.nan, -1.0, 5.0]
+        for edge in fitted.mapping_["x"]:
+            probes.extend([np.nextafter(edge, -np.inf), edge, np.nextafter(edge, np.inf)])
+        probe = pd.DataFrame({"x": probes})
+        encoded = probe.x.to_numpy()
+    else:
+        assert 1 in fitted.category_dtypes_["x"].categories
+        assert ("B", 2) in fitted.category_dtypes_["x"].categories
+        probe = pd.DataFrame({"x": values + ["unseen"]})
+        encoded = fitted._encoded(probe.x, fitted.levels_["x"])
+    leaves = fitted.trees_["x"].predict(encoded.reshape(-1, 1), pred_leaf=True, num_threads=1)
+    groups = fitted.leaf_groups_["x"]
+    expected = [groups[int(leaf)] for leaf in np.asarray(leaves).ravel()]
+    if cls is AutoBinner:
+        expected = [fitted.category_dtypes_["x"].categories[code] for code in expected]
+    fitted.leaf_groups_["x"] = dict(reversed(list(groups.items())))
+    if cls is AutoGrouper:
+        with pytest.warns(UserWarning, match="unseen"):
+            actual = fitted.transform(probe)
+    else:
+        actual = fitted.transform(probe)
+    assert actual.x.tolist() == expected
+    assert actual.x.dtype == fitted.category_dtypes_["x"]
+
+
 def test_claim_floor_prunes_siblings_without_reweighting_or_collapsing_everything():
     values = np.repeat(np.arange(8, dtype=float), 20)
     X = pd.DataFrame({"x": values, "e": 1.0, "n": np.where(values == 1, 0.0, 1.0)})

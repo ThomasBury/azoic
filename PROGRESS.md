@@ -14,11 +14,19 @@ Legend: ☐ pending · ◐ in progress · ☑ done
   factors/calibration, and versioned workbook/artifact/specification/agreement
   delivery passed. Final gate: Ruff/Ty and **1,502 tests** (4 skips, 2 expected
   failures); strict docs and runtime-only wheel/sdist smokes passed.
-- **Next implementation: M62 — measured performance and observed user handoffs**,
-  in a new session. Keep its hardware/thread/stage-memory measurements and human
+- **M62 ◐ — measured performance and observed user handoffs** started on
+  2026-10-26. Engineering checks passed: million-row/30-predictor benchmark,
+  focused native leaf-lookup optimization, Ruff/Ty and **1,512 tests**, strict
+  docs and runtime-only wheel/sdist smokes. Four-role observation tasks are ready
+  in [M62 validation](M62_VALIDATION.md); no participants are available yet.
+  **Resume M62 with the four actual practitioner sessions; do not mark it done
+  from automated evidence.** Keep its hardware/thread/stage-memory and human
   observation evidence separate from M61 engineering checks. Do not infer real
   receiving-engine agreement, deployment readiness or user acceptance from these
-  tests. M61 Git delivery is authorized on `feat/m61-production-handoff`: stage,
+  tests. M62 Git delivery is authorized on `feat/m62-performance-handoffs`: stage,
+  commit, open a PR and address Codex findings until its latest head is clear.
+  The milestone remains ◐ until the four observed practitioner handoffs pass.
+- M61 Git delivery is authorized on `feat/m61-production-handoff`: stage,
   commit, create the PR and address Codex bot findings until the latest head is
   clear. [PR #23](https://github.com/ThomasBury/azoic/pull/23) is the authority
   for latest-head review and hosted checks; see the review checkpoint below.
@@ -259,6 +267,137 @@ fixed-setting documentation and missing table entries; moved that paragraph
 under preprocessing and added the two setting rows. Next: strict docs and
 final-head Codex/CI for this documentation-only correction, then user handoff.
 M60, merge and release remain outside this delivery.
+
+## M62 — Measured performance and observed user handoffs ◐ — 2026-10-26
+
+- [x] Read Current focus, PRD M62 and M61's latest checkpoint; assess grouping.
+- [x] Run a reproducible million-row, tens-of-predictors benchmark with declared hardware/threads.
+- [x] Record stage times/memory and count fitting avoided by saved-artifact consumers.
+- [x] Consider caching only if repeated transformations dominate measured work.
+- [x] Prepare tasks and evidence records for two medior actuaries, one senior and one ML engineer.
+- [ ] Observe all four unaided handoffs, fix observed blockers and repeat failed tasks.
+- [x] Run project gates and record limitations; milestone completion still requires human acceptance.
+
+### M62 kickoff checkpoint — 2026-10-26
+
+Clean `main` checkout. M62 stands alone: PRD section 6 explicitly makes phases
+independently reviewable; M61 is complete and there is no later roadmap phase
+to group. Trace workflow loading, native preprocessing/model fitting, diagnostics,
+saved-run reporting/prediction and export. Add a contributor-only benchmark,
+focused measurement/no-fit checks and an observation protocol; preserve public
+APIs, dependencies and the released starter. Use fresh processes for fit/resume,
+sample native process RSS by stage and label lifetime high-water memory separately.
+User confirmed no participants are available yet: prepare sessions, never
+substitute scripted/agent execution for human observation. Keep M62 ◐ until
+the required four observed handoffs pass. No Git delivery, publication or deployment.
+
+Next: implement/run the benchmark, prepare the session materials and record
+actual checks and measurements.
+
+### M62 measurement and implementation checkpoint — 2026-10-26
+
+Added an opt-in contributor benchmark and four-role observation protocol in
+`M62_VALIDATION.md`; no production telemetry, dependency or interface change.
+The benchmark runs preparation, fit/save, resume and output verification in
+separate processes, records native pool limits and disjoint stage times/sampled
+RSS, rejects resume fits and verifies rate/report/workbook equality. Initial
+million-row/30-predictor run passed: 82.63 s fit/save/consumers, 27.00 s resume;
+avoided two preprocessing and two model API fits (25.63 s combined fit time).
+Transformations dominated at 44.18 s/18.70 s. A 100,000-row cProfile probe found
+row-wise leaf-to-bin/group Python loops in both native transformers; every leaf
+mapping caller was inspected before replacing those loops with per-call NumPy
+lookup arrays. No cached training transformations or new fitted state.
+
+Focused checks: Ruff passed; preprocessing plus benchmark regressions passed
+**368 tests**, 2 skips. New cases cover arbitrary leaf-dictionary insertion
+order, typed category labels, numeric edge neighbors, missing/unseen routing,
+fresh-process no-fit consumers, stage attribution/failure recovery and refusal
+to overwrite existing evidence. Locked all-extras/groups sync passed without
+lock changes. Final million-row rerun, before/after prediction agreement, full
+gate and strict docs remain to run. Four real-user observations remain pending
+because the user confirmed no participants yet. M62 remains ◐.
+
+### M62 engineering acceptance and observation handoff — 2026-10-26
+
+Completed the engineering and session-preparation scope of M62 alone. The phase
+remains **◐**: no real practitioner has been observed. The user explicitly
+confirmed no participants yet and requested preparation of the sessions.
+`M62_VALIDATION.md` records task cards, supplied inputs, dependency handoffs,
+timing/help/failure/misunderstanding fields, acceptance and repair/retest rules
+for two medior actuaries, one senior actuary and one ML engineer. No simulated
+user acceptance, actuarial approval or receiving-engine agreement is claimed.
+
+Benchmark evidence:
+
+- One baseline and two optimized runs, each 1,000,000 rows with 20 numeric and
+  10 categorical predictors; identical fingerprint, 791,667 training and 208,333
+  development-validation rows. Intel i5-7300U, 15.29 GiB visible RAM, Linux 6.8,
+  Python 3.12.7; observed BLAS/OpenMP and Arrow limits one, GBM `n_jobs=1`.
+- Fit/save plus full-row prediction/card/comparison/workbook consumers:
+  **82.63 s baseline → 54.78–58.68 s**. Transform stage **44.18 → 17.63–19.66 s**.
+  Saved resume **27.00 → 12.78–13.90 s**; its transform **18.70 → 6.43–7.19 s**.
+  Saved consumers avoided two transformer API fits and two model fits,
+  **25.56–27.13 s** combined optimized fitting time, without recomputing diagnostics.
+- Optimized lifetime peak RSS: **1757.39–1757.83 MiB fit**, **1286.87–1287.57 MiB
+  resume**. Full stage time/sampled whole-process RSS tables are in M62 validation;
+  sampling is approximate and retains inputs/models, not per-stage allocations.
+  No material memory reduction or general speed promise is established.
+- Exact corresponding predictions across all six outputs (12 million values),
+  report equality after input-path normalization across runs, and every workbook
+  cell passed. Within each fit/resume pair report bytes match exactly. A saved
+  baseline GLM still produced identical million-row predictions under the new
+  native transform. The first cross-run byte comparison identified the expected
+  differing data path; normalizing only that path resolved it.
+- Native leaf-to-bin/group loops now use small per-call indexed lookups, retaining
+  actual leaf IDs, typed category labels, missing/unseen routing, interval closure
+  and fitted-state layout. No cache: after vectorization transformations were
+  below combined fitting time; no repeated-training use case justifies cache
+  invalidation machinery here. No dependency, public API or starter change.
+
+Verification actually run:
+
+- `uv sync --all-extras --all-groups --locked`: passed, no lock changes.
+- Focused preprocessing/benchmark suite: **368 passed**, 2 skips. A strengthened
+  fixture explicitly retained integer and tuple group labels; both cases passed
+  separately after the full suite had collected its original fixture.
+- `just check`: Ruff/Ty and **1,512 passed**, 4 skips, 2 expected failures;
+  21 known backend/domain warnings. Final Ruff and changed-file format checks pass.
+- `just docs-build`: strict build passed. All local file links in the new
+  validation record and README resolve; the production-guide anchor exists.
+- Wheel/sdist build and both isolated runtime-only Python 3.12 smokes outside the
+  checkout: passed, including preprocessing, persistence, all eleven CLI helps,
+  composition and final-evaluation/refit/production-bundle scoring. Offline
+  cached dependency resolution was used; this is not the hosted platform matrix.
+- `git diff --check` and ignored-evidence check passed. No generated outputs
+  enter the tracked diff; Git delivery/publication/deployment were not performed.
+
+Evidence: complete generated runs remain at `/tmp/azoic-m62-million-{1,2,3}`;
+small JSON/config/log/report/workbook records are retained under ignored
+`evidence/m62/measurements/2026-10-26/`. Logs are
+`/tmp/azoic-m62-{check,docs,build,wheel,sdist,typed-labels}.log`.
+Measurements cover compact cards/comparisons and direct workbook export, not
+large raw-segment reviews, tuning/FSM, production-bundle performance, high
+cardinality, missing-heavy portfolios, receiving engines or other platforms.
+Warm OS page cache and uncontrolled desktop activity limit generalization.
+
+Exact next action: read Current focus, PRD M62 and `M62_VALIDATION.md`; recruit
+two medior actuaries, one senior and one ML engineer. Run/record the unaided
+handoff chain on a declared revision, preserve failed/assisted attempts, fix
+observed blockers and repeat failed tasks. Re-run applicable engineering gates
+after those fixes. Leave M62 ◐ until all required human handoffs pass; do not
+start another phase, publish or deploy automatically.
+
+### M62 Git delivery checkpoint — 2026-10-26
+
+User authorized staging, a Conventional Commit, PR creation and iteration on
+Codex bot findings until the latest head is clear. Isolate the completed M62
+engineering and session-preparation diff on `feat/m62-performance-handoffs`,
+based on merged M61 at `5694715`. Remote main was refreshed and matches that
+base. Existing local acceptance remains green: Ruff/Ty, 1,512 tests, strict docs,
+wheel/sdist runtime smokes and three million-row benchmark executions. Validate
+the staged diff and focused regressions before committing. Await final-head
+Codex review and hosted checks; keep actual human observation pending. Merge,
+release and deployment are outside this delivery.
 
 ## M61 — Frozen final evaluation and production handoff ☑ — 2026-10-26
 

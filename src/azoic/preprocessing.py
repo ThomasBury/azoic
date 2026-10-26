@@ -550,7 +550,8 @@ class AutoBinner(TransformerMixin, BaseEstimator):
             values = self._column_values(out, col)
             if col in self.trees_:
                 leaves = _leaf_predictions(self.trees_[col], values)
-                codes = np.array([self.leaf_groups_[col][leaf] for leaf in leaves])
+                groups = self.leaf_groups_[col]
+                codes = np.array([groups[leaf] for leaf in range(len(groups))])[leaves]
             else:
                 side = "left" if self.closure_[col] == "right" else "right"
                 codes = np.searchsorted(edges, values, side=side)
@@ -957,12 +958,14 @@ class AutoGrouper(TransformerMixin, BaseEstimator):
                 unseen[col] = out.loc[unknown, col].drop_duplicates().tolist()
             if col in self.trees_:
                 values = self._encoded(out[col], self.levels_[col])
-                out[col] = pd.Categorical(
-                    [
-                        self.leaf_groups_[col][leaf]
-                        for leaf in _leaf_predictions(self.trees_[col], values)
-                    ],
+                groups = self.leaf_groups_[col]
+                group_codes = pd.Categorical(
+                    [groups[leaf] for leaf in range(len(groups))],
                     dtype=self.category_dtypes_[col],
+                ).codes
+                leaves = _leaf_predictions(self.trees_[col], values)
+                out[col] = pd.Categorical.from_codes(
+                    group_codes[leaves], dtype=self.category_dtypes_[col]
                 )
             else:
                 out[col] = (
