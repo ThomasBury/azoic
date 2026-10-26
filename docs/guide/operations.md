@@ -97,7 +97,7 @@ YAML with an absolute local data path so relocating that YAML does not change
 its source data. Running it trains a new candidate. `fit`, `tune`, positional
 `compare` configs and `export-tariff --config` remain training operations;
 `compare` rejects mixing positional configs and saved runs. Controlled revisions
-are described below; final evaluation and production refit remain M61 work.
+and final evaluation/production refit are described below.
 
 ## Interpret saved development evidence
 

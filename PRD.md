@@ -233,7 +233,7 @@ contracts. Keep flat modules, current dependencies and the default docs theme.
 | M59 / 4 (completed locally) | Fixed per-feature bin/group mappings through Python and YAML, preserving interval closure, typed categories and explicit missing/unseen destinations. Mapping edits create a new candidate and refit its downstream model. Factor replacements record original values and reasons; fitted/revised tariffs stay distinct. Export revised tariffs with preprocessing through the existing validated workbook writer. Recalibration derives from revised predictions on the declared training population and records one multiplier. Acceptance: revise an age boundary, refit, override a factor, review and export matching rates; failed revisions preserve the original candidate/workbook. |
 | M60 / 5 (completed locally) | Tariff-review Markdown report plus complete CSV tables using existing plots. Align incumbent technical rates by unique record ID, rejecting missing/duplicate/mismatched membership. Compare incumbent/fitted/recalibrated/revised rates on identical observations with explicit scales. Include training O/P, validation metrics, portfolio/segment totals, exposure/available claims and temporal diagnostics; rate-change distribution, affected segments, mapping/factor changes, rationale and limitations. Zero incumbent rates have explicitly undefined percentage changes. Acceptance: a senior reviewer can explain changes, affected groups and selection without the notebook; no universal approval thresholds or unsupported superiority claims. |
 | M61 / 6 (completed locally) | Evaluate a frozen fit on supplied final-test data without fitting/recalibration. Separate explicit production refit freezes selected features/settings/approved mappings and fits parameters on the declared full portfolio, then reapplies recorded overrides and calibration policy. Keep a new artifact and comparison to its evaluated predecessor; holdout results stay with that earlier fit. Deliver the three-sheet workbook, versioned specification, fitted Python artifact, batch-scoring recipe and synthetic cases with expected unrounded rates. Specify feature types/units/mappings/closure/missing/unseen behavior/calibration/artifact identity and evaluation/refit evidence. Acceptance: Python scoring works and a receiving engine has unambiguous agreement cases; release/deployment/rollback ownership remains downstream. |
-| M62 / 7 (pending) | Measure roughly one million rows and tens of variables on declared hardware with thread settings, per-stage loading/preprocessing/fitting/diagnostic time and peak memory. Quantify avoided fitting first; cache transformations only if measured dominant and only for an identical training partition/configuration. Observe at least two medior actuaries, one senior and one ML engineer unaided; record failures, help, time and misunderstandings, then fix blockers. Acceptance: personas complete their handoffs unaided; speed claims reflect measurements, with no advance runtime promise. |
+| M62 / 7 (in progress) | Measure roughly one million rows and tens of variables on declared hardware with thread settings, per-stage loading/preprocessing/fitting/diagnostic time and peak memory. Quantify avoided fitting first; cache transformations only if measured dominant and only for an identical training partition/configuration. Observe at least two medior actuaries, one senior and one ML engineer unaided; record failures, help, time and misunderstandings, then fix blockers. Acceptance: personas complete their handoffs unaided; speed claims reflect measurements, with no advance runtime promise. |
 
 M57 implementation uses `data.split_portfolio` with predeclared final-test IDs
 and separately saved portfolio/membership files. `DatasetSpec.id_col` and
@@ -289,6 +289,18 @@ units and typed mappings. Evaluation/refit cover current model kinds; the workbo
 handoff requires an exportable log-link GLM. CLI commands consume saved artifacts.
 Caller-authored synthetic inputs seed boundary/missing/unseen/rejection cases;
 external engine agreement, deployment and M62 measurements remain separate.
+
+M62 is in progress. Its opt-in Linux contributor benchmark measures a seeded
+million-row, 30-predictor native-preprocessed GLM/raw-GBM journey and fresh-process
+saved consumers with disjoint stage timers, sampled process RSS, separate lifetime
+peak memory and observed thread-pool limits. Saved consumers reject fitting and
+must preserve predictions, reports and workbook cells. Measured row-wise native
+leaf mapping is vectorized without caching, new fitted state or interface changes;
+boundary/missing/typed-category behavior remains unchanged. The measurement method,
+actual results and four-role observation protocol live in `M62_VALIDATION.md`.
+No participants are available yet: user observation, blocker repair/retest and
+unaided handoff acceptance remain pending. Engineering checks alone cannot
+complete this phase or support deployment/receiving-engine claims.
 
 Every phase retains existing gates and adds focused behavioral checks. Cover
 Python/YAML equivalence; ordinary/tuned artifact prediction and mapping fidelity;

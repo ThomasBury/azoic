@@ -81,6 +81,10 @@ uv run mlflow ui \
 
 ## Dev
 
+Performance measurement commands and the pending practitioner-observation
+protocol are in [M62 validation](M62_VALIDATION.md). Benchmark results alone do
+not establish user acceptance or deployment readiness.
+
 ```bash
 just check          # ruff + ty + pytest
 just test           # pytest -x

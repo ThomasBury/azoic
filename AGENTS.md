@@ -117,6 +117,12 @@ artifact/recipe/agreement bundle without fitting or recalibration. All model kin
 can evaluate/refit; the workbook bundle requires an exportable log-link GLM.
 Keep M62 measurements/persona observation and downstream engine/deployment evidence
 separate.
+M62 is in progress; `M62_VALIDATION.md` defines measurement and observation.
+Run the opt-in Linux benchmark with `uv run python tests/benchmark_workflow.py`
+and `--rows 1000000 --threads 1 --out /tmp/azoic-m62-million-1` into a new directory.
+Keep generated evidence outside source control. Report sampled stage RSS as
+whole-process estimates and lifetime peak separately; never infer unaided user
+acceptance from scripted runs. No practitioners have been observed yet.
 Current focus is the authority for the active/next milestone. Read
 `PREPROCESSING_FIX_PLAN.md` for the verified bugs, regression scope, PR delivery,
 and release reconciliation. The scope is mirrored in `PRD.md` section 6.
