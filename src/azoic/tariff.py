@@ -29,7 +29,9 @@ from __future__ import annotations
 
 from collections.abc import Hashable
 from copy import deepcopy
+from dataclasses import dataclass
 from math import fsum
+from numbers import Real
 from pathlib import Path
 from stat import S_IMODE
 from tempfile import NamedTemporaryFile
@@ -46,6 +48,8 @@ from azoic.models import RiskGBM, RiskGLM
 from azoic.preprocessing import AutoBinner, AutoGrouper
 
 __all__ = [
+    "RevisedTariff",
+    "revise_tariff",
     "distill_gbm",
     "export_tariff",
     "extract_tariff",
@@ -344,6 +348,8 @@ def _factors_frame(tariff: dict) -> pd.DataFrame:
         )
     for feat, lvl_factors in tariff["categorical"].items():
         for lvl, f in lvl_factors.items():
+            if not np.isfinite(f) or f <= 0:
+                raise ValueError("export_tariff: categorical factors must be positive and finite")
             rows.append(
                 {
                     "feature": feat,
@@ -355,7 +361,7 @@ def _factors_frame(tariff: dict) -> pd.DataFrame:
     return pd.DataFrame(
         rows,
         columns=pd.Index(["feature", "level", "multiplicative_factor", "application"]),
-    )
+    ).assign(level=pd.Series([row["level"] for row in rows], dtype=object))
 
 
 def apply_tariff(tariff: dict, X: pd.DataFrame) -> np.ndarray:
@@ -393,7 +399,9 @@ def apply_tariff(tariff: dict, X: pd.DataFrame) -> np.ndarray:
             raise ValueError(
                 f"apply_tariff: categorical factors {feat!r} must be positive and finite"
             )
-        factors = X[feat].map(lvl_factors)
+        factors = X[feat].map(
+            pd.Series(level_values, index=pd.Index(list(lvl_factors), dtype=object))
+        )
         if factors.isna().any():
             unknown = X.loc[factors.isna(), feat].drop_duplicates().tolist()
             raise ValueError(
@@ -483,7 +491,9 @@ def _pipeline_parts(estimator, X):
                             )
                         ),
                         "missing_destination": str(step.missing_[feature]),
-                        "unseen_destination": str(step.missing_[feature]),
+                        "unseen_destination": str(
+                            step.unseen_.get(feature, step.missing_[feature])
+                        ),
                     }
                 )
         elif (
@@ -507,8 +517,147 @@ def _pipeline_parts(estimator, X):
     return estimator.steps[-1][1], transformed, pd.DataFrame(rows)
 
 
+@dataclass(frozen=True)
+class RevisedTariff:
+    """A post-fit tariff, separate from its source model; created by ``revise_tariff``.
+
+    This is a scoring artifact, not an estimator to fit or tune. Containers are
+    caller-mutable, like Run containers. Use the factory to validate revisions.
+    """
+
+    source: RiskGLM | Pipeline
+    tariff: dict
+    revision: dict
+
+    @property
+    def feature_names_in_(self) -> np.ndarray:
+        return self.source.feature_names_in_
+
+    def predict(self, X: pd.DataFrame) -> np.ndarray:
+        """Predict revised pure-premium rates on raw feature columns."""
+        X = X[[column for column in self.feature_names_in_ if column in X]]
+        _, transformed, _ = _pipeline_parts(self.source, X)
+        return apply_tariff(self.tariff, transformed)
+
+
+def revise_tariff(
+    model: RiskGLM | Pipeline | RevisedTariff,
+    replacements: list[dict],
+    *,
+    X: pd.DataFrame | None = None,
+    y: pd.Series | np.ndarray | None = None,
+    exposure_col: str | None = None,
+    recalibrate: bool = True,
+) -> RevisedTariff:
+    """Copy a fitted tariff, replace factors with reasons and optionally recalibrate.
+
+    Each replacement has feature, level, factor and reason. Numeric per-unit
+    factors use level ``_per_unit``. Category levels retain their scalar types.
+    Callers must declare the training population with X/aggregate y/exposure_col;
+    workflow.revise_run verifies it against saved identity and train positions.
+    """
+    previous = model if isinstance(model, RevisedTariff) else None
+    source = deepcopy(model.source if isinstance(model, RevisedTariff) else model)
+    glm, _, _ = _pipeline_parts(source, None)
+    if not isinstance(glm, RiskGLM):
+        raise ValueError("revise_tariff requires a fitted RiskGLM or supported GLM pipeline")
+    tariff = deepcopy(previous.tariff) if previous is not None else extract_tariff(glm)
+    if previous is not None:
+        tariff["base_rate"] = previous.revision["structural_base"]
+    changes = deepcopy(previous.revision["changes"]) if previous is not None else []
+    if not isinstance(replacements, list):
+        raise ValueError("factor replacements must be a list of records")
+    seen = set()
+    for replacement in replacements:
+        if not isinstance(replacement, dict) or set(replacement) != {
+            "feature",
+            "level",
+            "factor",
+            "reason",
+        }:
+            raise ValueError("factor replacements require feature, level, factor and reason")
+        feature, level = replacement["feature"], replacement["level"]
+        reason, factor = replacement["reason"], replacement["factor"]
+        if not isinstance(feature, str) or not feature:
+            raise ValueError("replacement feature must be a nonempty string")
+        if not isinstance(reason, str) or not reason.strip():
+            raise ValueError("each factor replacement requires a nonempty reason")
+        if (
+            isinstance(factor, bool)
+            or not isinstance(factor, Real)
+            or not np.isfinite(factor)
+            or factor <= 0
+        ):
+            raise ValueError("replacement factors must be positive finite numbers")
+        key = (feature, type(level), level)
+        if key in seen:
+            raise ValueError("factor replacements must not repeat a feature/level")
+        seen.add(key)
+        if feature in tariff["numeric"]:
+            if level != "_per_unit":
+                raise ValueError("numeric replacement level must be '_per_unit'")
+            original = float(_positive_exp(tariff["numeric"][feature], "original per-unit factor"))
+            tariff["numeric"][feature] = float(np.log(factor))
+        elif feature in tariff["categorical"]:
+            levels = tariff["categorical"][feature]
+            if not any(type(level) is type(known) and level == known for known in levels):
+                raise ValueError(f"unknown typed replacement level for feature {feature!r}")
+            original = levels[level]
+            levels[level] = float(factor)
+        else:
+            raise ValueError(f"unknown replacement feature {feature!r}")
+        changes.append({**deepcopy(replacement), "original_factor": original})
+    structural_base = tariff["base_rate"]
+    calibration = {"applied": False, "multiplier": 1.0}
+    if recalibrate:
+        if X is None or y is None or exposure_col is None:
+            raise ValueError(
+                "revision recalibration requires training X, aggregate y and exposure_col"
+            )
+        exposure, amounts = _calibration_arrays(X, y, exposure_col)
+        predictors = X[[column for column in source.feature_names_in_ if column in X]]
+        _, transformed, _ = _pipeline_parts(source, predictors)
+        predicted_total = float(np.dot(apply_tariff(tariff, transformed), exposure))
+        observed_total = float(amounts.sum())
+        tariff["base_rate"] = recalibrate_for_total(
+            tariff, predicted_total=predicted_total, observed_total=observed_total
+        )
+        multiplier = observed_total / predicted_total
+        if not np.isfinite(multiplier):
+            raise ValueError("revision calibration multiplier must be finite")
+        calibration = {
+            "applied": True,
+            "multiplier": multiplier,
+            "predicted_total_before": predicted_total,
+            "observed_total": observed_total,
+            "n_rows": len(X),
+            "exposure_total": float(exposure.sum()),
+        }
+    revision = {
+        "changes": changes,
+        "structural_base": structural_base,
+        "calibration": calibration,
+    }
+    return RevisedTariff(source, tariff, revision)
+
+
+def _calibration_arrays(X, y, exposure_col):
+    exposure = np.asarray(X[exposure_col].to_numpy(), dtype=float)
+    amounts = check_array(y, dtype=float, ensure_2d=False, input_name="y")
+    if amounts.ndim != 1:
+        raise ValueError("recalibrate: y must be one-dimensional")
+    check_consistent_length(X, amounts)
+    if not np.isfinite(exposure).all() or np.any(exposure <= 0):
+        raise ValueError("recalibrate: exposure must contain only positive finite values")
+    if np.any(exposure < EXPOSURE_FLOOR):
+        raise ValueError("recalibrate: exposure must be at least 1/366 (one day)")
+    if np.any(amounts < 0):
+        raise ValueError("recalibrate: y must contain only non-negative values")
+    return exposure, amounts
+
+
 def export_tariff(
-    glm: RiskGLM | Pipeline,
+    glm: RiskGLM | Pipeline | RevisedTariff,
     path: str | Path,
     *,
     X: pd.DataFrame | None = None,
@@ -545,31 +694,34 @@ def export_tariff(
     Serialization, save, permission or replacement failures leave an existing
     destination unchanged and remove the temporary file.
     """
+    revised = glm if isinstance(glm, RevisedTariff) else None
+    if revised is not None and recalibrate:
+        raise ValueError(
+            "revised tariffs already record calibration; export with recalibrate=False"
+        )
     if recalibrate and (X is None or y is None or exposure_col is None):
         raise ValueError(
             "recalibrate=True requires X, y, and exposure_col; "
             "pass recalibrate=False for the structural (model-predictive) tariff."
         )
 
-    distillation_metrics = getattr(glm, "distillation_metrics_", None)
-    glm, transformed_X, upstream_mappings = _pipeline_parts(glm, X)
+    distillation_metrics = getattr(
+        revised.source if revised is not None else glm, "distillation_metrics_", None
+    )
+    glm, transformed_X, upstream_mappings = _pipeline_parts(revised.source if revised else glm, X)
     if not isinstance(glm, RiskGLM):
         raise ValueError("export_tariff requires a RiskGLM or a pipeline ending in RiskGLM")
-    tariff = extract_tariff(glm, reference=reference)
+    if revised is not None and reference is not None:
+        raise ValueError("revised tariff reference is frozen; omit reference")
+    tariff = (
+        deepcopy(revised.tariff)
+        if revised is not None
+        else extract_tariff(glm, reference=reference)
+    )
 
     recalibrated = False
     if recalibrate and X is not None and y is not None and exposure_col is not None:
-        exposure = np.asarray(X[exposure_col].to_numpy(), dtype=float)
-        y_arr = check_array(y, dtype=float, ensure_2d=False, input_name="y")
-        if y_arr.ndim != 1:
-            raise ValueError("recalibrate: y must be one-dimensional")
-        check_consistent_length(X, y_arr)
-        if not np.isfinite(exposure).all() or np.any(exposure <= 0):
-            raise ValueError("recalibrate: exposure must contain only positive finite values")
-        if np.any(exposure < EXPOSURE_FLOOR):
-            raise ValueError("recalibrate: exposure must be at least 1/366 (one day)")
-        if np.any(y_arr < 0):
-            raise ValueError("recalibrate: y must contain only non-negative values")
+        exposure, y_arr = _calibration_arrays(X, y, exposure_col)
         pred_total = float((np.asarray(glm.predict(transformed_X), dtype=float) * exposure).sum())
         obs_total = float(y_arr.sum())
         tariff["base_rate"] = recalibrate_for_total(
@@ -585,6 +737,14 @@ def export_tariff(
         "intercept_": float(backend.intercept_),
         "recalibrated": bool(recalibrated),
     }
+    if revised is not None:
+        base_row.update(
+            {
+                "candidate_type": "revised",
+                "recalibrated": revised.revision["calibration"]["applied"],
+                "calibration_multiplier": revised.revision["calibration"]["multiplier"],
+            }
+        )
     if distillation_metrics is not None:
         base_row.update(
             {
@@ -595,7 +755,25 @@ def export_tariff(
         )
     base_sheet = pd.DataFrame([base_row])
 
+    if not np.isfinite(tariff["base_rate"]) or tariff["base_rate"] < 0:
+        raise ValueError("export_tariff: base rate must be non-negative and finite")
     factors_sheet = _factors_frame(tariff)
+    if revised is not None:
+        factors_sheet["original_factor"] = factors_sheet["multiplicative_factor"]
+        factors_sheet["reason"] = ""
+        first_changes = set()
+        for change in revised.revision["changes"]:
+            key = (change["feature"], type(change["level"]), change["level"])
+            mask = (factors_sheet.feature == change["feature"]) & factors_sheet.level.map(
+                lambda value, level=change["level"]: type(value) is type(level) and value == level
+            )
+            if key not in first_changes:
+                factors_sheet.loc[mask, "original_factor"] = change["original_factor"]
+            previous_reason = factors_sheet.loc[mask, "reason"]
+            factors_sheet.loc[mask, "reason"] = previous_reason.map(
+                lambda value, reason=change["reason"]: f"{value}; {reason}" if value else reason
+            )
+            first_changes.add(key)
     mapping_sheet = tariff["mapping"]
     if not upstream_mappings.empty:
         mapping_sheet = pd.concat([mapping_sheet, upstream_mappings], ignore_index=True)

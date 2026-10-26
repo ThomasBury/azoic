@@ -211,3 +211,19 @@ See the [saved-candidate recipe](../guide/operations.md#save-fitted-candidates-a
 config-based operations keep their explicit training behavior. Existing Python
 run/tuning return types and defaults remain unchanged. Final-test evaluation,
 mapping/factor revisions and production refit are still pending.
+
+Unreleased M59 adds optional fixed mappings to native transformer constructors,
+`RevisedTariff` / `revise_tariff`, and `workflow.revise_run` (also root exports).
+Workflow model kinds and ordinary fit/tune return types remain unchanged.
+`load_run` can now return revised scoring artifacts alongside native estimators;
+`ModelResult.revision` defaults to empty for ordinary/historical constructed
+results. Revision snapshots must match their saved candidates. Saved artifacts
+require the same source revision; cross-revision pickle compatibility is not
+promised. Revised cards/comparison evidence labels distinguish adjusted rates;
+revised workbooks add audit columns and export their recorded calibration once.
+Fixed groups use typed scalar records and explicit missing/unseen destinations;
+fixed bins declare interval closure. See the
+[revision recipe](../guide/operations.md#revise-factors-on-a-separate-candidate).
+These are technical tariff edits and development evidence; review reporting and
+final evaluation/refit remain M60/M61 work. Interface/schema changes require a
+minor release under the Azoic policy.

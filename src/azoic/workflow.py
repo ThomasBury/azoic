@@ -22,11 +22,12 @@ import platform
 import stat
 import tempfile
 import warnings
+from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import dataclass
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
-from typing import Annotated, Any, Literal, Self, overload
+from typing import Annotated, Any, Literal, Self, cast, overload
 
 import numpy as np
 import pandas as pd
@@ -46,6 +47,7 @@ from azoic.metrics import (
 )
 from azoic.models import FrequencySeverityModel, RiskGBM, RiskGLM
 from azoic.preprocessing import AutoBinner, AutoGrouper
+from azoic.tariff import RevisedTariff, revise_tariff
 from azoic.validation import temporal_split
 
 __all__ = [
@@ -63,6 +65,7 @@ __all__ = [
     "check_experiment",
     "save_run",
     "load_run",
+    "revise_run",
 ]
 
 
@@ -433,6 +436,7 @@ class ModelResult(BaseModel):
     calibration_table: pd.DataFrame
     protected_calibration: dict[str, pd.DataFrame] = Field(default_factory=dict)
     resolved_params: dict[str, Any] = Field(default_factory=dict)
+    revision: dict[str, Any] = Field(default_factory=dict)
 
 
 class Run(BaseModel):
@@ -469,9 +473,19 @@ class Run(BaseModel):
     record_ids: tuple[str | int, ...] = ()
 
 
+def _validate_candidates(run, estimators):
+    if set(estimators) != set(run.models):
+        raise ValueError("estimator names must match run.models exactly")
+    for name, estimator in estimators.items():
+        revision = estimator.revision if isinstance(estimator, RevisedTariff) else {}
+        if revision != run.models[name].revision:
+            raise ValueError("candidate revision evidence must match its Run")
+        check_is_fitted(estimator.source if isinstance(estimator, RevisedTariff) else estimator)
+
+
 def save_run(
     run: Run,
-    estimators: dict[str, RiskGLM | RiskGBM | FrequencySeverityModel | Pipeline],
+    estimators: Mapping[str, RiskGLM | RiskGBM | FrequencySeverityModel | Pipeline | RevisedTariff],
     path: str | Path,
 ) -> None:
     """Atomically pickle a Run and its fitted candidates, excluding portfolio frames.
@@ -480,10 +494,7 @@ def save_run(
     and learned state are included; this is not an anonymization mechanism.
     Only load files from trusted sources: pickle can execute arbitrary code.
     """
-    if set(estimators) != set(run.models):
-        raise ValueError("estimator names must match run.models exactly")
-    for estimator in estimators.values():
-        check_is_fitted(estimator)
+    _validate_candidates(run, estimators)
     if not run.runtime_versions:
         raise ValueError("run has no recorded runtime versions")
     destination = Path(path)
@@ -493,7 +504,7 @@ def save_run(
         with tempfile.NamedTemporaryFile(dir=destination.parent, delete=False) as stream:
             temporary = Path(stream.name)
             pickle.dump(
-                {"format": "azoic.run.1", "run": run, "estimators": estimators},
+                {"format": "azoic.run.1", "run": run, "estimators": dict(estimators)},
                 stream,
                 protocol=5,
             )
@@ -507,7 +518,7 @@ def save_run(
 
 def load_run(
     path: str | Path,
-) -> tuple[Run, dict[str, RiskGLM | RiskGBM | FrequencySeverityModel | Pipeline]]:
+) -> tuple[Run, dict[str, RiskGLM | RiskGBM | FrequencySeverityModel | Pipeline | RevisedTariff]]:
     """Load a trusted fitted run; reject differing recorded runtime versions.
 
     Unpickling executes before validation. Version checks are compatibility
@@ -533,9 +544,59 @@ def load_run(
                 f"saved run environment mismatch for {package}: recorded {recorded}, "
                 f"current {current}; recreate the training environment"
             )
-    for estimator in estimators.values():
-        check_is_fitted(estimator)
+    _validate_candidates(run, estimators)
     return run, estimators
+
+
+def revise_run(
+    run: Run,
+    estimators: Mapping[str, RiskGLM | RiskGBM | FrequencySeverityModel | Pipeline | RevisedTariff],
+    *,
+    model: str,
+    replacements: list[dict],
+    df: pd.DataFrame,
+    recalibrate: bool = True,
+) -> tuple[Run, dict[str, RiskGLM | RiskGBM | FrequencySeverityModel | Pipeline | RevisedTariff]]:
+    """Revise a saved GLM candidate without fitting, on its recorded development split.
+
+    Mapping changes belong in a new config/fit first. This operation changes
+    factors only, recomputes development diagnostics and leaves the original
+    Run/estimators intact. Supply the original full fingerprinted development df.
+    """
+    _validate_portfolio(run.config, df)
+    _validate_candidates(run, estimators)
+    if _data_fingerprint(df) != run.data_fingerprint:
+        raise ValueError("revision data must match saved development fingerprint/order")
+    if set(estimators) != set(run.models) or model not in estimators:
+        raise ValueError("revision requires matching run/estimator names and a known model")
+    train_idx, test_idx = np.asarray(run.train_indices), np.asarray(run.test_indices)
+    train = df.iloc[train_idx]
+    source = estimators[model]
+    if not isinstance(source, (RiskGLM, Pipeline, RevisedTariff)):
+        raise ValueError("factor revision requires a GLM candidate")
+    updated = deepcopy(dict(estimators))
+    revised_tariff = revise_tariff(
+        source,
+        replacements,
+        X=train,
+        y=train[run.config.spec.target],
+        exposure_col=run.config.spec.exposure,
+        recalibrate=recalibrate,
+    )
+    revised_tariff.revision["data_fingerprint"] = run.data_fingerprint
+    revised_tariff.revision["calibration_population"] = "recorded training rows"
+    updated[model] = revised_tariff
+    features, results = _evaluate_split(run.config, df, train_idx, test_idx, estimators=updated)
+    revised = _assemble_run(
+        run.config,
+        df,
+        train_idx,
+        test_idx,
+        features,
+        results,
+        tuning_settings=run.tuning_settings or None,
+    )
+    return revised.model_copy(update={"runtime_versions": deepcopy(run.runtime_versions)}), updated
 
 
 def _split_indices(config: ExperimentConfig, df: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
@@ -650,7 +711,7 @@ def _build_model(
 
 @dataclass
 class _SplitResult:
-    estimator: RiskGLM | RiskGBM | FrequencySeverityModel | Pipeline
+    estimator: RiskGLM | RiskGBM | FrequencySeverityModel | Pipeline | RevisedTariff
     metrics: dict[str, float]
     calibration_table: pd.DataFrame
     protected_calibration: dict[str, pd.DataFrame]
@@ -663,6 +724,8 @@ def _evaluate_split(
     test_idx: np.ndarray,
     *,
     diagnostics: bool = True,
+    estimators: dict[str, RiskGLM | RiskGBM | FrequencySeverityModel | Pipeline | RevisedTariff]
+    | None = None,
 ) -> tuple[list[str], dict[str, _SplitResult]]:
     """Fit and score one partition without final result snapshots or provenance."""
     feature_names = config.feature_columns(df)
@@ -686,7 +749,10 @@ def _evaluate_split(
     for name, spec in config.models.items():
         estimator, columns = _build_model(config, spec, feature_names)
         X_train, X_test = train_df[columns], test_df[columns]
-        estimator.fit(X_train, y_train)
+        if estimators is None:
+            estimator.fit(X_train, y_train)
+        else:
+            estimator = estimators[name]
         pred_test = np.asarray(estimator.predict(X_test), dtype=float)
 
         if np.any(pred_test <= 0):
@@ -743,7 +809,9 @@ def _constructor_value(value: Any) -> Any:
     return deepcopy(value)
 
 
-def _resolved_params(estimator: BaseEstimator) -> dict[str, Any]:
+def _resolved_params(estimator: BaseEstimator | RevisedTariff) -> dict[str, Any]:
+    if isinstance(estimator, RevisedTariff):
+        return {"class": "azoic.tariff.RevisedTariff", "source": _resolved_params(estimator.source)}
     return {
         "class": _constructor_value(estimator),
         **{key: _constructor_value(value) for key, value in estimator.get_params().items()},
@@ -799,6 +867,9 @@ def _assemble_run(
                 kind=config.models[name].kind,
                 params=deepcopy(config.models[name].effective_params(config.spec)),
                 resolved_params=_resolved_params(result.estimator),
+                revision=deepcopy(result.estimator.revision)
+                if isinstance(result.estimator, RevisedTariff)
+                else {},
                 metrics=result.metrics,
                 calibration_table=result.calibration_table,
                 protected_calibration=result.protected_calibration,
@@ -856,5 +927,8 @@ def run_experiment(
     feature_names, results = _evaluate_split(config, df, train_idx, test_idx)
     run = _assemble_run(config, df, train_idx, test_idx, feature_names, results)
     if return_estimators:
-        return run, {name: result.estimator for name, result in results.items()}
+        return run, cast(
+            dict[str, RiskGLM | RiskGBM | FrequencySeverityModel | Pipeline],
+            {name: result.estimator for name, result in results.items()},
+        )
     return run

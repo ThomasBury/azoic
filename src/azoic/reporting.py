@@ -126,6 +126,17 @@ def model_card(run: azoic.Run) -> str:
     for name, res in run.models.items():
         lines.append(_metrics_block_md(name, res.kind, res.params, res.metrics))
         lines.append("")
+        if res.revision:
+            lines.append("- candidate: revised tariff; metrics use revised predictions")
+            calibration = res.revision["calibration"]
+            lines.append(f"- recorded calibration multiplier: {calibration['multiplier']:.12g}")
+            for change in res.revision["changes"]:
+                lines.append(
+                    f"- {change['feature']} / {change['level']!r}: "
+                    f"{change['original_factor']:.12g} -> {change['factor']:.12g}; "
+                    f"{change['reason']}"
+                )
+            lines.append("")
         if res.resolved_params:
             lines.append(
                 f"- constructor: `{res.resolved_params['class']}` "
@@ -191,7 +202,7 @@ def comparison_table(runs: Iterable[azoic.Run]) -> pd.DataFrame:
             "config": run.config.name,
             "model": name,
             "kind": result.kind,
-            "evidence": "development",
+            "evidence": "development (revised tariff)" if result.revision else "development",
             **result.metrics,
         }
         for run in runs
@@ -223,6 +234,7 @@ def comparison_dashboard(runs: Iterable[azoic.Run]) -> str:
 
     table = comparison_table(runs)
     labels = table["config"].astype(str) + " / " + table["model"].astype(str)
+    labels.loc[table["evidence"] == "development (revised tariff)"] += " (revised)"
     figure = make_subplots(
         rows=2,
         cols=3,

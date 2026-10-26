@@ -166,6 +166,59 @@ nonfinite raw numerics; ordinary pipeline prediction uses the fitted routes.
 
 ## Configure the same steps in YAML
 
+### Keep approved mappings fixed through refits
+
+Set `fixed` on `AutoBinner` / `AutoGrouper`, or inside their YAML settings.
+Listed features use those mappings during every fit; other selected features
+still learn on training rows. Numeric edges must be finite and strictly
+increasing. Declare `closure: left` for lower-inclusive intervals or `right`
+for upper-inclusive intervals (`<=`). Missing numeric values require an existing
+zero-based bin destination; index `len(edges) + 1` selects a separate `Missing`
+bin, preserving the quantile convention. Empty edges mean one interval; route
+missing to 0 or to a separate `Missing` bin at index 1.
+
+Categorical mappings use a list of `level` / `group` records, preserving scalar
+types: integer `1` and string `"1"` are different levels. Equal numeric/boolean
+aliases such as `1` and `true` are rejected. Both `missing` and `unseen` group
+destinations are required and may differ. Destination-only groups enter the
+output vocabulary; if training supplies no observations there, fitted factors
+have no direct experience for that group.
+
+```yaml
+preprocessing:
+  binner:
+    cols: [driver_age]
+    fixed:
+      driver_age:
+        edges: [30, 60]
+        closure: left
+        missing: 1
+  grouper:
+    cols: [region]
+    fixed:
+      region:
+        groups:
+          - {level: urban, group: metro}
+          - {level: suburban, group: metro}
+          - {level: rural, group: other}
+        missing: other
+        unseen: metro
+```
+
+Fixed mappings are explicit actuarial decisions: learned credibility floors and
+monotonic guarantees do not apply to those features. Outcome and exposure
+validation still applies. Tree methods need outcomes only for features whose
+mappings are learned.
+
+To change a boundary, copy the configuration, change its fixed specification and
+call `run_experiment` again. Keep the development portfolio and split settings
+the same. This creates a new candidate and fits downstream model parameters on
+the revised feature space. Keep the previous Run and estimators for comparison.
+Editing a live pipeline with `set_mapping` does not refit its model; use fixed
+configuration plus a new fit for a controlled candidate revision.
+
+### Learn mappings from training data
+
 ```yaml
 preprocessing:
   binner:

@@ -90,6 +90,7 @@ without `exposure_col` use unweighted binning or unit row weights for grouping.
 | `min_claims` | number or null | `null` | Merge bins below aggregate claim count |
 | `monotonic` | false, true, `increasing`, or `decreasing` | `false` | Isotonic smoothing and adjacent-bin merging |
 | `random_state` | integer | `42` | LightGBM tree seed |
+| `fixed` | mapping or null | `null` | Approved edges, closure and missing bin per feature; unlisted features learn normally |
 
 `min_claims` requires `spec.claim_count`. Tree methods require outcomes and route
 missing values through the fitted tree. Quantile binning reserves `Missing`.
@@ -110,6 +111,7 @@ numeric edges and bin membership retain their original precision.
 | `min_exposure` | number or null | `null` | Collapse levels below aggregate exposure |
 | `min_claims` | number or null | `null` | Collapse levels below aggregate claim count |
 | `other_label` | string | `"Other"` | Rare strategy label for collapsed, missing or unknown levels |
+| `fixed` | mapping or null | `null` | Approved groups, missing and unseen destinations per feature; unlisted features learn normally |
 
 Similarity fits one LightGBM regression tree on rates with exposure weights.
 Nominal levels use native categorical splitting; ordered categories use numeric
@@ -117,6 +119,15 @@ codes and stay contiguous. Missing and unseen levels use the fitted missing
 route; unseen levels warn. Rare grouping retains `Other`. Controls must be finite;
 limits must be positive integers. See [manual mapping edits](../guide/data-preprocessing.md#learn-transparent-mappings)
 for explicit missing destinations when changing tree mappings.
+
+`preprocessing.binner.fixed` and `preprocessing.grouper.fixed` are optional
+per-feature approved mappings that survive clone/refit. Numeric specifications
+contain exactly `edges`, `closure` (`left` or `right`) and `missing` (an existing
+zero-based bin index, or `len(edges) + 1` for a separate `Missing` bin).
+Categorical specifications contain exactly `groups`
+(a list of `{level, group}` scalar records), `missing` and `unseen` destinations.
+Selected features without fixed specifications learn normally. See
+[fixed mapping configuration](../guide/data-preprocessing.md#keep-approved-mappings-fixed-through-refits).
 
 ## Model kinds
 

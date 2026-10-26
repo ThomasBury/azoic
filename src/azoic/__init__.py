@@ -47,11 +47,13 @@ if TYPE_CHECKING:
     from .reporting import comparison_dashboard as comparison_dashboard
     from .reporting import comparison_table as comparison_table
     from .reporting import model_card as model_card
+    from .tariff import RevisedTariff as RevisedTariff
     from .tariff import apply_tariff as apply_tariff
     from .tariff import distill_gbm as distill_gbm
     from .tariff import export_tariff as export_tariff
     from .tariff import extract_tariff as extract_tariff
     from .tariff import recalibrate_for_total as recalibrate_for_total
+    from .tariff import revise_tariff as revise_tariff
     from .tune import TuneResult as TuneResult
     from .tune import tune_experiment as tune_experiment
     from .validation import make_strata as make_strata
@@ -68,6 +70,7 @@ if TYPE_CHECKING:
     from .workflow import TuningSpec as TuningSpec
     from .workflow import check_experiment as check_experiment
     from .workflow import load_run as load_run
+    from .workflow import revise_run as revise_run
     from .workflow import run_experiment as run_experiment
     from .workflow import save_run as save_run
 
@@ -123,6 +126,7 @@ _EXPORTS = {
             "check_experiment",
             "save_run",
             "load_run",
+            "revise_run",
         ),
         "tariff": (
             "distill_gbm",
@@ -130,6 +134,8 @@ _EXPORTS = {
             "extract_tariff",
             "apply_tariff",
             "recalibrate_for_total",
+            "RevisedTariff",
+            "revise_tariff",
         ),
         "reporting": ("model_card", "comparison_table", "comparison_dashboard"),
         "mlops": ("log_run",),
