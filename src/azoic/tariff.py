@@ -27,7 +27,7 @@ Three sheets per the PRD section 3 ``base / factors / mappings`` contract:
 
 from __future__ import annotations
 
-from collections.abc import Hashable
+from collections.abc import Hashable, Mapping
 from copy import deepcopy
 from dataclasses import dataclass
 from math import fsum
@@ -35,6 +35,7 @@ from numbers import Real
 from pathlib import Path
 from stat import S_IMODE
 from tempfile import NamedTemporaryFile
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -42,12 +43,14 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import FunctionTransformer
 from sklearn.utils.validation import check_array, check_consistent_length
 
+import azoic
 from azoic.data import EXPOSURE_FLOOR
 from azoic.metrics import mean_tweedie_deviance
 from azoic.models import RiskGBM, RiskGLM
 from azoic.preprocessing import AutoBinner, AutoGrouper
 
 __all__ = [
+    "export_production",
     "RevisedTariff",
     "revise_tariff",
     "distill_gbm",
@@ -802,3 +805,311 @@ def export_tariff(
     finally:
         temporary.unlink(missing_ok=True)
     return p
+
+
+def export_production(
+    run: azoic.Run,
+    estimators: Mapping[str, Any],
+    *,
+    cases: pd.DataFrame,
+    feature_units: Mapping[str, str],
+    out: str | Path,
+) -> Path:
+    """Deliver a production GLM to a new directory, without fitting or calibration.
+
+    ``cases`` must be caller-authored synthetic predictors (never portfolio rows).
+    They seed automatically added boundaries/neighbors, missing/unseen levels,
+    categorical levels and nonfinite numeric rejection cases. JSON cases retain
+    unrounded expected rates or explicit rejection. Declare a unit for every
+    predictor, including 'category' or 'dimensionless' where appropriate.
+    Returns specification.json. This is an engine agreement contract, not a
+    deployment system or evidence that a receiving engine has been validated.
+    """
+    import hashlib
+    import json
+    import tempfile
+
+    from azoic.workflow import _fitted_fingerprint, _validate_candidates, save_run
+
+    destination = Path(out)
+    if destination.exists():
+        raise FileExistsError(f"production output already exists: {destination}")
+    _validate_candidates(run, estimators)
+    if not run.production or run.final_evaluation or len(estimators) != 1:
+        raise ValueError("handoff requires one explicit production-refit candidate")
+    model, estimator = next(iter(estimators.items()))
+    if _fitted_fingerprint(estimator) != run.production["fitted_fingerprint"]:
+        raise ValueError("production fitted state changed after refit")
+    if set(feature_units) != set(run.feature_names) or any(
+        not isinstance(unit, str) or not unit.strip() for unit in feature_units.values()
+    ):
+        raise ValueError("declare a nonempty unit for every selected feature")
+    if cases.empty or not cases.columns.is_unique or set(cases.columns) != set(run.feature_names):
+        raise ValueError("supply nonempty synthetic cases with exactly the selected predictors")
+    source = estimator.source if isinstance(estimator, RevisedTariff) else estimator
+    glm, _, _ = _pipeline_parts(source, None)
+    if not isinstance(glm, RiskGLM):
+        raise ValueError("production workbook handoff requires a log-link GLM tariff")
+    tariff = estimator.tariff if isinstance(estimator, RevisedTariff) else extract_tariff(glm)
+    transforms: list[dict[str, Any]] = []
+    if isinstance(source, Pipeline):
+        for name, step in source.steps[:-1]:
+            if isinstance(step, AutoBinner):
+                transforms.append(
+                    {
+                        "step": name,
+                        "type": "bins",
+                        "features": {
+                            feature: {
+                                "edges": edges.tolist(),
+                                "closure": step.closure_[feature],
+                                "missing_bin": step.missing_[feature],
+                                "labels": list(step.category_dtypes_[feature].categories),
+                            }
+                            for feature, edges in step.mapping_.items()
+                        },
+                    }
+                )
+            elif isinstance(step, AutoGrouper):
+                transforms.append(
+                    {
+                        "step": name,
+                        "type": "groups",
+                        "features": {
+                            feature: {
+                                "groups": [
+                                    {"level": level, "group": group}
+                                    for level, group in mapping.items()
+                                ],
+                                "missing": step.missing_[feature],
+                                "unseen": step.unseen_.get(feature, step.missing_[feature]),
+                            }
+                            for feature, mapping in step.mapping_.items()
+                        },
+                    }
+                )
+    transformed_features = {feature for step in transforms for feature in step["features"]}
+    raw_categories: dict[str, dict[str, Any]] = {
+        feature: {
+            "categories": list(levels),
+            "ordered": isinstance(cases[feature].dtype, pd.CategoricalDtype)
+            and cases[feature].cat.ordered,
+        }
+        for feature, levels in tariff["categorical"].items()
+        if feature in cases and feature not in transformed_features
+    }
+    probes = [(f"synthetic-{i}", row) for i, row in enumerate(cases.to_dict("records"))]
+    baseline = probes[0][1]
+    for transform in transforms:
+        for feature, mapping in transform["features"].items():
+            if transform["type"] == "bins":
+                for edge in mapping["edges"]:
+                    for label, value in (
+                        ("below", np.nextafter(edge, -np.inf)),
+                        ("at", edge),
+                        ("above", np.nextafter(edge, np.inf)),
+                    ):
+                        probes.append((f"{feature}-{edge}-{label}", {**baseline, feature: value}))
+            else:
+                for i, group in enumerate(mapping["groups"]):
+                    probes.append((f"{feature}-level-{i}", {**baseline, feature: group["level"]}))
+    for feature in run.feature_names:
+        probes.append((f"{feature}-missing", {**baseline, feature: None}))
+        if feature in tariff["numeric"] or any(
+            transform["type"] == "bins" and feature in transform["features"]
+            for transform in transforms
+        ):
+            probes.append((f"{feature}-nonfinite", {**baseline, feature: float("inf")}))
+        else:
+            unknown = "__azoic_unseen__"
+            known = set(cases[feature].dropna())
+            for transform in transforms:
+                mapping = transform["features"].get(feature, {})
+                known.update(entry["level"] for entry in mapping.get("groups", []))
+            known.update(tariff["categorical"].get(feature, {}))
+            while unknown in known:
+                unknown += "_"
+            probes.append((f"{feature}-unseen", {**baseline, feature: unknown}))
+            for i, level in enumerate(tariff["categorical"].get(feature, {})):
+                if not any(feature in transform["features"] for transform in transforms):
+                    probes.append((f"{feature}-level-{i}", {**baseline, feature: level}))
+    agreement = []
+    for label, values in probes:
+        frame = pd.DataFrame([values], columns=run.feature_names)
+        try:
+            for feature, schema in raw_categories.items():
+                if (frame[feature].notna() & ~frame[feature].isin(schema["categories"])).any():
+                    raise ValueError(f"unknown raw category for {feature!r}")
+                frame[feature] = frame[feature].astype(pd.CategoricalDtype(**schema))
+            expected = np.asarray(estimator.predict(frame), dtype=float)
+            if expected.shape != (1,) or not np.isfinite(expected).all() or (expected < 0).any():
+                raise ValueError("invalid predicted rate")
+        except (ValueError, TypeError) as error:
+            if label.startswith("synthetic-"):
+                raise ValueError(f"supplied synthetic case cannot be scored: {label}") from error
+            agreement.append(
+                {"case": label, "input": values, "outcome": "reject", "error": type(error).__name__}
+            )
+        else:
+            _, transformed, _ = _pipeline_parts(source, frame)
+            if not np.allclose(apply_tariff(tariff, transformed), expected, rtol=1e-12, atol=0):
+                raise ValueError("tariff arithmetic disagrees with fitted synthetic rates")
+            agreement.append(
+                {
+                    "case": label,
+                    "input": values,
+                    "outcome": "rate",
+                    "expected_rate": float(expected[0]),
+                }
+            )
+    specification = {
+        "format": "azoic.production.1",
+        "model": model,
+        "evidence": "production_refit; no independent final-test score for this fit",
+        "features": [
+            {
+                "name": feature,
+                "input_kind": "numeric"
+                if feature in tariff["numeric"]
+                or any(
+                    transform["type"] == "bins" and feature in transform["features"]
+                    for transform in transforms
+                )
+                else "typed_category",
+                "synthetic_dtype": str(cases[feature].dtype),
+                "unit": feature_units[feature],
+                **raw_categories.get(feature, {}),
+            }
+            for feature in run.feature_names
+        ],
+        "portfolio_basis": run.config.spec.model_dump(),
+        "prediction_unit": "claim currency per exposure year",
+        "period_cost": "predicted_rate * exposure_years; no rounding",
+        "numeric_terms": [
+            {"feature": feature, "log_coefficient": coefficient}
+            for feature, coefficient in tariff["numeric"].items()
+        ],
+        "categorical_terms": [
+            {
+                "feature": feature,
+                "levels": [{"level": level, "factor": factor} for level, factor in levels.items()],
+            }
+            for feature, levels in tariff["categorical"].items()
+        ],
+        "base_rate": tariff["base_rate"],
+        "transformations": transforms,
+        "formula": "base_rate * exp(sum(log_coefficient * value)) * product(category factors)",
+        "input_rules": (
+            "ordered transformations first; reject unseen raw GLM levels and nonfinite "
+            "numerics; explicit native missing/unseen routes above"
+        ),
+        "calibration_application": "already included in base_rate; do not multiply again",
+        "interval_rules": "right: upper-inclusive <=; left: lower-inclusive >=",
+        "calibration": run.models[model].revision.get(
+            "calibration", {"applied": False, "multiplier": 1.0}
+        ),
+        "revisions": run.models[model].revision,
+        "production": run.production,
+        "training_metrics": run.models[model].metrics,
+        "runtime_versions": run.runtime_versions,
+        "config": run.config.model_dump(),
+        "resolved_params": run.models[model].resolved_params,
+        "comparison_tolerance": {"rtol": 1e-12, "atol": 0.0},
+        "special_values": (
+            "JSON {$float: inf|-inf|nan} means that IEEE floating value; null means missing"
+        ),
+        "ownership": (
+            "Receiving engine validation, deployment, release and rollback belong downstream."
+        ),
+    }
+
+    def encode(value):
+        if isinstance(value, np.generic):
+            value = value.item()
+        if isinstance(value, float) and not np.isfinite(value):
+            return {"$float": str(value)}
+        if isinstance(value, Mapping):
+            return {str(key): encode(item) for key, item in value.items()}
+        if isinstance(value, (list, tuple, np.ndarray)):
+            return [encode(item) for item in value]
+        return value
+
+    with tempfile.TemporaryDirectory(
+        dir=destination.parent, prefix=".azoic-production-"
+    ) as temporary:
+        staging = Path(temporary) / "bundle"
+        staging.mkdir()
+        save_run(run, estimators, staging / "production.pkl")
+        export_tariff(estimator, staging / "tariff.xlsx", recalibrate=False)
+        (staging / "agreement.json").write_text(
+            json.dumps(encode(agreement), indent=2, allow_nan=False), encoding="utf-8"
+        )
+        (staging / "score.py").write_text(_BATCH_SCORING_RECIPE, encoding="utf-8")
+        specification["files_sha256"] = {
+            path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in staging.iterdir()
+        }
+        (staging / "specification.json").write_text(
+            json.dumps(encode(specification), indent=2, allow_nan=False), encoding="utf-8"
+        )
+        staging.rename(destination)
+    return destination / "specification.json"
+
+
+_BATCH_SCORING_RECIPE = '''"""Trusted matching-environment scoring.
+Usage: python score.py input.parquet output.csv.
+With no arguments, verify the synthetic agreement cases. Rates remain unrounded.
+"""
+import json
+import sys
+from pathlib import Path
+import numpy as np
+import pandas as pd
+from azoic import load_run
+
+root = Path(__file__).resolve().parent
+run, estimators = load_run(root / "production.pkl")
+model = next(iter(estimators.values()))
+specification = json.loads((root / "specification.json").read_text())
+categories = {feature["name"]: pd.CategoricalDtype(feature["categories"], feature["ordered"])
+              for feature in specification["features"] if "categories" in feature}
+
+def predict(frame):
+    frame = frame[run.feature_names].copy()
+    for feature, dtype in categories.items():
+        if (frame[feature].notna() & ~frame[feature].isin(dtype.categories)).any():
+            raise ValueError(f"unknown raw category for {feature!r}")
+        frame[feature] = frame[feature].astype(dtype)
+    return model.predict(frame)
+
+if len(sys.argv) == 1:
+    def decode(value):
+        return float(value["$float"]) if isinstance(value, dict) and "$float" in value else value
+    for case in json.loads((root / "agreement.json").read_text()):
+        frame = pd.DataFrame([{key: decode(value) for key, value in case["input"].items()}])
+        try:
+            rate = predict(frame)
+        except (ValueError, TypeError):
+            assert case["outcome"] == "reject", case["case"]
+        else:
+            assert case["outcome"] == "rate", case["case"]
+            np.testing.assert_allclose(rate, [case["expected_rate"]], rtol=1e-12, atol=0)
+    print("Synthetic agreement cases passed; receiving-engine agreement remains downstream.")
+else:
+    if len(sys.argv) != 3:
+        raise SystemExit("usage: python score.py [input.parquet output.csv]")
+    frame = pd.read_parquet(sys.argv[1])
+    rates = np.asarray(predict(frame), dtype=float)
+    if rates.shape != (len(frame),) or not np.isfinite(rates).all() or (rates < 0).any():
+        raise ValueError("expected one finite nonnegative rate per row")
+    output = pd.DataFrame({"predicted_rate": rates})
+    id_col = run.config.spec.id_col
+    if id_col and id_col in frame:
+        output.insert(0, id_col, frame[id_col].to_numpy())
+    exposure_col = run.config.spec.exposure
+    if exposure_col in frame:
+        exposure = frame[exposure_col].to_numpy(dtype=float)
+        if not np.isfinite(exposure).all() or (exposure < 0).any():
+            raise ValueError("period exposure must be finite and nonnegative")
+        output["predicted_period_cost"] = rates * exposure
+    output.to_csv(sys.argv[2], index=False)
+'''

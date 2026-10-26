@@ -527,6 +527,132 @@ step removes any present outcome columns before the final estimator so targets
 never leak into prediction inputs. Frequency-severity pipelines strip the same
 columns inside the meta-estimator instead.
 
+## Freeze final evidence, then refit production explicitly
+
+Finish development review and record the selected candidate and rationale before
+opening the reserved final-test portfolio. Keep the
+[original membership manifest](actuarial-workflow.md#freeze-portfolio-membership-before-experimenting)
+and the same target, exposure and claim valuation basis. Evaluation scores the
+existing fitted candidate: it does not fit, tune, revise factors or recalibrate.
+
+```python
+import json
+from pathlib import Path
+
+import pandas as pd
+from azoic import evaluate_final, export_production, load_run, refit_production, save_run
+
+run, estimators = load_run("selected.pkl")
+manifest = json.loads(Path("portfolio-membership.json").read_text())
+final_test = pd.read_parquet("final-test.parquet")
+evaluated = evaluate_final(
+    run, estimators, model="glm", df=final_test,
+    final_test_ids=manifest["final_test"],
+    rationale="Selected after development tariff review and recorded approval",
+)
+save_run(evaluated, estimators, "evaluated.pkl")
+
+# This is a separate, explicit fitting operation on the original full portfolio.
+full = pd.concat([pd.read_parquet("development.parquet"), final_test])
+full.to_parquet("full-production.parquet")
+production, fitted = refit_production(
+    evaluated, estimators, df=full,
+    rationale="Approved parameter refit on development plus the final-test portfolio",
+)
+save_run(production, fitted, "production.pkl")
+
+# Author synthetic cases; never copy real policy rows into the handoff cases.
+cases = pd.DataFrame({"driver_age": [25.0, 60.0], "region": ["north", "south"]})
+export_production(
+    production, fitted, cases=cases,
+    feature_units={"driver_age": "years", "region": "category"},
+    out="production-handoff",
+)
+```
+
+Adapt the selected model, predictor names, synthetic levels and units to the
+actual saved run. The example assumes those two predictors. All existing model
+kinds support final evaluation and refit. The workbook handoff requires a
+log-link GLM with supported native preprocessing; it never distills a GBM.
+An external calibration multiplier is not an artifact: record it beforehand with
+`revise_run(..., replacements=[], recalibrate=True)` if that is the approved
+candidate. A handoff never silently recalibrates a second time.
+
+Final IDs must be unique, match the supplied manifest exactly and be disjoint
+from every development ID. The returned copied `Run.final_evaluation` binds the
+selected fitted-state/configuration fingerprints, final-data fingerprint, IDs, metrics,
+calibration totals and selection rationale. Development metrics stay separate.
+The original run remains unchanged. An already evaluated run cannot be evaluated
+again through this API. A caller can still reuse an older copy or inspect data
+outside Azoic; predeclaration and one-time final use remain procedural controls.
+
+`refit_production` requires that evaluated candidate and exactly the union of
+its development and final-test membership. It verifies both original frames'
+values, column order, dtypes and indices. Concatenate the exact saved
+development/final frames as above and retain their indices when writing the full
+Parquet; an earlier raw source file may lack the declared IDs/partition metadata.
+The full frame may be reordered. Refitting freezes learned native
+bins/groups, including interval closure and missing/unseen destinations, and
+clones only the final estimator's settings to fit new parameters. It never
+searches hyperparameters or relearns transformations. Recorded factor overrides
+are reapplied (the latest approved replacement per typed level); the recorded
+calibration policy is recomputed once on the full training portfolio.
+
+The new `Run.production` records rationale, identities, mapping/calibration
+policy, full-population rate-change summaries and predecessor evaluation.
+`Run.final_evaluation` is empty for this new fit. Its metrics end in `_full` and
+are training evidence only; predecessor holdout metrics do not become claims
+about the new fit. `model_card` and `comparison_table` label this distinction.
+Use the table for production comparisons; the development dashboard and tariff
+review reject production artifacts. Revisions must precede final evaluation.
+
+The CLI consumes those same saved artifacts and JSON declarations:
+
+```bash
+azoic evaluate-final --run selected.pkl --model glm --data final-test.parquet \
+  --membership portfolio-membership.json --rationale "Frozen selection" --out evaluated.pkl
+azoic refit-production --run evaluated.pkl --data full-production.parquet \
+  --rationale "Approved full fit" --out production.pkl
+azoic export-production --run production.pkl --cases synthetic-cases.parquet \
+  --units feature-units.json --out production-handoff
+python production-handoff/score.py
+python production-handoff/score.py predictors.parquet rates.csv
+```
+
+`feature-units.json` maps every predictor to a nonempty unit string, for example
+`{"driver_age": "years", "region": "category"}`. `synthetic-cases.parquet` has
+exactly the selected predictor columns. Missing files, invalid inputs and failed
+writes produce CLI parameter errors. CLI evaluation/refit require a new saved
+output path; the Python `save_run` replacement policy remains unchanged.
+
+The new handoff directory contains:
+
+| File | Contract |
+| --- | --- |
+| `specification.json` | `azoic.production.1`: predictor types/declared units, portfolio basis, ordered typed mappings, exact edges/closure/routes, base/factors/formula, calibration, revisions, artifact hashes, runtime/settings and evaluation/refit lineage |
+| `tariff.xlsx` | Existing `base_rate`, `factors`, `mappings` sheets; rates match the fitted artifact without further calibration |
+| `production.pkl` | Trusted same-environment production Run and fitted model; source row frames are excluded |
+| `agreement.json` | Caller synthetic cases plus exact/neighboring boundaries, known levels, missing/unseen inputs and nonfinite numeric probes; expected unrounded rate or explicit rejection |
+| `score.py` | With no arguments, verifies agreement cases; with input Parquet/output CSV arguments, batch scores rates and optional exposure-period costs |
+
+JSON uses `{"$float": "inf"}`, `-inf` or `nan` for nonfinite values; `null` is
+missing. Category levels remain typed scalar records. Raw categorical predictors
+also record their fitted category vocabulary and ordering; probe construction
+and both recipe modes restore that categorical dtype, including integer/boolean
+categories. Unseen raw values are rejected before conversion can turn them into
+missing values. Agreement uses relative tolerance `1e-12` and absolute tolerance zero; rates are never rounded. Period
+cost is rate times exposure in years. The recipe preserves input order and
+available IDs. An existing handoff directory is rejected; failed writes remove
+staging and preserve earlier bundles. The specification and saved run include
+real membership IDs and aggregate outcomes; apply portfolio data controls even
+though agreement inputs are synthetic.
+
+The receiving engine must implement these mappings and pass the same cases.
+Passing Azoic's Python checks does not establish agreement with an external
+engine. Technical pure premium excludes commercial loadings, taxes and discounts.
+Release, deployment, monitoring and rollback ownership remain downstream.
+Performance measurements and observed user handoffs remain M62 work.
+
 ## Operational checklist
 
 - Preserve the config, data fingerprint, and generated report together.

@@ -22,10 +22,13 @@ from azoic import (
     calibration_table,
     check_experiment,
     comparison_table,
+    evaluate_final,
+    export_production,
     gini,
     load_run,
     log_run,
     model_card,
+    refit_production,
     revise_run,
     revise_tariff,
     run_experiment,
@@ -101,6 +104,19 @@ def consumer(config: ExperimentConfig, frame: pd.DataFrame, flag: bool):
             out="review",
             selected="fit/glm",
             rationale="Review evidence",
+        ),
+        Path,
+    )
+    evaluated = evaluate_final(
+        run, estimators, model="glm", df=frame, final_test_ids=[1], rationale="Selected"
+    )
+    assert_type(evaluated, Run)
+    production, fitted = refit_production(evaluated, estimators, df=frame, rationale="Approved")
+    assert_type(production, Run)
+    assert_type(fitted, dict[str, Any])
+    assert_type(
+        export_production(
+            production, fitted, cases=frame, feature_units={"x": "years"}, out="handoff"
         ),
         Path,
     )

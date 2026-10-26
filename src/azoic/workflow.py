@@ -16,6 +16,7 @@ column is popped inside ``RiskGLM`` / ``RiskGBM``); diagnostics use aggregate
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import pickle
 import platform
@@ -66,6 +67,8 @@ __all__ = [
     "save_run",
     "load_run",
     "revise_run",
+    "evaluate_final",
+    "refit_production",
 ]
 
 
@@ -471,6 +474,8 @@ class Run(BaseModel):
     runtime_versions: dict[str, str] = Field(default_factory=dict)
     tuning_settings: dict[str, Any] = Field(default_factory=dict)
     record_ids: tuple[str | int, ...] = ()
+    final_evaluation: dict[str, Any] = Field(default_factory=dict)
+    production: dict[str, Any] = Field(default_factory=dict)
 
 
 def _validate_candidates(run, estimators):
@@ -563,6 +568,10 @@ def revise_run(
     factors only, recomputes development diagnostics and leaves the original
     Run/estimators intact. Supply the original full fingerprinted development df.
     """
+    if run.production or run.final_evaluation:
+        raise ValueError(
+            "revise development candidates before final evaluation or production refit"
+        )
     _validate_portfolio(run.config, df)
     _validate_candidates(run, estimators)
     if _data_fingerprint(df) != run.data_fingerprint:
@@ -932,3 +941,243 @@ def run_experiment(
             {name: result.estimator for name, result in results.items()},
         )
     return run
+
+
+def _fitted_fingerprint(estimator) -> str:
+    # Normalize buffer ownership so first-save and reloaded state have the same identity.
+    normalized = pickle.loads(pickle.dumps(estimator, protocol=5))
+    return hashlib.sha256(pickle.dumps(normalized, protocol=5)).hexdigest()
+
+
+def _selection_fingerprint(run: Run) -> str:
+    def numpy_value(value):
+        if isinstance(value, (np.ndarray, np.generic)):
+            return value.tolist()
+        raise TypeError("configuration identity requires serializable constructor values")
+
+    context = _constructor_value(
+        (run.config.model_dump(), run.feature_names, run.data_fingerprint, run.record_ids)
+    )
+    return hashlib.sha256(
+        json.dumps(context, sort_keys=True, default=numpy_value).encode()
+    ).hexdigest()
+
+
+def _score_portfolio(estimator, df, spec):
+    columns = list(estimator.feature_names_in_)
+    missing = [column for column in columns if column not in df]
+    if missing:
+        raise ValueError(f"candidate data is missing predictors: {missing}")
+    rate = np.asarray(estimator.predict(df[columns]), dtype=float)
+    if rate.shape != (len(df),) or not np.isfinite(rate).all() or (rate < 0).any():
+        raise ValueError("candidate must predict one finite nonnegative rate per row")
+    amount = df[spec.target].to_numpy(dtype=float)
+    exposure = df[spec.exposure].to_numpy(dtype=float)
+    deviance, d2 = (
+        _tweedie_scores(amount, rate, exposure)
+        if (rate > 0).all()
+        else (float("inf"), float("nan"))
+    )
+    metrics = {
+        "gini": float(gini(amount, rate, exposure)),
+        "op_ratio": float(op_ratio(amount, rate, exposure)),
+        "deviance": deviance,
+        "d2": d2,
+        "observed_total": float(amount.sum()),
+        "predicted_total": float(np.dot(rate, exposure)),
+        "exposure_total": float(exposure.sum()),
+    }
+    counts = df[spec.claim_count] if spec.claim_count is not None else None
+    return rate, metrics, calibration_table(amount, rate, exposure, claim_count=counts)
+
+
+def evaluate_final(
+    run: Run,
+    estimators: Mapping[str, Any],
+    *,
+    model: str,
+    df: pd.DataFrame,
+    final_test_ids: list[str | int],
+    rationale: str,
+) -> Run:
+    """Score a selected frozen candidate on predeclared final-test IDs, without fitting.
+
+    Supply only the reserved final-test frame, on the original portfolio basis.
+    IDs must match the saved membership manifest exactly (order may differ) and
+    be disjoint from development. Returns a copied Run retaining development
+    metrics and a separate final_evaluation record. The source is unchanged.
+    Repeated evaluation is rejected; this guard cannot police external reuse.
+    """
+    _validate_candidates(run, estimators)
+    if run.production or run.final_evaluation:
+        raise ValueError("final evaluation requires an unevaluated development run")
+    if model not in estimators or not rationale.strip():
+        raise ValueError("final evaluation requires a known selected model and rationale")
+    id_col = run.config.spec.id_col
+    if id_col is None or len(run.record_ids) != run.n_rows:
+        raise ValueError("final evaluation requires recorded unique development IDs")
+    _validate_record_ids(pd.Series(run.record_ids, name=id_col))
+    _validate_portfolio(run.config, df)
+    declared = pd.Series(final_test_ids, name=id_col)
+    _validate_record_ids(declared)
+    if not len(declared) or set(declared) != set(df[id_col]):
+        raise ValueError("final-test IDs must match the predeclared membership exactly")
+    if set(declared) & set(run.record_ids):
+        raise ValueError("final-test IDs must be disjoint from development IDs")
+    selected = estimators[model]
+    _, metrics, calibration = _score_portfolio(selected, df, run.config.spec)
+    evidence = {
+        "evidence": "final_test",
+        "model": model,
+        "rationale": rationale,
+        "fitted_fingerprint": _fitted_fingerprint(selected),
+        "selection_fingerprint": _selection_fingerprint(run),
+        "data_fingerprint": _data_fingerprint(df),
+        "record_ids": tuple(df[id_col].tolist()),
+        "metrics": metrics,
+        "calibration_table": calibration.to_dict("records"),
+        "n_rows": len(df),
+        "calibration": deepcopy(run.models[model].revision.get("calibration", {})),
+    }
+    return run.model_copy(deep=True, update={"final_evaluation": evidence})
+
+
+def refit_production(
+    run: Run,
+    estimators: Mapping[str, Any],
+    *,
+    df: pd.DataFrame,
+    rationale: str,
+) -> tuple[Run, dict[str, Any]]:
+    """Explicitly refit the evaluated selection on development plus final-test rows.
+
+    Preserve original rows, indices, dtypes and ID membership. Native pipeline
+    mappings are frozen; only the final estimator's parameters are fitted.
+    Reapply the latest replacement for each typed factor and the recorded
+    calibration policy on this full training population. No tuning or split is
+    performed. The new Run has only full-training metrics, with predecessor
+    final evidence recorded separately under production, never as its own score.
+    """
+    from sklearn.base import clone
+
+    _validate_candidates(run, estimators)
+    evaluation = run.final_evaluation
+    if run.production or not evaluation or not rationale.strip():
+        raise ValueError("production refit requires final evaluation and a rationale")
+    if _selection_fingerprint(run) != evaluation["selection_fingerprint"]:
+        raise ValueError("selected configuration or development identity changed after evaluation")
+    model = evaluation["model"]
+    selected = estimators[model]
+    if _fitted_fingerprint(selected) != evaluation["fitted_fingerprint"]:
+        raise ValueError("selected fitted state changed after final evaluation")
+    _validate_portfolio(run.config, df)
+    id_col = run.config.spec.id_col
+    if id_col is None:
+        raise ValueError("production refit requires record IDs")
+    expected = [*run.record_ids, *evaluation["record_ids"]]
+    if set(df[id_col]) != set(expected) or len(df) != len(expected):
+        raise ValueError("full portfolio must contain exactly development and final-test IDs")
+    positions = pd.Index(df[id_col])
+    development = df.iloc[positions.get_indexer(run.record_ids)]
+    final = df.iloc[positions.get_indexer(evaluation["record_ids"])]
+    if _data_fingerprint(development) != run.data_fingerprint:
+        raise ValueError("production development rows must match the original fingerprint")
+    if _data_fingerprint(final) != evaluation["data_fingerprint"]:
+        raise ValueError("production final-test rows must match evaluated fingerprint")
+    source = selected.source if isinstance(selected, RevisedTariff) else selected
+    old_rate, _, _ = _score_portfolio(selected, df, run.config.spec)
+    fitted = deepcopy(source)
+    columns = list(source.feature_names_in_)
+    X = df[columns]
+    y = (df[run.config.spec.target] / df[run.config.spec.exposure]).to_numpy(dtype=float)
+    if isinstance(fitted, Pipeline):
+        # Frozen transformations must never relearn from the final-test outcomes.
+        from azoic.tariff import _pipeline_parts
+
+        _, transformed, _ = _pipeline_parts(fitted, X)
+        for _, step in fitted.steps[:-1]:
+            if isinstance(step, AutoBinner):
+                step.set_params(
+                    fixed={
+                        feature: {
+                            "edges": edges.tolist(),
+                            "closure": step.closure_[feature],
+                            "missing": step.missing_[feature],
+                        }
+                        for feature, edges in step.mapping_.items()
+                    }
+                )
+            elif isinstance(step, AutoGrouper):
+                step.set_params(
+                    fixed={
+                        feature: {
+                            "groups": [
+                                {"level": level, "group": group} for level, group in mapping.items()
+                            ],
+                            "missing": step.missing_[feature],
+                            "unseen": step.unseen_.get(feature, step.missing_[feature]),
+                        }
+                        for feature, mapping in step.mapping_.items()
+                    }
+                )
+        fitted.steps[-1] = (fitted.steps[-1][0], clone(source.steps[-1][1]).fit(transformed, y))
+    else:
+        fitted = clone(source).fit(X, y)
+    if isinstance(selected, RevisedTariff):
+        replacements = {}
+        for change in selected.revision["changes"]:
+            key = (change["feature"], type(change["level"]), change["level"])
+            replacements[key] = {
+                key: value for key, value in change.items() if key != "original_factor"
+            }
+        fitted = revise_tariff(
+            fitted,
+            list(replacements.values()),
+            X=df,
+            y=df[run.config.spec.target],
+            exposure_col=run.config.spec.exposure,
+            recalibrate=selected.revision["calibration"]["applied"],
+        )
+        fitted.revision["calibration_population"] = "full production training portfolio"
+        fitted.revision["data_fingerprint"] = _data_fingerprint(df)
+    new_rate, metrics, calibration = _score_portfolio(fitted, df, run.config.spec)
+    config = run.config.model_copy(deep=True)
+    config.name += "-production"
+    config.features = list(run.feature_names)
+    config.models = {model: config.models[model]}
+    config.tuning = None
+    frozen_source = fitted.source if isinstance(fitted, RevisedTariff) else fitted
+    if isinstance(frozen_source, Pipeline) and config.preprocessing is not None:
+        for _, step in frozen_source.steps[:-1]:
+            if isinstance(step, AutoBinner) and config.preprocessing.binner is not None:
+                config.preprocessing.binner["fixed"] = deepcopy(step.fixed)
+            elif isinstance(step, AutoGrouper) and config.preprocessing.grouper is not None:
+                config.preprocessing.grouper["fixed"] = deepcopy(step.fixed)
+    result = _SplitResult(
+        fitted,
+        {f"{name}_full": value for name, value in metrics.items()},
+        calibration,
+        {},
+    )
+    production = _assemble_run(
+        config, df, np.arange(len(df)), np.array([], dtype=int), run.feature_names, {model: result}
+    )
+    evidence = {
+        "evidence": "production_refit",
+        "rationale": rationale,
+        "predecessor_data_fingerprint": run.data_fingerprint,
+        "predecessor_fitted_fingerprint": evaluation["fitted_fingerprint"],
+        "predecessor_final_evaluation": deepcopy(evaluation),
+        "predecessor_revision": deepcopy(run.models[model].revision),
+        "fitted_fingerprint": _fitted_fingerprint(fitted),
+        "mapping_policy": "frozen fitted preprocessing; no relearning",
+        "calibration_policy": "recompute on full training portfolio"
+        if isinstance(fitted, RevisedTariff) and fitted.revision["calibration"]["applied"]
+        else "none",
+        "comparison_population": "full production training portfolio",
+        "predecessor_predicted_total": float(np.dot(old_rate, df[config.spec.exposure])),
+        "production_predicted_total": metrics["predicted_total"],
+        "mean_absolute_rate_change": float(np.mean(np.abs(new_rate - old_rate))),
+        "max_absolute_rate_change": float(np.max(np.abs(new_rate - old_rate))),
+    }
+    return production.model_copy(update={"production": evidence}), {model: fitted}

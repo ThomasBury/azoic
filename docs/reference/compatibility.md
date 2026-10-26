@@ -238,3 +238,23 @@ schema; incompatible future changes follow the minor-release policy. Bundles
 contain IDs/outcomes. This is development review evidence, not final evaluation,
 production refit or automated approval. See the
 [review contract](../guide/operations.md#prepare-a-tariff-review-with-an-incumbent).
+
+## Final evidence and production artifact boundary
+
+The unreleased `Run` adds `final_evaluation` and `production` records. Final
+scoring returns a copied development Run with separate final evidence bound to
+its selected fitted state. Production refit returns a new Run with full-training
+metrics, no own final evaluation and explicit predecessor lineage. Frozen native
+preprocessing remains fitted; only model parameters are refit. Final evaluation
+and production refit require recorded unique IDs and original data identities.
+
+`evaluate_final`, `refit_production` and `export_production` are lazy root exports.
+All existing workflow model kinds can be evaluated/refit. A three-sheet
+production handoff requires an exportable log-link GLM; arbitrary transforms and
+GBMs are not silently converted. Bundles use `azoic.production.1` JSON and the
+existing trusted same-environment `azoic.run.1` persistence envelope. Fitted
+fingerprints are same-environment integrity comparisons, not authentication or
+cross-version portability guarantees. Public schema additions and production
+metric/evidence names require the planned minor release; 0.5.0 starter blocks
+stay unchanged. No deployment API, receiving-engine certification or measured
+performance claim is introduced.

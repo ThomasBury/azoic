@@ -399,5 +399,97 @@ def tune(
         typer.echo(md)
 
 
+@app.command("evaluate-final")
+def evaluate_final_command(
+    saved_run: Path = typer.Option(..., "--run", help="Trusted selected development run."),
+    model: str = typer.Option(..., "--model", help="Frozen selected candidate."),
+    data: Path = typer.Option(..., "--data", help="Reserved final-test Parquet only."),
+    membership: Path = typer.Option(
+        ..., "--membership", help="Saved JSON with final_test ID list."
+    ),
+    rationale: str = typer.Option(..., "--rationale", help="Human selection rationale."),
+    out: Path = typer.Option(..., "--out", help="New evaluated saved run; source stays unchanged."),
+) -> None:
+    """Evaluate a frozen fit on the final test without fitting or recalibrating."""
+    from azoic.workflow import evaluate_final
+
+    try:
+        run, estimators = load_run(saved_run)
+        if out.exists():
+            raise FileExistsError(f"evaluated output already exists: {out}")
+        manifest = json.loads(membership.read_text(encoding="utf-8"))
+        if not isinstance(manifest, dict) or not isinstance(manifest.get("final_test"), list):
+            raise ValueError("membership JSON requires a final_test ID list")
+        evaluated = evaluate_final(
+            run,
+            estimators,
+            model=model,
+            df=pd.read_parquet(data),
+            final_test_ids=manifest["final_test"],
+            rationale=rationale,
+        )
+        save_run(evaluated, estimators, out)
+    except (OSError, ValueError, TypeError) as error:
+        raise typer.BadParameter(str(error)) from None
+    typer.echo(model_card(evaluated))
+
+
+@app.command("refit-production")
+def refit_production_command(
+    saved_run: Path = typer.Option(..., "--run", help="Trusted evaluated predecessor run."),
+    data: Path = typer.Option(
+        ..., "--data", help="Full original development + final-test Parquet."
+    ),
+    rationale: str = typer.Option(..., "--rationale", help="Human production-refit rationale."),
+    out: Path = typer.Option(..., "--out", help="New production saved run."),
+) -> None:
+    """Explicitly refit selected parameters, freezing mappings; no holdout claim."""
+    from azoic.workflow import refit_production
+
+    try:
+        run, estimators = load_run(saved_run)
+        if out.exists():
+            raise FileExistsError(f"production output already exists: {out}")
+        production, fitted = refit_production(
+            run,
+            estimators,
+            df=pd.read_parquet(data),
+            rationale=rationale,
+        )
+        save_run(production, fitted, out)
+    except (OSError, ValueError, TypeError) as error:
+        raise typer.BadParameter(str(error)) from None
+    typer.echo(model_card(production))
+
+
+@app.command("export-production")
+def export_production_command(
+    saved_run: Path = typer.Option(..., "--run", help="Trusted production GLM run."),
+    cases: Path = typer.Option(..., "--cases", help="Synthetic predictor Parquet; no real rows."),
+    units: Path = typer.Option(
+        ..., "--units", help="JSON object mapping every predictor to its unit."
+    ),
+    out: Path = typer.Option(..., "--out", help="New handoff directory."),
+) -> None:
+    """Write specification, workbook, fitted artifact, recipe and agreement cases."""
+    from azoic.tariff import export_production
+
+    try:
+        run, estimators = load_run(saved_run)
+        feature_units = json.loads(units.read_text(encoding="utf-8"))
+        if not isinstance(feature_units, dict):
+            raise ValueError("units JSON must be an object mapping feature names to units")
+        path = export_production(
+            run,
+            estimators,
+            cases=pd.read_parquet(cases),
+            feature_units=feature_units,
+            out=out,
+        )
+    except (OSError, ValueError, TypeError) as error:
+        raise typer.BadParameter(str(error)) from None
+    typer.echo(str(path))
+
+
 if __name__ == "__main__":
     app()
