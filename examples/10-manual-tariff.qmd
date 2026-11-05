@@ -6,9 +6,10 @@ bands, give those bands a common relativity, and measure what that decision cost
 The fitted decrease is not itself evidence of an error: retaining it is also a
 possible decision.
 
-Start with the **exported table**. This recipe keeps its fitted GLM pipeline and
-the original training/validation membership alongside it. Excel alone cannot
-reconstruct that pipeline. The folded setup repeats only the
+Start with the **exported table**. The fitted GLM pipeline and original
+training/validation membership remain in this running kernel; the recipe does
+not save them to disk. Save them separately if you need to resume the review
+later. Excel alone cannot reconstruct that pipeline. The folded setup repeats only the
 [structured teacher and distillation recipe](04-scoring-tariff.qmd#distil-the-gbm-into-an-executable-tariff)
 so this chapter runs independently. The GBM reference is that tariff-structured
 teacher, not the main path's raw-feature GBM. It uses current checkout APIs, not necessarily

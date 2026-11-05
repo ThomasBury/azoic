@@ -354,6 +354,7 @@ def test_source_reconciliation_rejects_stale_results(tmp_path, source_tables, st
     ],
 )
 def test_chapter_builds_its_own_artifacts_in_fresh_process(tmp_path, chapter_name):
+    """Execute chapter cells without downloads or artifacts from earlier chapters."""
     if chapter_name not in {"06-frequency-severity.qmd", "07-tuning.qmd", "10-manual-tariff.qmd"}:
         pytest.importorskip("mlflow")
         pytest.importorskip("plotly")
@@ -641,6 +642,8 @@ assert set(path.name for path in output_dir.iterdir()) == {
     "before.xlsx", "after.xlsx", "comparison.csv"
 }
 np.testing.assert_allclose(scorecard["scenario LR"], TARGET_LOSS_RATIO * scorecard["O/P"])
+np.testing.assert_allclose(teacher.predict(fit_X) @ train.exposure * teacher_multiplier,
+                           train.claim_amount.sum())
 np.testing.assert_allclose(segment_review.exposure.sum(), w.sum())
 np.testing.assert_allclose(segment_review["claims EUR"].sum(), claims.sum())
 for name, prefix in [("Original GLM", "before"), ("Adjusted GLM", "after")]:

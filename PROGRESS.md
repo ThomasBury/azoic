@@ -6280,10 +6280,39 @@ The first hosted run passed the Linux/Windows starter matrix and installed
 wheel/sdist cases; full validation and CodeRabbit were still running at this
 checkpoint. This documentation delivery reference will receive fresh review/CI.
 
-Created the [unpublished 0.6.0 release draft](https://github.com/ThomasBury/azoic/releases/tag/untagged-fe1e936e0d30bc9d599c).
+Created the [unpublished 0.6.0 release draft](https://github.com/ThomasBury/azoic/releases).
 Verified draft=true and no remote v0.6.0 tag. Keep its target aligned with the
 latest versioned PR head while preparing; retarget to merged main before any
 separately authorized publication. No merge, publication or deployment occurred.
 Next: obtain final-head Codex clearance and green hosted checks, handle any
 findings and notify the user that PR #25 is ready. M62 human observations and
 the pre-existing unstaged examples/.gitignore change remain separate.
+
+### PR #25 review follow-up — 2026-11-05
+
+Codex reviewed `8c595fe` with no findings. CodeRabbit identified one valid
+wording issue: the recipe retains its pipeline/membership in the kernel but
+only writes two workbooks and comparison.csv. Clarify that persistence is a
+separate caller action; do not add another persistence workflow. Also accept
+its test suggestion to assert the teacher multiplier balances training claims,
+not merely the LR/O/P identity. The release draft link above now uses the stable
+releases list because GitHub changes temporary draft URLs when retargeting.
+Document the existing extended chapter smoke's independent/no-download scope
+to address CodeRabbit's touched-function docstring-coverage warning as well;
+no unrelated documentation sweep or production change is needed.
+Next: focused/final checks, commit the two review fixes, resolve the inline
+thread, request final-head Codex review and keep the release draft aligned.
+
+### PR #25 review-fix acceptance — 2026-11-05
+
+Both CodeRabbit suggestions are addressed: the introduction now states exactly
+what remains in memory versus on disk, and the smoke checks the teacher's
+training calibration total directly. Added the touched smoke's scope docstring.
+Focused chapter check passed (1 test, 8.25s); strict docs passed (0.72s).
+The real-data isolated 0.6.0 chapter render passed and its final HTML explicitly
+states the persistence boundary, contains all five tables and no cell errors.
+Full Ruff/Ty/pytest passed again: 1,513 tests, 4 skips, 2 expected failures.
+Source formatting and diff checks passed. No new persistence API or artifact.
+Commit/push these minimal fixes, resolve the original inline thread, request
+Codex review of the resulting head and verify hosted checks. Keep the release
+draft aligned and unpublished; PR #25 holds the final live review/CI authority.
