@@ -6231,3 +6231,41 @@ No runtime API, dependency, loader rule, package version, release, deployment,
 commit or Git delivery change. M62 remains in progress for human observation.
 Next action: review chapter 10 and its optional recipe; resume M62 only when
 actual practitioners are available. Do not start a new phase automatically.
+
+### M63 Git delivery and 0.6.0 draft preparation — 2026-11-05
+
+User authorized staging, Conventional Commits, PR creation and iterative Codex
+review, plus version reconciliation and a draft release. This is delivery of
+M63 and release preparation, not another implementation milestone or publication.
+Isolated on `docs/m63-tariff-review-release-0.6.0`, based on `origin/main`
+`23c139a`. Tutorial committed as `74a8c52`; pre-existing examples/.gitignore
+change remains unstaged. Verified latest published release/tag v0.5.0 remotely.
+
+Choose 0.6.0 under the repository's documented 0.x minor-release policy:
+post-0.5 changes add public schemas, persistence/revisions/final-evaluation APIs
+and fit-time validation changes. Reconcile package/runtime/lock versions and
+summarize all changes since v0.5.0, not only M63. Keep the actual published 0.5.0
+starter and CI pin unchanged. Prepare an unpublished GitHub release targeting
+the eventual reviewed PR head; no merge, publication or deployment is authorized.
+Next: run full checks, strict docs and 0.6.0 wheel/sdist runtime smokes; commit,
+push and create the PR; obtain latest-head Codex/CI evidence and draft the release.
+
+### 0.6.0 local release-preparation acceptance — 2026-11-05
+
+Package, runtime, installed metadata and lock agree on 0.6.0. Locked all-extras/
+groups sync passed with no dependency changes; uv.lock changes only Azoic's
+version. Live PyPI reports 0.5.0 and no uploaded 0.6.0. Full `just check`
+passed Ruff/Ty and 1,513 tests (4 skips, 2 expected failures, 21 known warnings)
+in 348.70s on Python 3.12. Strict docs passed in 4.58s. Both 0.6.0 wheel and
+sdist built and passed runtime-only smokes outside the checkout on Python 3.13/
+pandas 3.1.0, including fresh-process saved consumers, all eleven CLI commands,
+public composition and final/refit/production scoring. Initial wheel-smoke script
+copy used the wrong working-directory-relative path; corrected it to the absolute
+source path and the completed rerun passed. No generated evidence is staged.
+
+M63's isolated/full-book rendering evidence remains above; the version-only
+release preparation does not claim another real-data book execution. Proceed
+with the release-preparation commit, PR and latest-head Codex/hosted checks.
+The draft release must retain draft=true and point to the reviewed versioned
+head; retarget to merged main before any separately authorized publication.
+Logs: /tmp/azoic-060-{check,docs,build,wheel,sdist}.log.

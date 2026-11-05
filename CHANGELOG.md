@@ -1,5 +1,83 @@
 # Changelog
 
+## 0.6.0 — Unreleased
+
+This minor release collects the changes since 0.5.0. It adds an explicit path
+from development experiments to reviewed tariffs and production handoffs.
+The package remains pre-1.0; the compatibility changes below follow Azoic's
+policy of reserving incompatible public changes for minor releases.
+
+### Save, review and hand over fitted tariffs
+
+- Reserve final-test records by ID before experimentation with `split_portfolio`.
+  `check_experiment` and `azoic check` validate explicit predictor configurations
+  without fitting, repairing data or applying claim caps.
+- Save and load fitted candidates with their configuration, preprocessing,
+  versions and development membership. Saved prediction, comparison, reporting
+  and direct GLM export do not fit models again. Portfolio frames are excluded.
+- Keep approved numeric bins and typed category groups fixed through refits.
+  Revise GLM tariff factors separately from the fitted model, recording reasons,
+  original factors and one optional training calibration multiplier.
+- Produce a tariff-review report with complete CSV evidence and incumbent-rate
+  comparisons aligned by unique record ID. Selection and rationale remain
+  explicit human decisions.
+- Evaluate a selected frozen fit on reserved final records, then explicitly
+  refit production on the original full portfolio. Keep final evidence attached
+  to the evaluated predecessor, separate from full-training production metrics.
+- Export a versioned production bundle containing the workbook, specification,
+  trusted Python artifact, batch-scoring recipe and synthetic agreement cases.
+  The workbook bundle requires an exportable log-link GLM.
+
+### Modelling, diagnostics and reliability
+
+- Learn numeric bins and categorical groups using univariate LightGBM trees,
+  with native missing routing, credibility floors and inspectable mappings.
+  Quantile binning and rare-level grouping remain explicit alternatives.
+- Add per-model preprocessing, in-memory experiment input, feature screening
+  controls and recorded constructor/runtime/tuning provenance.
+- Improve outcome and shape validation, temporal category ordering, zero-weight
+  ranking behavior and double-lift weighting. Errors identify columns and a
+  bounded sample of row positions rather than displaying portfolio values.
+- Reject unsupported export transformations before opening workbooks. Replace
+  destinations only after successful saves and preserve existing permission bits.
+- Reduce tuning overhead and vectorize native preprocessing lookups. Linux
+  million-row measurements and their hardware/memory limits are recorded in
+  `M62_VALIDATION.md`; they are not a general runtime promise.
+
+### Compatibility and migration
+
+- The default tree binning and similarity grouping now require outcomes and
+  can produce different mappings. Native tree intervals use upper-inclusive
+  thresholds (`<=`); manual/quantile intervals are lower-inclusive. Changed tree
+  mappings require explicit missing destinations. Refit and review affected tariffs.
+- Invalid `RiskGBM` powers and monotonic controls raise during `fit`, including
+  after `set_params`, rather than during construction. Move corresponding error
+  handling to the fitting call.
+- Run/result records and comparison/report schemas include additional provenance,
+  revision and evidence fields. Fixed-schema consumers must accept those additions.
+  Final-evaluation evidence and production `_full` metrics have distinct meanings.
+- Saved artifacts are trusted same-code/environment pickle, not a portable format.
+  Do not assume that artifacts saved under 0.5.0 can be loaded under 0.6.0.
+- Dependency floors are now glum 3.4.1 and Typer 0.27.1. Python 3.12+ remains
+  supported in metadata; full checks use locked Python 3.12 dependencies, with
+  separate installed-artifact checks for low direct versions and Python 3.14.
+- The documented first-model starter remains pinned to published 0.5.0 and is
+  also tested against the checkout. This release draft does not change that
+  starter's Python or YAML examples.
+
+### Documentation and remaining evidence
+
+- Expand source-to-target accounting and missing-cost/claim-cap sensitivity in
+  the freMTPL2 portfolio chapter without changing its loader rules.
+- Replace the manual-tariff recipe with a review of an exported GBM-derived tariff:
+  pool two age relativities, separate distillation from adjustment cost, and
+  compare fidelity, claims fit, premium redistribution and illustrative loss ratios.
+- Practitioner handoff observation, independent maintainer/professional review,
+  receiving-engine agreement and deployment acceptance remain separate evidence.
+  Scripted checks and historical capped claims do not establish those outcomes.
+
+[Changes since 0.5.0](https://github.com/ThomasBury/azoic/compare/v0.5.0...HEAD)
+
 ## 0.5.0 — 2026-10-17
 
 First PyPI release. The earlier GitHub `0.4.1` release did not reach PyPI
