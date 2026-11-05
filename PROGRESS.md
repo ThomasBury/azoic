@@ -6269,3 +6269,21 @@ with the release-preparation commit, PR and latest-head Codex/hosted checks.
 The draft release must retain draft=true and point to the reviewed versioned
 head; retarget to merged main before any separately authorized publication.
 Logs: /tmp/azoic-060-{check,docs,build,wheel,sdist}.log.
+
+### 0.6.0 PR and draft-release handoff — 2026-11-05
+
+Opened [PR #25](https://github.com/ThomasBury/azoic/pull/25), "Explain tariff
+adjustments and prepare Azoic 0.6.0", with separate tutorial and release-prep
+Conventional Commits. Codex completed review of `82b7554` with no findings;
+its summary comment is the live authority for the final reviewed head.
+The first hosted run passed the Linux/Windows starter matrix and installed
+wheel/sdist cases; full validation and CodeRabbit were still running at this
+checkpoint. This documentation delivery reference will receive fresh review/CI.
+
+Created the [unpublished 0.6.0 release draft](https://github.com/ThomasBury/azoic/releases/tag/untagged-fe1e936e0d30bc9d599c).
+Verified draft=true and no remote v0.6.0 tag. Keep its target aligned with the
+latest versioned PR head while preparing; retarget to merged main before any
+separately authorized publication. No merge, publication or deployment occurred.
+Next: obtain final-head Codex clearance and green hosted checks, handle any
+findings and notify the user that PR #25 is ready. M62 human observations and
+the pre-existing unstaged examples/.gitignore change remain separate.
