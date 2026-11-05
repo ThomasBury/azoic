@@ -1,146 +1,282 @@
-# Manual tariff recipes
+# Review and smooth an exported tariff
 
-A multiplicative tariff is a **decision object**: after the fitted model, an
-actuary may revise selected factors deliberately. Azoic supports that without
-a new model class — `extract_tariff` decomposes a fitted log-link GLM into a
-factor dictionary, `apply_tariff` scores a (possibly edited) dictionary, and
-`recalibrate_for_total` shifts the base to restore a portfolio total.
+An actuary has received a multiplicative tariff distilled from a GBM. Before
+accepting it, they want to review the change between the two oldest driver-age
+bands, give those bands a common relativity, and measure what that decision costs.
+The fitted decrease is not itself evidence of an error: retaining it is also a
+possible decision.
 
-Treat judgemental factor changes as a **revised tariff**, not a tweak of the
-fitted model: editing the dictionary does not update the fitted pipeline or a
-previously exported workbook, and changing bin boundaries or group membership
-requires refitting the downstream model. Record the original factors and the
-reasons for each change.
+Start with the **exported table**. This recipe keeps its fitted GLM pipeline and
+the original training/validation membership alongside it. Excel alone cannot
+reconstruct that pipeline. The folded setup repeats only the
+[structured teacher and distillation recipe](04-scoring-tariff.qmd#distil-the-gbm-into-an-executable-tariff)
+so this chapter runs independently. The GBM reference is that tariff-structured
+teacher, not the main path's raw-feature GBM. It uses current checkout APIs, not necessarily
+those in the published 0.5.0 package.
 
 {{< include _shared.qmd >}}
 
 ```{python}
-from azoic.tariff import extract_tariff, recalibrate_for_total
+#| code-fold: true
+#| code-summary: "Prepare the GBM, distilled GLM and original workbook"
+from copy import deepcopy
+from azoic.tariff import revise_tariff
 
 portfolio = load_portfolio()
-experiment_config = make_experiment_config(str(PORTFOLIO_PATH))
-experiment_config = experiment_config.model_copy(
-    update={"models": {"direct-tweedie-glm": experiment_config.models["direct-tweedie-glm"]}}
+config = make_experiment_config(str(PORTFOLIO_PATH))
+teacher_config = config.model_copy(update={
+    "name": "manual-tariff-review",
+    "models": {"teacher": config.models["tweedie-lightgbm"].model_copy(
+        update={"preprocess": True}, deep=True,
+    )},
+})
+main_run, estimators = run_experiment(teacher_config, return_estimators=True)
+teacher = estimators["teacher"]
+train = portfolio.iloc[list(main_run.train_indices)].copy()
+validation = portfolio.iloc[list(main_run.test_indices)].copy()
+columns = [*FEATURES, "exposure", "claim_amount", "claim_count"]
+fit_X, validation_X = train[columns], validation[columns]
+student = distill_gbm(teacher, fit_X, validation_X)
+original_predictions = student.predict(validation_X).copy()
+original_mapping = deepcopy(student.named_steps["binner"].mapping_)
+
+# This workbook's base is balanced to training claims; its factors are unchanged.
+original = revise_tariff(student, [], X=fit_X, y=train.claim_amount,
+                         exposure_col="exposure")
+output_dir = ARTIFACT_DIR / "manual-tariff"
+output_dir.mkdir(exist_ok=True)
+before_path = output_dir / "before.xlsx"
+export_tariff(original, before_path, recalibrate=False)
+sheets = pd.read_excel(before_path, sheet_name=None)
+```
+
+## Review the age factors and their support
+
+The workbook's base includes one training calibration multiplier. Its age
+relativities still describe the distilled GLM. Display them beside exposure and
+claim counts from **training rows only**. Both this choice and its replacement
+rule are fixed before inspecting validation results.
+
+```{python}
+training_levels = student[:-1].transform(fit_X)
+age_support = train[["driver_age", "exposure", "claim_count"]].copy()
+age_support["level"] = training_levels.driver_age.to_numpy()
+age_review = age_support.groupby("level", observed=True).agg(
+    min_age=("driver_age", "min"), max_age=("driver_age", "max"),
+    exposure=("exposure", "sum"), claims=("claim_count", "sum"),
+).sort_values("min_age")
+exported_factors = sheets["factors"].query("feature == 'driver_age'")
+age_review["factor"] = age_review.index.map(
+    exported_factors.set_index("level").multiplicative_factor
 )
-main_run, estimators = run_experiment(experiment_config, return_estimators=True)
-train_frame = portfolio.iloc[list(main_run.train_indices)].copy()
-test_frame = portfolio.iloc[list(main_run.test_indices)].copy()
-y_train = train_frame["claim_amount"].to_numpy()
-w_train = train_frame["exposure"].to_numpy()
-y_test = test_frame["claim_amount"].to_numpy()
-w_test = test_frame["exposure"].to_numpy()
-
-glm_pipeline = estimators["direct-tweedie-glm"]
-fitted_preprocessing = glm_pipeline[:-1]
-fitted_glm = glm_pipeline[-1]
-special_predict_columns = [*FEATURES, "exposure", "claim_amount", "claim_count"]
-transformed_test = fitted_preprocessing.transform(test_frame[special_predict_columns])
+assert len(age_review) >= 2 and age_review.factor.notna().all()
+selected = age_review.tail(2).copy()
+display(selected)
 ```
 
-## Extract and reproduce
+For the default cached portfolio, these are ages 72–78 and 79+, with relativities
+around 0.73 and 0.65. Read the executed table if the data or settings change.
+The support counts describe available experience; they do not prove which factor
+is correct. See the [portfolio's loss-layer limits](01-portfolio.qmd) before
+interpreting these claims as future pricing costs.
 
-`extract_tariff` returns `base_rate` (intercept folded with reference-level
-coefficients), per-unit numeric coefficients, categorical relativities against
-a chosen reference level, and a mapping table. Applying the untouched
-dictionary on the same transformed features reproduces the fitted prediction.
+## Give the two bands a common relativity
+
+Use their training-exposure-weighted arithmetic mean:
+
+$$r_* = \frac{E_1 r_1 + E_2 r_2}{E_1 + E_2}.$$
+
+This is a transparent judgemental rule, not a statistical re-estimate of a pooled
+coefficient. It balances the two factors by exposure, but need not preserve total
+predicted claims: other rating factors differ between the bands.
 
 ```{python}
-tariff = extract_tariff(fitted_glm)
-model_rate = np.asarray(glm_pipeline.predict(test_frame[[*FEATURES, "exposure"]]), dtype=float)
-applied_rate = apply_tariff(tariff, transformed_test)
-np.testing.assert_allclose(applied_rate, model_rate, rtol=1e-6, atol=1e-8)
-display(pd.DataFrame(
-    {
-        "base_rate": [tariff["base_rate"]],
-        "numeric_features": [len(tariff["numeric"])],
-        "categorical_features": [len(tariff["categorical"])],
-    }
-))
-display(tariff["mapping"].head(15))
+pooled_factor = np.average(selected.factor, weights=selected.exposure)
+replacements = [
+    {"feature": "driver_age", "level": level, "factor": float(pooled_factor),
+     "reason": "Pool the two oldest age relativities using training exposure; "
+               "review fit and segment adequacy before adoption"}
+    for level in selected.index
+]
+structural = revise_tariff(student, replacements, recalibrate=False)
+adjusted = revise_tariff(student, replacements, X=fit_X, y=train.claim_amount,
+                         exposure_col="exposure")
+print("Common relativity:", round(pooled_factor, 4))
+print("Recorded training calibration:", adjusted.revision["calibration"])
 ```
 
-## Revise one factor, then restore the total
-
-Below, one grouped level of `region` gets a deliberate +10% factor. This
-local change affects only that segment and can change ranking between policies.
-The original training O/P is already close to, but not exactly, one (about
-0.99817 with the default data); the edit changes that level further.
-
-`recalibrate_for_total` then supplies a new base rate that balances the edited
-tariff to observed training claims. This second step is a common positive
-multiplier: it preserves the edited tariff's ranking, not necessarily the
-original model's ranking. We put the new base into a separate dictionary and
-freeze it for testing; neither the fitted model nor a workbook is updated.
+`revise_tariff` creates a separate scoring artifact and records original factors,
+replacements and reasons. No model is fitted here. The bins and original model
+coefficients remain unchanged; equal relativities make the age effect flat across
+these bands. To actually merge bins and refit, use the
+[fixed-mapping guide](https://thomasbury.github.io/azoic/guide/data-preprocessing/#keep-approved-mappings-fixed-through-refits).
 
 ```{python}
-revised = {
-    "base_rate": tariff["base_rate"],
-    "numeric": dict(tariff["numeric"]),
-    "categorical": {feat: dict(levels) for feat, levels in tariff["categorical"].items()},
+#| fig-alt: "Original age factors and the common replacement for the two oldest bands, with training exposure below to show their support."
+with azoic_style():
+    fig, (ax, support_ax) = plt.subplots(2, 1, sharex=True, figsize=(9, 5),
+                                       gridspec_kw={"height_ratios": [3, 1]}, layout="tight")
+    positions = np.arange(len(age_review))
+    revised_factors = age_review.factor.copy()
+    revised_factors.loc[selected.index] = pooled_factor
+    ax.plot(positions, age_review.factor, "o-", label="Original distilled tariff")
+    ax.plot(positions, revised_factors, "s--", label="Adjusted tariff")
+    ax.set_ylabel("Age relativity (same reference)")
+    ax.legend()
+    support_ax.bar(positions, age_review.exposure, color="grey")
+    support_ax.set_ylabel("Training years")
+    support_ax.set_xticks(positions, [str(level) for level in age_review.index], rotation=45)
+    support_ax.set_xlabel("Fitted driver-age band")
+    plt.show()
+    plt.close(fig)
+```
+
+## Separate approximation cost from adjustment cost
+
+First compare **raw rates with raw teacher rates**. Fidelity is agreement with
+the GBM, not accuracy against claims. Recompute it for the adjusted tariff;
+original distillation metadata retained in an export describes the original
+student, not the revised scoring rule.
+
+```{python}
+teacher_raw = teacher.predict(validation_X)
+student_raw = student.predict(validation_X)
+structural_raw = structural.predict(validation_X)
+w = validation.exposure.to_numpy()
+claims = validation.claim_amount.to_numpy()
+fidelity = pd.DataFrame([
+    {"tariff": name,
+     "teacher_deviance": mean_tweedie_deviance(teacher_raw, rates, sample_weight=w, power=1.5),
+     "tariff/teacher total": (rates @ w) / (teacher_raw @ w)}
+    for name, rates in [("Original GLM", student_raw), ("Adjusted GLM", structural_raw)]
+])
+display(fidelity)
+raw_training_total = student.predict(fit_X) @ train.exposure
+adjusted_training_total = structural.predict(fit_X) @ train.exposure
+print("Adjustment before calibration: predicted training claims change (EUR):",
+      round(adjusted_training_total - raw_training_total, 2))
+```
+
+Now compare claims performance and premium consequences on the **same validation
+rows**, after each candidate's own frozen training calibration. This compares
+three tariffs balanced to the same training claims budget. Recalibration does
+not guarantee validation adequacy or preserve every segment's premium.
+
+There is no actual earned-premium column in freMTPL2. Assume an illustrative
+**70% target loss ratio**, held constant across candidates. Scenario period
+premium is exposure × technical annual rate / 0.70, and scenario loss ratio is
+observed capped claims / scenario premium. Thus **LR = 0.70 × O/P**, including
+within segments; it is a pricing interpretation of calibration, not another
+independent measure of accuracy. This is a repricing scenario, not observed
+commercial premium or an ultimate loss ratio. Expenses, taxes, demand and
+retention are not modelled. See [standard ratemaking definitions](https://www.casact.org/sites/default/files/2021-10/syllabus_ch3.pdf).
+
+```{python}
+TARGET_LOSS_RATIO = 0.70  # Illustrative assumption, not an industry benchmark.
+teacher_multiplier = op_ratio(train.claim_amount, teacher.predict(fit_X), train.exposure)
+comparison_rates = {
+    "GBM": teacher_raw * teacher_multiplier,
+    "Original GLM": original.predict(validation_X),
+    "Adjusted GLM": adjusted.predict(validation_X),
 }
-feature = "region"
-levels = revised["categorical"][feature]
-edited_level = next(level for level, factor in levels.items() if not np.isclose(factor, 1.0))
-levels[edited_level] *= 1.10
-
-original_op = op_ratio(y_train, np.asarray(glm_pipeline.predict(
-    train_frame[[*FEATURES, "exposure"]]), dtype=float), w_train)
-transformed_train = fitted_preprocessing.transform(train_frame[special_predict_columns])
-revised_rate_train = apply_tariff(revised, transformed_train)
-revised_op = op_ratio(y_train, revised_rate_train, w_train)
-assert abs(revised_op - original_op) > 1e-3
-
-new_base = recalibrate_for_total(
-    revised,
-    predicted_total=float(revised_rate_train @ w_train),
-    observed_total=float(y_train.sum()),
-)
-revised_recalibrated = {**revised, "base_rate": new_base}
-restored_rate_train = apply_tariff(revised_recalibrated, transformed_train)
-np.testing.assert_allclose(
-    op_ratio(y_train, restored_rate_train, w_train), 1, rtol=0, atol=1e-10
-)
-display(pd.DataFrame(
-    {
-        "variant": ["fitted GLM", "edited factor", "edited + recalibrated"],
-        "training_O/P": [
-            original_op,
-            revised_op,
-            op_ratio(y_train, restored_rate_train, w_train),
-        ],
-    }
-))
+rows = []
+for name, rates in comparison_rates.items():
+    metrics = holdout_diagnostics(claims, w, rates)
+    premium = float(rates @ w) / TARGET_LOSS_RATIO
+    rows.append({"candidate": name, "deviance": metrics["deviance_test"],
+                 "Gini": metrics["gini_test"], "O/P": metrics["op_ratio_test"],
+                 "scenario premium EUR": premium, "scenario LR": claims.sum() / premium})
+scorecard = pd.DataFrame(rows).set_index("candidate")
+display(scorecard)
+costs = []
+for before, after, label in [("GBM", "Original GLM", "Distillation"),
+                             ("Original GLM", "Adjusted GLM", "Adjustment")]:
+    a, b = scorecard.loc[before], scorecard.loc[after]
+    costs.append({"step": label, "deviance change %": 100 * (b.deviance / a.deviance - 1),
+                  "Gini change pp": 100 * (b.Gini - a.Gini),
+                  "premium change EUR": b["scenario premium EUR"] - a["scenario premium EUR"],
+                  "premium change %": 100 * (b["scenario premium EUR"] / a["scenario premium EUR"] - 1),
+                  "LR change pp": 100 * (b["scenario LR"] - a["scenario LR"])})
+display(pd.DataFrame(costs).set_index("step"))
 ```
 
-The same totals check belongs on the held-out rows: recalibrating to training
-totals fixes the training level but does not claim to fix test calibration or
-any segment-level bias.
+Positive deviance change means worse claims fit; negative means better. A higher
+Gini means stronger ranking, not better calibration. Read LR against the assumed
+70% target, not as a statistic that should simply be maximized or minimized.
+The [diagnostics chapter](03-diagnostics.qmd) explains these distinctions.
+
+## Check who pays for the adjustment
+
+Aggregate balance can hide redistribution. Show both selected bands and the
+remaining portfolio. The common base adjustment can also move premiums outside
+the selected bands, even though their raw factors did not change.
 
 ```{python}
-restored_rate_test = apply_tariff(revised_recalibrated, transformed_test)
-display(pd.DataFrame(
-    {
-        "variant": ["fitted GLM", "edited factor", "edited + recalibrated"],
-        "test_O/P": [
-            op_ratio(y_test, model_rate, w_test),
-            op_ratio(y_test, apply_tariff(revised, transformed_test), w_test),
-            op_ratio(y_test, restored_rate_test, w_test),
-        ],
-        "test_deviance": [
-            mean_tweedie_deviance(y_test / w_test, model_rate, sample_weight=w_test, power=1.5),
-            mean_tweedie_deviance(
-                y_test / w_test, apply_tariff(revised, transformed_test),
-                sample_weight=w_test, power=1.5,
-            ),
-            mean_tweedie_deviance(
-                y_test / w_test, restored_rate_test, sample_weight=w_test, power=1.5,
-            ),
-        ],
-    }
-))
+validation_levels = student[:-1].transform(validation_X).driver_age
+segments = []
+cohorts = {str(level): validation_levels.eq(level).to_numpy() for level in selected.index}
+cohorts["Remaining portfolio"] = ~validation_levels.isin(selected.index).to_numpy()
+for label, mask in cohorts.items():
+    before = comparison_rates["Original GLM"][mask] @ w[mask] / TARGET_LOSS_RATIO
+    after = comparison_rates["Adjusted GLM"][mask] @ w[mask] / TARGET_LOSS_RATIO
+    amount = claims[mask].sum()
+    segments.append({"segment": label, "exposure": w[mask].sum(),
+                     "claim count": validation.claim_count.to_numpy()[mask].sum(),
+                     "claims EUR": amount, "before premium EUR": before,
+                     "after premium EUR": after, "premium change EUR": after - before,
+                     "before LR": amount / before if before else np.nan,
+                     "after LR": amount / after if after else np.nan})
+segment_review = pd.DataFrame(segments).set_index("segment")
+display(segment_review)
 ```
 
-For changes to model flexibility or sparse-risk pooling, return to
-[the experiment controls](02-experiments.qmd#regularization-controls).
-Choose those settings inside training data. Revisions prompted by the inspected
-holdout need fresh evaluation data; this illustration does not provide it.
+## Record a decision and hand over the revised workbook
+
+The review should state which jump disappeared, the signed cost in claims fit,
+the premium transferred between the two bands and the rest of the portfolio,
+and whether their loss ratios support the proposed adjustment. Rejecting the
+adjustment is a valid conclusion. There is no universal acceptable deviance cost
+or loss-ratio threshold, and a smoother profile alone does not demonstrate
+stability. Do not optimize the pooling rule after reading these validation
+results and then describe them as untouched evidence.
+
+For this worked review, **retain the original tariff pending actuarial sign-off**.
+Pooling removes the drop between the two oldest bands, but the comparison alone
+does not establish improved segment adequacy or stability. The signed changes
+above quantify the tradeoff a reviewer would have to accept. Export the adjusted
+tariff as a proposal for review, not as an approved production price.
+
+```{python}
+after_path = output_dir / "after.xlsx"
+export_tariff(adjusted, after_path, recalibrate=False)
+scorecard.to_csv(output_dir / "comparison.csv")
+```
+
+Both workbooks contain training-calibrated technical rates, not the 70% premium
+scenario. Export uses `recalibrate=False` because the artifacts already record
+calibration; it must not be applied twice. Keep the fitted pipeline and source
+data/membership with the review: this recipe does not implement Excel-to-model
+import or a deployment system.
+
+```{python}
+#| code-fold: true
+#| code-summary: "Verify source preservation, calibration and both workbook prices"
+np.testing.assert_array_equal(student.predict(validation_X), original_predictions)
+for feature, edges in original_mapping.items():
+    np.testing.assert_array_equal(student.named_steps["binner"].mapping_[feature], edges)
+for artifact in [original, adjusted]:
+    np.testing.assert_allclose(artifact.predict(fit_X) @ train.exposure, train.claim_amount.sum())
+transformed_validation = student[:-1].transform(validation_X)
+for path, artifact in [(before_path, original), (after_path, adjusted)]:
+    workbook = tariff_from_sheets(pd.read_excel(path, sheet_name=None))
+    np.testing.assert_allclose(apply_tariff(workbook, transformed_validation),
+                               artifact.predict(validation_X), rtol=1e-6, atol=1e-8)
+```
+
+For a fuller decision record, use the
+[tariff-review report](https://thomasbury.github.io/azoic/guide/operations/#prepare-a-tariff-review-with-an-incumbent).
+These comparisons are development evidence. Reserve fresh final data for a
+selected frozen candidate; see the
+[final-evaluation boundary](https://thomasbury.github.io/azoic/guide/operations/#freeze-final-evidence-then-refit-production-explicitly).
+That workflow recipe accepts saved run candidates; this lower-level distilled
+pipeline example does not manufacture a `Run` or claim production acceptance.

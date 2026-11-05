@@ -350,10 +350,11 @@ def test_source_reconciliation_rejects_stale_results(tmp_path, source_tables, st
         "05-reporting-mlops.qmd",
         "06-frequency-severity.qmd",
         "07-tuning.qmd",
+        "10-manual-tariff.qmd",
     ],
 )
 def test_chapter_builds_its_own_artifacts_in_fresh_process(tmp_path, chapter_name):
-    if chapter_name not in {"06-frequency-severity.qmd", "07-tuning.qmd"}:
+    if chapter_name not in {"06-frequency-severity.qmd", "07-tuning.qmd", "10-manual-tariff.qmd"}:
         pytest.importorskip("mlflow")
         pytest.importorskip("plotly")
     if chapter_name == "07-tuning.qmd":
@@ -370,7 +371,9 @@ def test_chapter_builds_its_own_artifacts_in_fresh_process(tmp_path, chapter_nam
     (tmp_path / "pyproject.toml").write_text(
         '[project]\nname = "azoic-chapter-smoke"\nversion = "0.0.0"\nrequires-python = ">=3.12"\n'
     )
-    portfolio = make_synthetic_portfolio(n=4_000)
+    portfolio = make_synthetic_portfolio(
+        n=20_000 if chapter_name == "10-manual-tariff.qmd" else 4_000
+    )
     rng = np.random.default_rng(42)
     portfolio = portfolio.assign(
         policy_id=np.arange(len(portfolio)),
@@ -626,6 +629,49 @@ assert modified.run.test_indices == result.run.test_indices
 assert modified.run.models["direct-tweedie-glm"].metrics["deviance_test"] != (
     result.run.models["direct-tweedie-glm"].metrics["deviance_test"]
 )
+"""
+    if chapter_name == "10-manual-tariff.qmd":
+        checks = """
+assert len(age_review) >= 3
+assert list(selected.index) == list(age_review.tail(2).index)
+np.testing.assert_allclose(pooled_factor,
+    (selected.factor * selected.exposure).sum() / selected.exposure.sum())
+assert set(scorecard.index) == {"GBM", "Original GLM", "Adjusted GLM"}
+assert set(path.name for path in output_dir.iterdir()) == {
+    "before.xlsx", "after.xlsx", "comparison.csv"
+}
+np.testing.assert_allclose(scorecard["scenario LR"], TARGET_LOSS_RATIO * scorecard["O/P"])
+np.testing.assert_allclose(segment_review.exposure.sum(), w.sum())
+np.testing.assert_allclose(segment_review["claims EUR"].sum(), claims.sum())
+for name, prefix in [("Original GLM", "before"), ("Adjusted GLM", "after")]:
+    np.testing.assert_allclose(segment_review[f"{prefix} premium EUR"].sum(),
+                               scorecard.loc[name, "scenario premium EUR"])
+    for label, mask in cohorts.items():
+        technical = comparison_rates[name][mask] @ w[mask]
+        if technical:
+            np.testing.assert_allclose(segment_review.loc[label, f"{prefix} LR"],
+                TARGET_LOSS_RATIO * claims[mask].sum() / technical)
+np.testing.assert_allclose(structural_raw[cohorts["Remaining portfolio"]],
+                           student_raw[cohorts["Remaining portfolio"]])
+assert all(structural.tariff["categorical"]["driver_age"][level] == pooled_factor
+           for level in selected.index)
+for row in fidelity.itertuples(index=False, name=None):
+    name, deviance, ratio = row
+    rates = student_raw if name == "Original GLM" else structural_raw
+    np.testing.assert_allclose(deviance,
+        mean_tweedie_deviance(teacher_raw, rates, sample_weight=w, power=1.5))
+    np.testing.assert_allclose(ratio, (rates @ w) / (teacher_raw @ w))
+
+def reject_fit(*args, **kwargs):
+    raise AssertionError("Post-fit tariff revision must not fit")
+
+from azoic.models import RiskGBM
+from azoic.preprocessing import AutoBinner, AutoGrouper
+for cls in [RiskGLM, RiskGBM, AutoBinner, AutoGrouper]:
+    cls.fit = reject_fit
+again = revise_tariff(student, replacements, X=fit_X, y=train.claim_amount,
+                      exposure_col="exposure")
+np.testing.assert_array_equal(again.predict(validation_X), adjusted.predict(validation_X))
 """
     completed = subprocess.run(
         [sys.executable, "-c", preamble + "\n".join(cells) + checks],

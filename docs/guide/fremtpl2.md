@@ -66,9 +66,9 @@ diagnostic derivations, and all subsequent chapters are optional recipes.
    `temporal_split` experiment, and reconciled `stability_table` rows.
 10. **Protected-group audit** — `protected_cols` subgroup calibration evidence
     on a synthetic protected attribute.
-11. **Manual tariff recipes** — `extract_tariff`, `apply_tariff`, and
-    `recalibrate_for_total` factor revisions. Regularization guidance appears
-    earlier with experiment configuration.
+11. **Review and smooth an exported tariff** — compare a GBM, its distilled
+    GLM tariff and a judgemental factor revision; measure claims fit, premium
+    redistribution and illustrative loss ratios before exporting a new workbook.
 
 !!! note "Rendering boundary"
 
@@ -77,7 +77,7 @@ diagnostic derivations, and all subsequent chapters are optional recipes.
 
 A full sequential render checks all 11 pages. It does not prove each chapter
 can run alone; a separate synthetic fresh-process check covers reporting setup
-through MLflow logging. The Pages workflow renders after pushes to main and
+through MLflow logging and the exported-tariff adjustment recipe. The Pages workflow renders after pushes to main and
 is not a pre-merge tutorial gate.
 
 ## Related guides

@@ -9,6 +9,12 @@ Legend: ☐ pending · ◐ in progress · ☑ done
 
 ## Current focus
 
+- **M63 ☑ — review and smooth an exported GBM-derived tariff** completed locally
+  on 2026-11-05. Chapter 10 starts from exported factors, compares GBM/student/
+  adjusted tariffs and verifies workbook prices. Ruff/Ty, 1,513 tests, strict
+  docs and isolated/sequential renders passed. M62 still requires actual
+  practitioner observation; no next implementation milestone is selected.
+
 - **M61 ☑ — frozen final evaluation and production handoff** completed locally
   on 2026-10-26. Frozen final scoring, explicit full refit with approved mappings/
   factors/calibration, and versioned workbook/artifact/specification/agreement
@@ -6161,3 +6167,67 @@ and separate fidelity presentation as specified above. M15 remains after M23.
 - No dependencies, public interfaces, model settings, or binning algorithms changed.
 
 Handoff: **M15 only next**. M23 is complete; publication is not part of this session.
+
+## M63 — Exported tariff adjustment tutorial ☑ — 2026-11-05
+
+- [x] Trace existing APIs and record the phase.
+- [x] Rewrite the focused recipe and update tutorial links.
+- [x] Verify synthetic execution, project gates and strict docs.
+- [x] Render isolated/sequential chapters and inspect the final outputs.
+
+Kickoff: read Current focus and M62 checkpoints; traced distillation, export,
+revision APIs and tutorial consumers. Preserve the pre-existing examples/.gitignore
+change. Implement only this documentation phase; no public API or dependency
+change. Next: rewrite chapter 10 and add synthetic fresh-process verification,
+then run project gates and isolated/sequential renders.
+
+### M63 implementation checkpoint — 2026-11-05
+
+Replaced chapter 10 with a tariff-first distilled-GBM age-factor review; shared
+chapter 4's factor reader, added separate fidelity/claims/premium/LR comparisons,
+segment redistribution, auditable revisions and two workbook checks. Updated
+book/guide links. Fresh-process synthetic chapter 4/10 checks passed: 2 tests
+in 36.70s. Strict docs passed in 6.37s. Full project checks and cached real-data
+isolated render are running; sequential render and visual/table QA remain.
+M63 stays in progress; preserve M62's unobserved practitioner acceptance.
+
+### M63 engineering acceptance checkpoint — 2026-11-05
+
+`just check` passed: Ruff/Ty, 1,513 tests, 4 skips, 2 expected failures
+(21 backend/domain warnings), 346.69s. Cached real-data isolated chapter render
+passed; viewed the rendered age-factor/exposure figure. The executed scorecard
+shows adjustment deviance +0.0036%, Gini about -0.030 percentage points and
+scenario premium about EUR -243 on EUR 14 million; these are development-split
+illustrations, not acceptance or profitability evidence. The full sequential
+book render and final table/link QA remain in progress. No runtime code changed.
+Next: finish the sequential render, inspect the final chapter tables/links and
+record completion only if green. Logs: /tmp/azoic-m63-{check,isolated,book}.log.
+
+### M63 completion checkpoint — 2026-11-05
+
+Completed this documentation phase alone. Full `just check` passed: Ruff/Ty,
+1,513 passed, 4 skipped, 2 expected failures, 21 existing warnings (346.69s).
+Focused fresh-process chapter 4/10 checks passed (2 tests, 36.70s). Strict docs
+passed initially and after final guide prose (final 1.30s). Cached real-data
+isolated chapter and full sequential 11-page book renders exited 0. Quarto's
+sequential render captured an earlier prose snapshot; refreshed the final chapter
+and index separately, then verified the final teacher clarification, provisional
+review decision and helper index. Inspected the age-factor/exposure PNG and all
+five executed tables; checked figure alternative text, local links and absence
+of cell errors. Both workbook/Python agreement assertions passed in synthetic
+and real-data execution. No general browser-layout claim is made.
+
+Final tables show adjustment deviance +0.003645%, Gini -0.029648 percentage
+points and scenario premium EUR -242.63. Ages 72–78 move about EUR -21,690,
+79+ about EUR +21,536, and the remainder about EUR -88; totals reconcile.
+Loss ratios use the explicit 70% scenario and capped historical claims; these
+are not earned-premium observations, ultimate profitability or independent final
+evidence. The original tariff remains the provisional selection pending review.
+
+Generated workbooks/CSV/figures/book remain ignored under examples/_artifacts
+and examples/_book. Logs: /tmp/azoic-m63-{check,isolated,book,final-chapter,
+final-index,docs-final}.log. Preserved the pre-existing examples/.gitignore diff.
+No runtime API, dependency, loader rule, package version, release, deployment,
+commit or Git delivery change. M62 remains in progress for human observation.
+Next action: review chapter 10 and its optional recipe; resume M62 only when
+actual practitioners are available. Do not start a new phase automatically.

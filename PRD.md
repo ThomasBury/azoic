@@ -320,6 +320,18 @@ M56 records observed Linux/Windows starter execution. Independent user sessions,
 million-row benchmarks and a real receiving engine remain pending evidence,
 not inferred from engineering tests.
 
+### M63 — Review and smooth an exported GBM-derived tariff (completed locally)
+
+User-directed focused documentation follow-up, 2026-11-05. Replace chapter 10
+with a tariff-first actuarial review: reuse chapter 4's structured GBM/student
+setup, pool two older-driver relativities through `revise_tariff`, and compare
+teacher fidelity separately from claims performance, premium movement and
+illustrative loss ratios. Keep the fitted pipeline alongside the workbook;
+no Excel importer, new model kind or automatic smoother. Acceptance: independent
+synthetic execution, source preservation, training-only adjustment/calibration,
+workbook agreement, strict docs and isolated/sequential rendering. M62 remains
+in progress for actual human observations.
+
 ### Engineering depth and maintainability (M49–M55)
 
 The user-approved replacement plan runs one phase per implementation session in
