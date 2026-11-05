@@ -9,8 +9,8 @@ dependencies do not conflict with another project.
     The [first model](first-model.md) and the opening file-based
     [configuration example](../guide/experiment-configuration.md) target the
     published **0.5.0** package. The other guides and generated API reference
-    describe the current **unreleased checkout**. Its package version still
-    reads 0.5.0; that string alone does not establish API equivalence with PyPI.
+    describe the current **unreleased 0.6.0 checkout**. A version bump in source
+    does not mean that a release has been published to PyPI.
     Use a checkout for sections labelled checkout-only.
 
 ## Tested environments

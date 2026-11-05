@@ -407,6 +407,11 @@ or supported pipeline. Its caller chooses the calibration population explicitly;
 evidence. GBM/FSM factor revision is unsupported: use an explicit fitted GLM
 tariff. Senior review and independent final evaluation remain later phases.
 
+For an actuarial before/after walkthrough using a distilled tariff, see
+[review and smooth an exported tariff](https://thomasbury.github.io/azoic/tutorial/10-manual-tariff.html).
+It separates GBM approximation from factor adjustment and labels its premium
+and loss-ratio assumptions.
+
 ### Export a fitted GLM
 
 A fitted log-link `RiskGLM` or pipeline ending in one can be written to a

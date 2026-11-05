@@ -95,25 +95,7 @@ optional distillation example. It still needs the fitted preprocessing pipeline:
 this is **not standalone reconstruction** from the Excel `mappings` sheet.
 Retain that fitted pipeline with the workbook.
 
-```{python}
-#| code-fold: true
-#| code-summary: "Read workbook factors for both tariff examples"
-def tariff_from_sheets(workbook_sheets):
-    numeric_factors = {}
-    categorical_factors = {}
-    for row in workbook_sheets["factors"].itertuples(index=False):
-        if row.level == "_per_unit":
-            numeric_factors[row.feature] = float(np.log(row.multiplicative_factor))
-        else:
-            categorical_factors.setdefault(row.feature, {})[str(row.level)] = float(
-                row.multiplicative_factor
-            )
-    return {
-        "base_rate": float(workbook_sheets["base_rate"].iloc[0]["base_rate"]),
-        "numeric": numeric_factors,
-        "categorical": categorical_factors,
-    }
-```
+
 
 ```{python}
 worked_policy = test_frame[["policy_id", *raw_predict_columns]].nsmallest(1, "policy_id")

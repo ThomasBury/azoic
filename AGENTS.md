@@ -123,6 +123,11 @@ and `--rows 1000000 --threads 1 --out /tmp/azoic-m62-million-1` into a new direc
 Keep generated evidence outside source control. Report sampled stage RSS as
 whole-process estimates and lifetime peak separately; never infer unaided user
 acceptance from scripted runs. No practitioners have been observed yet.
+M63 completed the separately requested exported-tariff adjustment tutorial: retain chapter
+independence, separate teacher fidelity from claims performance, and label the
+70% target-loss-ratio premium scenario as an assumption. Workbook application
+still requires fitted preprocessing; do not add an Excel importer. M62 human
+observation remains pending.
 Current focus is the authority for the active/next milestone. Read
 `PREPROCESSING_FIX_PLAN.md` for the verified bugs, regression scope, PR delivery,
 and release reconciliation. The scope is mirrored in `PRD.md` section 6.

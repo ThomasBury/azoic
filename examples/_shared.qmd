@@ -297,3 +297,23 @@ def holdout_diagnostics(y_true, w, prediction):
         "d2_test": 1 - deviance / null_deviance,
     }
 ```
+
+```{python}
+#| include: false
+def tariff_from_sheets(workbook_sheets):
+    """Read factors with string category levels; still requires fitted preprocessing."""
+    numeric_factors = {}
+    categorical_factors = {}
+    for row in workbook_sheets["factors"].itertuples(index=False):
+        if row.level == "_per_unit":
+            numeric_factors[row.feature] = float(np.log(row.multiplicative_factor))
+        else:
+            categorical_factors.setdefault(row.feature, {})[str(row.level)] = float(
+                row.multiplicative_factor
+            )
+    return {
+        "base_rate": float(workbook_sheets["base_rate"].iloc[0]["base_rate"]),
+        "numeric": numeric_factors,
+        "categorical": categorical_factors,
+    }
+```
