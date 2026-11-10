@@ -27,7 +27,8 @@ package. No checkout, test fixture or Quarto is required.
 
 The hosted site otherwise documents the unreleased checkout. Features such as
 `run_experiment(..., df=...)` are absent from 0.5.0; use the file-based starter
-configuration with that release. The checkout still reports version 0.5.0.
+configuration with that release. The checkout is preparing version 0.6.0;
+it has not yet been published.
 
 The full suite runs on locked Python 3.12 dependencies. Separate installed-package
 checks cover low-version Python 3.12 dependencies and Python 3.14 wheels; see
