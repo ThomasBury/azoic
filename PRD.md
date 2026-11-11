@@ -332,6 +332,27 @@ synthetic execution, source preservation, training-only adjustment/calibration,
 workbook agreement, strict docs and isolated/sequential rendering. M62 remains
 in progress for actual human observations.
 
+### M64 — Three version-matched user skills (in progress)
+
+Ship `azoic-modelling`, `azoic-diagnostics` and `azoic-tariff` with pending 0.6.0
+under `src/azoic/.agents/skills/`, using the existing build backend's package-data
+defaults. Each has a focused SKILL.md, generated minimal OpenAI metadata and
+self-contained conditional references. Preserve automatic discovery, rate/amount
+units, development/final membership, no-fit diagnosis/export, trusted same-environment
+persistence and separate human selection/final/production evidence. Compare string
+`metadata.azoic-version` with installed distribution metadata before using recipes;
+identify stale guidance without silently changing dependencies.
+
+Document selected installation with Library Skills, symlinks, Claude targets and
+copy refreshes; pin 0.0.20 only in installation checks. Acceptance: skill-creator
+validation, version/name/reference checks, wheel/sdist resources and executable
+synthetic recipes, checkout-wheel Linux symlink/Windows copy coverage, isolated
+agent trials for routing and numerical/action boundaries, full checks, strict docs
+and clean diff. Live trials stay outside routine CI. Preserve the released 0.5.0
+starter; M62 observations remain pending. Reconcile skill and package metadata on
+future releases. Contributor/per-step skills, other distribution systems and actual
+publication are outside this milestone.
+
 ### Engineering depth and maintainability (M49–M55)
 
 The user-approved replacement plan runs one phase per implementation session in

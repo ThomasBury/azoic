@@ -30,6 +30,10 @@ The hosted site otherwise documents the unreleased checkout. Features such as
 configuration with that release. The checkout is preparing version 0.6.0;
 it has not yet been published.
 
+The pending 0.6.0 wheel bundles three user-facing agent skills for modelling,
+diagnostics and tariff work. Follow [agent installation](docs/getting-started/agents.md)
+to discover and install them with `uvx library-skills`; 0.5.0 has no skill bundle.
+
 The full suite runs on locked Python 3.12 dependencies. Separate installed-package
 checks cover low-version Python 3.12 dependencies and Python 3.14 wheels; see
 [tested environments](docs/getting-started/installation.md#tested-environments).

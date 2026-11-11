@@ -1,0 +1,3 @@
+interface:
+  display_name: "Azoic modelling"
+  short_description: "Prepare development data and fit saved candidates"

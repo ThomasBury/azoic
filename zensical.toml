@@ -10,6 +10,7 @@ nav = [
     {"Get started" = [
         {"Installation" = "getting-started/installation.md"},
         {"First model" = "getting-started/first-model.md"},
+        {"Agent skills" = "getting-started/agents.md"},
     ]},
     {"Guide" = [
         {"Actuarial workflow" = "guide/actuarial-workflow.md"},

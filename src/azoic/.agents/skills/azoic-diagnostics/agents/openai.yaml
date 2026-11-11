@@ -1,0 +1,3 @@
+interface:
+  display_name: "Azoic diagnostics"
+  short_description: "Interpret existing rates and runs without refitting"

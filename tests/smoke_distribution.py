@@ -1,16 +1,22 @@
 """Runtime-only check: copy outside the checkout and run against each installed artifact."""
 
+import json
+import re
 import subprocess
 import sys
 import tempfile
 import warnings
+from contextlib import ExitStack, chdir
 from importlib import import_module
 from importlib.metadata import distribution
+from importlib.resources import files
 from pathlib import Path
 from unittest import TestCase
+from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
+import yaml
 from sklearn.base import clone
 from sklearn.dummy import DummyRegressor
 from sklearn.model_selection import KFold, cross_val_score
@@ -351,3 +357,143 @@ with tempfile.TemporaryDirectory() as folder:
     )
     np.testing.assert_allclose(output.predicted_period_cost, output.predicted_rate * full.e)
 print("Frozen final evaluation, full refit and fresh-process production agreement/scoring passed")
+
+
+# Execute canonical code from installed skill references, never from the checkout.
+skills = files("azoic").joinpath(".agents", "skills")
+skill_names = {"azoic-modelling", "azoic-diagnostics", "azoic-tariff"}
+assert {path.name for path in skills.iterdir()} == skill_names
+for name in sorted(skill_names):
+    skill = skills.joinpath(name)
+    metadata = yaml.safe_load(skill.joinpath("SKILL.md").read_text().split("---")[1])
+    assert metadata["name"] == name
+    assert metadata["metadata"]["azoic-version"] == installed.version
+    assert skill.joinpath("agents", "openai.yaml").is_file()
+    for document in [skill.joinpath("SKILL.md"), *skill.joinpath("references").iterdir()]:
+        for target in re.findall(r"\]\(([^)]+)\)", document.read_text()):
+            assert document.parent.joinpath(target.split("#")[0]).is_file(), target
+
+
+def skill_recipe(name, reference, block, namespace):
+    document = skills.joinpath(name, "references", reference)
+    code = re.findall(r"```python\n(.*?)```", document.read_text(), re.DOTALL)[block]
+    exec(compile(code, str(document), "exec"), namespace)
+
+
+def reject_skill_mutation(*args, **kwargs):
+    raise AssertionError("this skill operation must not fit, distill or recalibrate")
+
+
+def frozen_skill_operations():
+    stack = ExitStack()
+    for cls in (RiskGLM, RiskGBM, FrequencySeverityModel, AutoBinner, AutoGrouper):
+        stack.enter_context(patch.object(cls, "fit", reject_skill_mutation))
+    for name in ("recalibrate_for_total", "distill_gbm"):
+        stack.enter_context(patch(f"azoic.tariff.{name}", reject_skill_mutation))
+        stack.enter_context(patch(f"azoic.{name}", reject_skill_mutation))
+    return stack
+
+
+with tempfile.TemporaryDirectory() as folder, chdir(folder):
+    full = pd.DataFrame(
+        {
+            "record_id": np.arange(240),
+            "driver_age": np.resize(np.arange(20, 80, 3), 240).astype(float),
+            "region": np.resize(["north", "south"], 240),
+            "period": np.repeat(np.arange(12), 20),
+            "exposure": np.resize([0.25, 0.5, 1.0], 240),
+        }
+    )
+    full["claim_amount"] = (
+        full.exposure * (20 + full.driver_age) * np.resize([0.0, 1.0, 3.0, 0.0], 240)
+    )
+    full.to_parquet("portfolio.parquet")
+    Path("final-ids.json").write_text(json.dumps(list(range(200, 240))))
+    ns = {}
+    skill_recipe("azoic-modelling", "development.md", 0, ns)
+    skill_recipe("azoic-modelling", "development.md", 1, ns)
+    run, estimators = azoic.load_run("candidates.pkl")
+    development = pd.read_parquet("development.parquet")
+    assert set(run.record_ids) == set(range(200))
+    assert not set(run.record_ids) & set(range(200, 240))
+    assert len(run.train_indices) + len(run.test_indices) == 200
+    validation = development.iloc[list(run.test_indices)].copy()
+    validation["rate"] = estimators["glm"].predict(validation[run.feature_names])
+    validation.to_parquet("predictions.parquet")
+    original_rates = estimators["glm"].predict(development[run.feature_names])
+    Path("replacements.json").write_text(
+        json.dumps(
+            [
+                {
+                    "feature": "region",
+                    "level": "north",
+                    "factor": 1.2,
+                    "reason": "Synthetic approved factor revision",
+                }
+            ]
+        )
+    )
+    with frozen_skill_operations():
+        skill_recipe("azoic-diagnostics", "predictions.md", 0, ns)
+        expected_op = validation.claim_amount.sum() / np.dot(validation.rate, validation.exposure)
+        np.testing.assert_allclose(ns["diagnostics"].o_p_ratio, [expected_op, expected_op / 2])
+        skill_recipe("azoic-diagnostics", "runs-segments.md", 0, ns)
+        for table in ("calibration", "segments", "one_way", "stability"):
+            np.testing.assert_allclose(ns[table].exposure.sum(), validation.exposure.sum())
+        assert Path("calibration.png").stat().st_size
+        skill_recipe("azoic-tariff", "revision-export.md", 0, ns)
+        assert not ns["revised_run"].models["glm"].revision["calibration"]["applied"]
+
+    # Export an already calibrated revision too: its scale must survive unchanged.
+    revised_run, revised_models = azoic.revise_run(
+        run,
+        estimators,
+        model="glm",
+        df=development,
+        recalibrate=True,
+        replacements=json.loads(Path("replacements.json").read_text()),
+    )
+    azoic.save_run(revised_run, revised_models, "revised.pkl")
+    np.testing.assert_array_equal(
+        estimators["glm"].predict(development[run.feature_names]), original_rates
+    )
+    Path("selection.json").write_text(
+        json.dumps(
+            {"selected": "revised/glm", "model": "glm", "rationale": "Synthetic human declaration"}
+        )
+    )
+    incumbent = development[["record_id"]].assign(incumbent_rate=80.0)
+    incumbent.loc[0, "incumbent_rate"] = 0.0
+    incumbent.iloc[::-1].to_parquet("incumbent.parquet")
+    azoic.save_run(revised_run, revised_models, "selected.pkl")
+    with frozen_skill_operations():
+        skill_recipe("azoic-tariff", "revision-export.md", 1, ns)
+        sheets = pd.read_excel("tariff.xlsx", sheet_name=None)
+        assert list(sheets) == ["base_rate", "factors", "mappings"]
+        transformed = revised_models["glm"].source[:-1].transform(development[run.feature_names])
+        workbook_rate = np.full(len(development), sheets["base_rate"].iloc[0].base_rate)
+        for feature, factors in sheets["factors"].groupby("feature"):
+            assert set(factors.application) == {"multiply_by_factor_matching_level"}
+            lookup = factors.set_index("level").multiplicative_factor
+            workbook_rate *= transformed[feature].astype(str).map(lookup).to_numpy(dtype=float)
+        np.testing.assert_allclose(
+            workbook_rate, revised_models["glm"].predict(development[run.feature_names]), rtol=1e-10
+        )
+        skill_recipe("azoic-tariff", "review.md", 0, ns)
+        assert Path("tariff-review/records.csv").stat().st_size
+        skill_recipe("azoic-tariff", "final-production.md", 0, ns)
+        assert set(ns["evaluated"].final_evaluation["record_ids"]) == set(range(200, 240))
+        assert not revised_run.final_evaluation and not Path("production.pkl").exists()
+
+    Path("production-rationale.txt").write_text("Explicit synthetic full-portfolio refit")
+    skill_recipe("azoic-tariff", "final-production.md", 1, ns)
+    assert not ns["production"].final_evaluation and ns["production"].production
+    assert all(key.endswith("_full") for key in ns["production"].models["glm"].metrics)
+    pd.DataFrame({"driver_age": [25.0, 60.0], "region": ["north", "south"]}).to_parquet(
+        "synthetic-cases.parquet"
+    )
+    Path("feature-units.json").write_text(json.dumps({"driver_age": "years", "region": "category"}))
+    with frozen_skill_operations():
+        skill_recipe("azoic-tariff", "final-production.md", 2, ns)
+    subprocess.run([sys.executable, "production-v1/score.py"], check=True)
+print("Packaged skills, canonical recipes, frozen actions, workbook scale and evidence passed")

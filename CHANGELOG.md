@@ -67,6 +67,10 @@ policy of reserving incompatible public changes for minor releases.
 
 ### Documentation and remaining evidence
 
+- Bundle three version-matched user skills for modelling, diagnostics and tariff
+  work, with self-contained API references and Library Skills installation guidance.
+  Keep diagnosis/export separate from fitting and calibration, and final evidence
+  separate from production training. Copies require refreshing after package updates.
 - Expand source-to-target accounting and missing-cost/claim-cap sensitivity in
   the freMTPL2 portfolio chapter without changing its loader rules.
 - Replace the manual-tariff recipe with a review of an exported GBM-derived tariff:

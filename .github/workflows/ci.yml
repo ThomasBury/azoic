@@ -52,6 +52,16 @@ jobs:
           cd "$RUNNER_TEMP/starter-project"
           uv run azoic --help
           uv run python smoke_starter.py ../starter-docs
+      - name: Check bundled skill discovery and selected installation
+        if: matrix.package == 'checkout-wheel'
+        run: |
+          cp tests/smoke_skill_install.py "$RUNNER_TEMP/starter-project/"
+          cd "$RUNNER_TEMP/starter-project"
+          options=()
+          if [[ "$RUNNER_OS" == Windows ]]; then
+            options=(--copy)
+          fi
+          uv run python smoke_skill_install.py "${options[@]}"
 
   validate:
     runs-on: ubuntu-latest

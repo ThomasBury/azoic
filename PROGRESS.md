@@ -9,11 +9,18 @@ Legend: ☐ pending · ◐ in progress · ☑ done
 
 ## Current focus
 
+- **M64 ◐ — three version-matched user skills** started on 2026-11-10 for the
+  pending 0.6.0 package. Bundle modelling, diagnostics and tariff skills under
+  `src/azoic/.agents/skills/`. Local checks, installed wheel/sdist recipes and all
+  six isolated agent trials passed; actual Windows copy-install CI remains pending
+  Git delivery authorization. The released 0.5.0 starter is preserved. M62's four
+  practitioner observations remain pending. Publication is a separate action.
+
 - **M63 ☑ — review and smooth an exported GBM-derived tariff** completed locally
   on 2026-11-05. Chapter 10 starts from exported factors, compares GBM/student/
   adjusted tariffs and verifies workbook prices. Ruff/Ty, 1,513 tests, strict
   docs and isolated/sequential renders passed. M62 still requires actual
-  practitioner observation; no next implementation milestone is selected.
+  practitioner observation; M64 is the separately requested active milestone.
 
 - **M61 ☑ — frozen final evaluation and production handoff** completed locally
   on 2026-10-26. Frozen final scoring, explicit full refit with approved mappings/
@@ -275,6 +282,119 @@ fixed-setting documentation and missing table entries; moved that paragraph
 under preprocessing and added the two setting rows. Next: strict docs and
 final-head Codex/CI for this documentation-only correction, then user handoff.
 M60, merge and release remain outside this delivery.
+
+## M64 — Three version-matched user skills ◐ — 2026-11-10
+
+- [x] Read current focus, latest checkpoint, authoring guidance and affected APIs/CI.
+- [x] Author and validate three bundled skills with self-contained references.
+- [x] Check version/name/reference contracts and installed canonical recipes.
+- [ ] Check selected Library Skills 0.0.20 installation on Linux/Windows starter paths.
+- [x] Run isolated agent trials and inspect actions and numerical results.
+- [x] Run full checks, strict docs, wheel/sdist smokes and diff checks.
+
+### M64 kickoff checkpoint — 2026-11-10
+
+Started from a clean working tree with package/runtime/lock already at 0.6.0.
+Scope reaches package data, focused resource tests, the installed distribution
+smoke, checkout-wheel starter CI, installation docs/navigation and living records.
+No public Python/CLI changes, build-backend change, runtime dependency or installer
+hook is needed. Official OpenAI and Library Skills documentation checked; Context7
+has no matching Library Skills entry. Pinned 0.0.20 installation help verified.
+Next: author three instruction-first skills and executable bundled recipes, then
+validate resources and behavior. M62 observations and publication remain separate.
+
+### M64 implementation checkpoint — 2026-11-11
+
+Three instruction-first skills now include generated OpenAI metadata and seven
+conditional references. Skill-creator validates all three; four focused resource
+tests pass. The unchanged uv_build backend includes the hidden data folders in
+both distributions. A fresh wheel smoke outside the checkout passed canonical
+separation/fitting/persistence, diagnosis/segments, structural revision, calibrated
+revision export, incumbent review, frozen final scoring and explicit production
+refit/delivery. Fit/distillation/calibration guards and independent workbook
+arithmetic passed. Doubling diagnostic predictions preserved Gini 0.30794 and
+changed O/P from 1.026928 to 0.513464.
+
+Library Skills 0.0.20 discovers all three as Azoic 0.6.0; the fresh Python 3.12
+project has no discovery warnings. Initial temporary-project setup discovered an
+unrelated parent /tmp workspace; removed only the new member registration and
+gave the test project its own workspace before using its evidence. Added selected
+Linux-link/Windows-copy checks only to checkout-wheel starter jobs, documentation,
+release/version maintenance rules and changelog. No released starter block changed.
+Next: finish Linux install/starter and sdist checks, isolated agent trials and
+full gates. Windows execution still needs a hosted runner; do not claim it observed.
+
+### M64 local acceptance checkpoint — 2026-11-11
+
+- `just check`: Ruff/Ty passed; **1,517 passed, 4 skipped, 2 expected failures**
+  (21 existing warnings, 408.10s), with locked all-extras/groups Python 3.12.
+- Strict documentation build passed (3.55s); actionlint 1.7.12 and diff checks
+  passed. Used the installed actionlint binary because its mise shim had no
+  selected version; no tooling configuration changed.
+- Runtime-only wheel and sdist smokes passed outside the checkout on Python 3.13,
+  pandas 3.1.1, including all bundled canonical runtime recipes and no-mutation
+  guards. Archive manifests contain all 13 canonical skill files. Separate
+  installed optional-extra checks passed the tuning and fixed-mapping recipes.
+- Python 3.12 checkout-wheel starter passed unchanged. Library Skills 0.0.20
+  discovered/selected all three matching 0.6.0 skills and verified complete resource
+  contents for Linux symlinks and local copies; Claude copy targets also passed.
+  Local copies are additional coverage, not evidence of Windows execution.
+- Three skill-creator validators and four focused resource tests passed. Public
+  exports, runtime dependencies/build settings, and released starter Python/YAML
+  have no diff. Source evidence is in this checkpoint; generated logs/artifacts
+  stay under `/tmp/azoic-m64-*`.
+
+Five independent catalog-routed agent trials have completed: modelling preserved
+200 development/40 final IDs and learned only on the 160 training rows; diagnosis
+performed no fits and reproduced Gini 0.307940 with O/P 1.026928/0.513464; revised
+export retained multiplier 0.8686672062737398 and matched six workbook rates to
+4.27e-14 absolute error; stale copied metadata 0.5.0 against installed 0.6.0 stopped
+before data/recipe execution without changing dependencies; an unrelated writing
+request selected no Azoic skill. Actual scripts, numerical outputs and unchanged
+input hashes are inspected, not wording assertions. Modelling's first verification
+attempt needed tuple-to-list positional indexing and empty-dict checks corrected;
+the supplied skill recipe needed no change. Final/production trial remains active.
+
+Remaining acceptance at this checkpoint: complete and inspect the final/production
+trial, then obtain actual Windows copy-install evidence through the existing
+checkout-wheel CI job. M64 remains ◐ until that platform check is green.
+
+### M64 isolated-agent acceptance — 2026-11-11
+
+All six independent trials passed their routing/action/numerical boundaries using
+only copies of the installed wheel's skills, synthetic inputs and its environment.
+Agents received the three descriptions and loaded relevant references themselves;
+they had no parent implementation history or checkout access. This tests catalog
+routing, not every host's discovery UI or future agent behavior.
+
+The final/production trial first evaluated the selected frozen revision on the 40
+reserved records and stopped: predictions were exactly unchanged, O/P 0.9242891514
+and fixed-power deviance 17.3871382320 matched independent arithmetic. No production
+artifact existed at that handoff. Only after a new explicit request did it refit
+240 full rows, preserve the evaluated artifact, retain frozen mappings and factor
+1.2, recompute calibration once (multiplier 0.8690716154) and deliver the bundle.
+Production observed/predicted totals both equal 9,695 within floating-point tolerance;
+metrics are `_full` training evidence, with predecessor final evidence separate.
+All 16 generated agreement cases passed (13 rates, 3 expected rejections).
+The evaluator corrected its own extra checks for empty dictionaries, per-model
+metrics and semantic state equality; the canonical evaluation recipe succeeded.
+
+Inspected actual generated scripts, saved evidence, workbook calculations and
+all **102 unchanged original trial input hashes**. No fitting occurred during
+diagnosis/export/frozen evaluation, no dependency changes during mismatch handling,
+and no Azoic skill was loaded for the unrelated request. Generated trial data and
+reports remain under `/tmp/azoic-m64-trials`, outside source control and routine CI.
+These trials are not M62 practitioner observations.
+
+All local acceptance is green. Windows copy installation is configured but still
+unobserved. Requested permission to commit/push a new branch and open a PR so the
+existing checkout-wheel job can supply that evidence; no remote write has occurred.
+Final artifacts were rebuilt under `/tmp/azoic-m64-final-dist`; their full wheel
+and sdist runtime smokes passed again (`/tmp/azoic-m64-final-{wheel,sdist}.log`).
+All 13 packaged skill files match canonical source bytes in both archives.
+Exact next action: after Git delivery authorization, run the Windows starter job,
+address failures if any, then mark M64 complete only with green observed evidence.
+Preserve M62 ◐ and the unpublished 0.6.0 release boundary.
 
 ## M62 — Measured performance and observed user handoffs ◐ — 2026-10-26
 
