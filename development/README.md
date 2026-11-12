@@ -6,10 +6,12 @@ Read historical records only when their evidence is needed.
 
 ## Current focus
 
-- **0.6.1 delivery ◐** — authorized on 2026-11-12: stage the documentation,
-  branding and license changes, create a labelled PR with Conventional Commits,
-  obtain Codex review, address findings and publish the reviewed patch release.
-  Keep the PR open; CodeRabbit may be skipped only if its credits are exhausted.
+- **0.6.1 delivery ☑** — published on 2026-11-12 from reviewed commit `790ec57`.
+  [GitHub v0.6.1](https://github.com/ThomasBury/azoic/releases/tag/v0.6.1) and
+  [PyPI 0.6.1](https://pypi.org/project/azoic/0.6.1/) are public and verified.
+  [PR #27](https://github.com/ThomasBury/azoic/pull/27) remains open with
+  `documentation`/`release` labels. Codex found no issues; CodeRabbit's release-order
+  finding is resolved. The post-publication commit records this checkpoint only.
 - **Branding replacement ☑** — completed on 2026-11-12: README banner and four-badge
   row, docs logo and favicon use the supplied assets. Strict docs, local rendered
   previews and contributor checks passed; artwork and unrelated work are preserved.
@@ -20,8 +22,10 @@ Read historical records only when their evidence is needed.
   session preparation passed; all four actual practitioner observations remain
   pending. No practitioners have been observed. Resume only with real participants;
   scripted runs, agent trials and maintainer walkthroughs cannot complete M62.
-- **Release baseline:** Azoic 0.6.0 was published on 2026-11-12 from `502766b`
-  after PR #26, with `openpyxl>=3.1.5`. M64 skills and their Linux-link/Windows-copy
+- **Release baseline:** Azoic 0.6.1 is published from `790ec57`; runtime behavior
+  and dependencies are unchanged from 0.6.0. The previous 0.6.0 release was
+  published on 2026-11-12 from `502766b` after PR #26, with `openpyxl>=3.1.5`.
+  M64 skills and their Linux-link/Windows-copy
   checks completed; M63 tutorial and M56–M61 implementation completed. These are
   recorded historical results, not checks rerun by this cleanup.
 
@@ -145,8 +149,8 @@ missing-heavy portfolios or Windows performance. No runtime, memory or readiness
 - [x] Inspect the complete branch diff, previous checks and remote delivery conventions.
 - [x] Create topical Conventional Commits and reconcile package/skill versions.
 - [x] Run locked checks, strict docs and installed wheel/sdist smokes.
-- [ ] Open the PR with `documentation` and `release` labels; obtain bot review and repair findings.
-- [ ] Publish tag `v0.6.1` and the GitHub release from the reviewed commit; verify publication.
+- [x] Open the PR with `documentation` and `release` labels; obtain bot review and repair findings.
+- [x] Publish tag `v0.6.1` and the GitHub release from the reviewed commit; verify publication.
 
 0.6.1 preparation passed: `uv sync --locked --all-extras --all-groups --offline`,
 `just docs-build`, Ruff, Ty and **1,517 tests** (4 skips, 2 expected failures,
@@ -163,9 +167,25 @@ license and contributor-guide targets exist in commit `1259918`.
 
 Artifacts and isolated environments are under `/tmp/azoic-release-u1ycw8dh/`;
 commands used `UV_CACHE_DIR=/tmp/azoic-doc-cleanup-uv-cache`. Prior rendered-preview
-evidence is retained below. No tag or release exists yet. Next action: push the
-release preparation, open the labelled PR and obtain Codex/CodeRabbit review and
-remote CI before publication. M62 human acceptance stays pending.
+evidence is retained below. Tag `v0.6.1` and the GitHub release now point to
+reviewed commit `790ec57`. Codex completed with no findings; all nine CI jobs
+passed in [run 43236915269](https://github.com/ThomasBury/azoic/actions/runs/43236915269).
+The [release workflow](https://github.com/ThomasBury/azoic/actions/runs/43237975433)
+passed build and PyPI publication. PyPI lists both 0.6.1 artifacts. A fresh registry
+installation outside the checkout passed dependency/CLI/version/license/skill checks;
+all package files match the locally validated wheel. Its first install attempt saw
+the pre-publication cached index; `--refresh-package azoic` refreshed that entry.
+Public pinned banner/license/contributor-guide targets return the exact committed
+bytes. CodeRabbit's one minor finding required publication before merging; the
+[evidence reply](https://github.com/ThomasBury/azoic/pull/27#discussion_r4551855449)
+records the successful public install and its thread is resolved. No credits-based
+review skip was needed for the release commit.
+
+The PR remains open and `main` is unchanged; Pages will update after merge.
+The post-publication commit changes this internal checkpoint only and does not move
+the release tag. Next action: maintainer review/merge of PR #27. M62 human acceptance
+stays pending; resume it only with actual participants. Real-data tutorial rendering
+and live practitioner observations were not rerun for this maintenance release.
 
 ## Previous checkpoint — branding — 2026-11-12
 
