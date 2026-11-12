@@ -6,7 +6,7 @@ Excel. The only rating features are **driver age, vehicle age and region**.
 Exposure is a weight; period controls the split; claim amounts and counts are
 outcomes. None of those four columns is a rating feature.
 
-This complete starter works with **Azoic 0.5.0 from PyPI** and with the checkout.
+This complete starter works with **Azoic 0.6.0 from PyPI** and with the checkout.
 It creates synthetic data locally and needs no repository, test fixtures,
 Quarto, optional extras or network after installation. It is a learning example,
 not a reviewed production tariff.
@@ -164,15 +164,14 @@ implied by these synthetic technical rates.
 ## Continue with configuration
 
 The [configuration guide](../guide/experiment-configuration.md) uses the saved
-`portfolio.parquet` and also works with 0.5.0. Its fit commands train new models;
-they do not retrieve the fitted objects retained in `models` above.
+`portfolio.parquet`. Its fit commands train new models; they do not retrieve the
+fitted objects retained in `models` above.
 
-!!! note "Checkout-only in-memory workflow"
+!!! note "In-memory workflow"
 
-    The current checkout additionally supports `run_experiment(config, df=portfolio)`
-    and `tune_experiment(config, df=portfolio)`. These arguments are absent from
-    0.5.0. Use the file-based configuration guide with that release, or follow
-    [checkout installation](installation.md#work-from-a-checkout) for these APIs.
+    Azoic 0.6.0 also supports `run_experiment(config, df=portfolio)` and
+    `tune_experiment(config, df=portfolio)` for in-memory frames. The
+    configuration guide uses the file-based path beside `experiment.yaml`.
 
 [Configure an experiment](../guide/experiment-configuration.md){ .md-button .md-button--primary }
 [Build diagnostic views](../guide/diagnostics-visualization.md){ .md-button }

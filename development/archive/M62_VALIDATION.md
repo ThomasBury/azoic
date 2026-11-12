@@ -1,5 +1,10 @@
 # M62: performance measurements and observed handoffs
 
+> Archived on 2026-11-12. Historical evidence only: statuses, next actions and
+> permissions below describe past sessions, not current instructions. Read the
+> [current work](../README.md), [design reference](../design.md) and
+> [agent instructions](../../AGENTS.md) for current authority.
+
 M62 is **in progress**. The benchmark supplies engineering evidence. Acceptance
 also needs unaided handoffs by two medior actuaries, one senior actuary and one
 ML engineer. None has been observed yet; automated checks cannot replace them.
@@ -175,12 +180,12 @@ participant. Provide normal docs/search/CLI help. Record whether another AI or
 colleague supplied help; that attempt is assisted. Obtain agreement to observation
 and any recording. Keep identity/contact details separate from technical evidence.
 
-Use the network-free synthetic [first-model recipe](docs/getting-started/first-model.md)
+Use the network-free synthetic [first-model recipe](../../docs/getting-started/first-model.md)
 as the common small portfolio. The facilitator may run it once before sessions
 to retain a pristine `portfolio.parquet`; do not give participants its fitted
 outputs as their own work. Medior A starts with the recipe, Medior B with the
 pristine portfolio. Use the existing
-[portfolio membership guide](docs/guide/actuarial-workflow.md#freeze-portfolio-membership-before-experimenting)
+[portfolio membership guide](../../docs/guide/actuarial-workflow.md#freeze-portfolio-membership-before-experimenting)
 to declare stable IDs and reserve the final periods **before** Medior B's
 experiments. The senior receives Medior B's original and revised candidates,
 original development frame and review bundle, without final outcomes. The ML
@@ -221,9 +226,9 @@ interpretation before correcting misunderstandings after the attempt.
    incumbent. Pass when final rows remain unused, source candidates are preserved,
    reports use identical IDs/basis, revised workbook/Python rates agree, and the
    participant correctly explains which operations fit or recalibrate. Use the
-   [configuration](docs/guide/experiment-configuration.md),
-   [preprocessing](docs/guide/data-preprocessing.md) and
-   [operations](docs/guide/operations.md) guides.
+   [configuration](../../docs/guide/experiment-configuration.md),
+   [preprocessing](../../docs/guide/data-preprocessing.md) and
+   [operations](../../docs/guide/operations.md) guides.
 3. **Senior actuary:** review the supplied report without its author or notebook.
    Explain why rates changed, affected groups, exposure/claims support, raw versus
    calibrated/revised scales and zero-incumbent percentage changes. Identify
@@ -240,7 +245,7 @@ interpretation before correcting misunderstandings after the attempt.
    checked, predecessor final evidence remains attributed to the frozen fit,
    production metrics are full-training only, and the engineer explains trusted
    pickle/environment constraints and downstream deployment/rollback ownership.
-   Use the [production handoff recipe](docs/guide/operations.md#freeze-final-evidence-then-refit-production-explicitly).
+   Use the [production handoff recipe](../../docs/guide/operations.md#freeze-final-evidence-then-refit-production-explicitly).
    Running the Python recipe does not demonstrate agreement with a real receiving engine.
 
 ### Evidence and repair loop

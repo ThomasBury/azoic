@@ -1,5 +1,10 @@
 # Azoic — Progress
 
+> Archived on 2026-11-12. Historical evidence only: statuses, next actions and
+> permissions below describe past sessions, not current instructions. Read the
+> [current work](../README.md), [design reference](../design.md) and
+> [agent instructions](../../AGENTS.md) for current authority.
+
 > Living tracker. Mirrors `PRD.md` section 6 milestones. Update after every
 > chunk of work.
 

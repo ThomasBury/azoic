@@ -7,7 +7,7 @@ estimator and it pops those columns from X inside ``fit`` / ``predict``.
 
 The ``exposure_col`` on a sub-estimator is really a *weight* column -- popped
 from X and routed to the backend as ``sample_weight``. The pure-premium
-convention (PRD section 5 rule 1): ``y = claim_amount / exposure`` and
+convention (AGENTS.md rule 1): ``y = claim_amount / exposure`` and
 ``sample_weight = exposure``.
 
 FrequencySeverityModel.fit applies the actuarial severity filter (claim_count
@@ -300,7 +300,7 @@ class RiskGBM(RegressorMixin, BaseEstimator):
         Column in X popped and forwarded to LightGBM as ``sample_weight``.
     tweedie_variance_power : float
         Tweedie power; validated during ``fit`` to lie in ``[1.0, 2.0)``
-        (PRD rule 4) when ``objective == "tweedie"``.
+        (AGENTS.md rule 4) when ``objective == "tweedie"``.
     monotone_constraints : dict[str, int] | sequence[int] | None
         Per-feature monotonicity for LightGBM's tree splits. ``dict`` keys are
         post-exposure feature names (missing keys default to 0); ``sequence``

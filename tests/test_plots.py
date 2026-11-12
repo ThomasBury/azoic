@@ -2,7 +2,7 @@
 / double-lift / hexbin render headless.
 
 The Agg backend is forced before importing azoic.plots so pyplot never
-tries to open a display (PRD M4 done-when: figures render headless to PNG).
+tries to open a display (figures must render headless to PNG).
 """
 
 from __future__ import annotations

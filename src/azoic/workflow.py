@@ -5,7 +5,7 @@ loads the data, splits it (random or temporal), fits every named model, and
 returns a ``Run`` carrying per-model diagnostics (Gini / O-P ratio / Tweedie
 deviance / calibration table + the fitted estimator).
 
-Pure-premium convention (PRD sec. 5 rule 1): estimator is fit on
+Pure-premium convention (AGENTS.md rule 1): estimator is fit on
 ``y = claim_amount / exposure`` with ``sample_weight = exposure`` (the exposure
 column is popped inside ``RiskGLM`` / ``RiskGBM``); diagnostics use aggregate
 ``claim_amount`` as ``y_true`` and the predicted pure premium (rate) as

@@ -2,10 +2,9 @@
 
 !!! note "Azoic 0.6.0 documentation"
 
-    This page describes the published 0.6.0 package; some APIs differ from the
-    0.5.0 package. For the 0.5.0-compatible journey, start with the
-    [first model](../getting-started/first-model.md). See
-    [installation](../getting-started/installation.md) for version details.
+    This page describes the published 0.6.0 package. See the
+    [changelog](https://github.com/ThomasBury/azoic/blob/main/CHANGELOG.md)
+    for changes since 0.5.0.
 
 Use Python composition to supply a frequency or severity estimator. Workflow
 `ModelSpec.kind` still supports only its documented GLM, GBM and frequency–severity
@@ -187,8 +186,8 @@ Azoic 0.6.0 adds column names, invalid-row counts and up to five zero-based
 row positions to portfolio outcome, numeric model-weight and missing-time errors.
 Validation policies and public function signatures are unchanged. The
 [first-model starter](../getting-started/first-model.md) and opening file-based
-configuration example are checked against both 0.5.0 and 0.6.0; the in-memory
-`df=` workflow requires 0.6.0.
+configuration example now target 0.6.0. The CI starter matrix retains a PyPI
+0.5.0 backward-compatibility run; the in-memory `df=` workflow requires 0.6.0.
 
 Azoic 0.6.0 adds `split_portfolio`, `check_experiment` and `azoic check`,
 optional ID/excluded-column roles, portfolio-basis metadata and `Run.record_ids`.
@@ -196,8 +195,8 @@ Checks require explicit predictors; ordinary fit/tune calls retain feature
 inference. Reports label development evidence, and comparison tables add the
 `evidence` column (including empty tables). CSV consumers with fixed schemas
 must accept this additional column; this schema change requires a minor release.
-The 0.5.0 starter remains unchanged. M57 itself does not supply artifact
-persistence or final-test scoring/refitting; those follow in 0.6.0.
+The 0.5.0 starter text remains in the 0.5.0 release. M57 itself does not supply
+artifact persistence or final-test scoring/refitting; those follow in 0.6.0.
 
 Azoic 0.6.0 adds `save_run(run, estimators, path)` and `load_run(path)` in
 `azoic.workflow` and the package root. Loading returns the existing
@@ -255,6 +254,6 @@ GBMs are not silently converted. Bundles use `azoic.production.1` JSON and the
 existing trusted same-environment `azoic.run.1` persistence envelope. Fitted
 fingerprints are same-environment integrity comparisons, not authentication or
 cross-version portability guarantees. Public schema additions and production
-metric/evidence names ship in 0.6.0; 0.5.0 starter blocks
-stay unchanged. No deployment API, receiving-engine certification or measured
-performance claim is introduced.
+metric/evidence names ship in 0.6.0; the 0.5.0 starter remains in that release.
+No deployment API, receiving-engine certification or measured performance claim
+is introduced.

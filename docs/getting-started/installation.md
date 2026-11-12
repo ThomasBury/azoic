@@ -4,13 +4,12 @@ Azoic requires Python 3.12 or newer and pandas 3.0 or newer. pandas 2 is no
 longer supported. Use a virtual environment so its compiled `glum` and LightGBM
 dependencies do not conflict with another project.
 
-!!! note "Release and checkout documentation"
+!!! note "Current release"
 
-    The [first model](first-model.md) and the opening file-based
-    [configuration example](../guide/experiment-configuration.md) target the
-    published **0.5.0** package. The other guides and generated API reference
-    describe the published **0.6.0** package. Install `azoic==0.6.0` for
-    those sections.
+    This site and the [first model](first-model.md) target the published
+    **Azoic 0.6.0** package. See the
+    [changelog](https://github.com/ThomasBury/azoic/blob/main/CHANGELOG.md) for
+    changes since 0.5.0.
 
 ## Tested environments
 
@@ -21,15 +20,16 @@ combination:
 | Environment | Validation |
 |---|---|
 | Python 3.12, locked all-extras/groups dependencies | Full tests, lint, source types and strict documentation build |
-| Python 3.12, low compatible direct runtime versions | Fresh wheel and sdist installs, model/preprocessing checks, imports/version and all five CLI command helps |
+| Python 3.12, low compatible direct runtime versions | Fresh wheel and sdist installs, model/preprocessing checks, imports/version and all eleven CLI command helps |
 | Python 3.14, current compatible runtime wheels | The same installed wheel/sdist checks; only Azoic's own sdist may be built from source |
-| Python 3.12, Linux and Windows Server 2025, runtime dependencies | Exact documented starter and file-based configuration against PyPI 0.5.0 and a checkout-built wheel; workbook-rate agreement and CLI fit |
+| Python 3.12, Linux and Windows Server 2025, runtime dependencies | Exact documented starter and file-based configuration against PyPI 0.5.0 (backward compatibility) and a checkout-built 0.6.0 wheel; workbook-rate agreement and CLI fit |
 
 The installed starter passed its Python 3.12 CI matrix on Linux and Windows
-Server 2025, against both the PyPI release and a checkout-built wheel. The Windows
-jobs used Python 3.12.10. This validates the starter; the full test suite still
-runs on Linux. macOS is unverified. Exact execution evidence is recorded in
-`PROGRESS.md`.
+Server 2025, against both the PyPI 0.5.0 release and a checkout-built 0.6.0
+wheel. The Windows jobs used Python 3.12.10. This validates the starter; the
+full test suite still runs on Linux. macOS is unverified. Exact execution
+evidence is retained in the
+[archived execution record](https://github.com/ThomasBury/azoic/blob/main/development/archive/PROGRESS.md).
 
 The checkout requires `glum>=3.4.1` and `typer>=0.27.1`, replacing the earlier
 `glum>=3.0` and `typer>=0.12` declarations. The low-version job reads direct
@@ -48,7 +48,7 @@ activation is needed. In a new directory:
 ```bash
 uv init --python 3.12 my-pricing-project
 cd my-pricing-project
-uv add azoic==0.5.0
+uv add azoic==0.6.0
 uv run python -c "import azoic; print(azoic.__version__)"
 uv run azoic --help
 ```
@@ -56,10 +56,9 @@ uv run azoic --help
 In an existing uv project, run just the last three commands. Then follow the
 [first model](first-model.md); you do not need Git, Quarto or contributor tools.
 With pip, activate a Python 3.12 virtual environment and run
-`python -m pip install azoic==0.5.0`, then `python first_model.py`.
+`python -m pip install azoic==0.6.0`, then `python first_model.py`.
 
-The 0.6.0 package provides the newer APIs described in the remaining guides;
-install `azoic==0.6.0` for those sections.
+Azoic 0.6.0 is the current release and the version used throughout this site.
 
 Registry extras use package notation, for example
 `uv add 'azoic[mlops,tune]==0.6.0'` or
@@ -171,7 +170,7 @@ in the supplied frame. For example,
 `row positions ... [0, 8]` means inspect `portfolio.iloc[[0, 8]]`, even if the
 frame has duplicate or non-numeric index labels. Only positions are printed,
 not policy identifiers or claim values. Correct the source data deliberately;
-the loader does not drop, repair or cap it. Released 0.5.0 errors can be less
+the loader does not drop, repair or cap it. Earlier releases can be less
 detailed.
 
 [Fit a first model](first-model.md){ .md-button .md-button--primary }

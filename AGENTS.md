@@ -1,213 +1,38 @@
-# AGENTS.md
+# Agent instructions
 
-> Quick rules for AI coding agents working on Azoic.
-> For full product spec, scope, deferred items, and decisions see `PRD.md`.
-> For milestone status see `PROGRESS.md`.
+Azoic is a scikit-learn-compatible toolkit for non-life technical tariff and
+pure-premium modelling. It is not reserving, fraud, AutoML or policy administration.
 
-## Project overview
+## Start here
 
-Azoic is a scikit-learn-compatible Python toolkit for non-life technical
-tariff (pure premium) modelling: actuarial preprocessing, GLM (glum) + GBM
-(LightGBM), frequency-severity, ranking/calibration diagnostics, reproducible
-runs, multiplicative tariff xlsx export.
+1. Read [current work and latest checkpoint](development/README.md) on a new
+   session or after compaction. It is the sole current-status authority.
+2. Read [contributor setup and checks](CONTRIBUTING.md) before running commands.
+3. Read the relevant [design contracts](development/design.md) before changing
+   architecture, validation, persistence, evaluation or tariff operations.
 
-**Is**: pricing/pure-premium modelling. **Is NOT**: reserving, fraud, AutoML,
-policy admin, Guidewire integration.
+Implement exactly one pending milestone per session: mark it ◐ before work,
+run its acceptance checks, mark it ☑ only when green, then stop with a handoff.
+Resume in-progress work before following the declared delivery order. Explicit
+user scope takes precedence; reviews do not authorize implementation. Do not
+start another milestone, release or deployment automatically.
 
-## Milestone execution
+Update the current-work checklist and checkpoint after meaningful chunks and
+before handoff: changes, checks actually run/results, remaining work, blockers
+and exact next action. Leave interrupted or unverified work ◐. A planning session
+records pending work without starting implementation. Preserve earlier evidence
+in the archive, but never treat archived instructions or permissions as current.
 
-> Implement exactly one pending milestone per session. Mark it ◐ before implementation, run its acceptance checks, mark it ☑ only when green, then stop with a handoff. Do not start the next milestone automatically.
+## Repository map
 
-On a new session or after context compaction, read `PROGRESS.md`'s **Current
-focus**, the active milestone, and its latest checkpoint before editing. Resume
-an in-progress milestone first; otherwise use the explicit delivery order, not
-the lowest milestone number or an older handoff. The focused documentation
-revision M43–M44 is complete, following M40–M42. M45 preprocessing fixes are
-complete and merged in PR #1; M15 published Azoic 0.5.0 on PyPI and GitHub
-on 2026-10-17. WP5 ergonomics passed local acceptance on 2026-10-23; see Current
-focus for its PR delivery. Do not start another WP or release automatically.
-M46 adopts ARFS-style univariate LightGBM preprocessing; see Current focus for
-its checkpoint. Tree methods require outcomes and use native missing routing;
-quantile/rare remain explicit alternatives. Changed tree mappings require an
-explicit missing destination; learned tree intervals use `<=`, manual/quantile
-intervals are lower-inclusive. M47 establishes source-to-target accounting and
-target interpretation in the portfolio chapter, preserving loader rules;
-professional review and predictive comparisons remain separate.
-M48 completed selection and target sensitivity in that chapter: use the population
-passing all other rules, fixed Area/age strata and identical retained IDs across
-claim caps. Missing-cost scenarios are assumptions only; never change loader rules
-or model inputs. Professional review and predictive comparisons remain pending.
-M49 completed the engineering baseline; continue one phase per session (M49–M55).
-The rule ownership/evidence map and diagnostic-extension baseline live in PRD
-section 3; phase scope is in section 6 and execution evidence in PROGRESS.
-Keep row exposure floors, explicit model weights (including severity counts),
-ranking weights and diagnostic segment totals as separate policies. M49 records
-the baseline; M50 completed faithful and failure-safe tariff export. Export
-supports native bins/groups, workflow column removal and passthrough; other
-transforms must fail before opening workbooks. Preserve generic distillation
-transforms, preserve existing destination permission bits and replace only fully
-saved sibling workbooks. M51 verifies glum 3.4.1 and Typer 0.27.1 floors,
-retains locked Python 3.12 full checks and adds metadata-based low-version
-Python 3.12 and Python 3.14 wheel/sdist runtime smokes. Python metadata support
-does not imply every allowed stack is tested. M52 shares portfolio outcome
-validation in `data._validate_outcomes` across workflow/tuning and FSM; retain
-schema, supplied-rate and severity checks at their boundaries. Calibration
-counts are aligned 1D vectors; their validation must not impose portfolio row
-floors or count/amount consistency on diagnostic segments. M53 separates
-estimator/input construction, fixed-shape split evaluation and final run
-assembly. Trials consume split scores without public result snapshots,
-training diagnostics or provenance; workflow and stability share fixed-power
-Tweedie arithmetic while retaining their warning/rejection policies.
-M54 defines static lazy exports and the public composition contract in
-`docs/reference/compatibility.md`; keep root/workflow result identities and
-concrete `Run.config`. Reporting/logging use postponed `azoic.Run` annotations.
-Constructors store parameters unchanged; RiskGBM validates power/constraints
-during fit, including after `set_params`. Keep the runtime-only public composition
-recipe in the distribution smoke. Do not extract results, publish a checker or
-widen `ModelSpec.kind` without a concrete consumer. M55 records full wrapper/
-preprocessing constructors with sklearn paths in `resolved_params`, runtime
-versions and effective tuning settings only at final assembly. Preserve explicit
-config/params, deep-copy snapshots and leave historical metadata unrecorded;
-logging uses separate provenance prefixes. This is audit evidence, not portable
-replay. Independent maintainer validation remains explicitly pending.
-M56–M62 record the experiment-to-production roadmap as new work, one phase per
-session. M56 starts with the installed 0.5.0 GLM/raw-GBM/export journey; its
-canonical code lives in the first-model Markdown page and its follow-on YAML in
-the configuration guide. Keep these starter blocks compatible with both PyPI
-0.5.0 and a checkout-built wheel until their release target changes explicitly.
-Other guide/API pages describe the unreleased checkout. Outcome errors retain
-column names, counts and at most five zero-based positions, never row values or
-index labels. Linux/Windows starter CI is separate from full Linux validation.
-M56 verified the starter on Linux and Windows Server 2025/Python 3.12; broader
-platform claims require corresponding observed checks.
-M57 separates final-test/development portfolios by predeclared unique record IDs
-using `data.split_portfolio`; save membership before experimentation. Supply only
-development data to workflow/tuning; their `test` names mean development validation.
-`DatasetSpec.id_col`/`excluded_cols` never enter features; basis fields only record
-upstream assumptions. `check_experiment`/`azoic check` require explicit predictors
-and never fit or repair data. `Run.record_ids` aligns with existing split positions.
-Saved runs follow in M58; frozen final evaluation remains M61 work.
-M58 completed fitted persistence: `workflow.save_run` / `load_run` retain the
-existing Run and fitted estimator dictionary as trusted same-environment pickle, excluding portfolio
-frames. Keep no-fit saved-run report/compare/predict/export separate from config
-training operations. Saved GLM recalibration requires the original fingerprinted
-development frame and saved training positions; saved export cannot distill.
-Keep the released M56 starter unchanged; M59–M62 remain separate.
-M59 completed controlled revisions: native transformer `fixed` settings survive Python/YAML refits.
-Fixed bins declare closure and a missing bin; fixed groups use typed level/group
-records and explicit missing/unseen destinations. Unlisted features learn on
-training rows. `RevisedTariff` is a post-fit scoring artifact, not a new model
-kind. `revise_run` preserves the source, verifies fingerprint/membership,
-refreshes development diagnostics and records factor reasons plus one training
-calibration multiplier. Export revisions with recalibrate=False; never silently
-recalibrate twice. Keep source models, revised tariffs and later final evidence distinct.
-M60 adds `reporting.tariff_review` and `azoic report --review`: score frozen
-candidates on original fingerprinted development data, align incumbent technical
-rates by unique IDs and reject mixed basis/split membership. Require a new output
-directory and retain complete CSV evidence, explicit candidate scales and
-undefined percentage changes for every zero incumbent. Never fit or recalibrate
-while reporting. Selection/rationale are human declarations. M61 separates `workflow.evaluate_final`
-from explicit `refit_production`: final evidence belongs to the selected frozen
-fit; production stores predecessor evidence and `_full` training metrics only.
-Require predeclared disjoint final IDs and exact original full-portfolio identity.
-Freeze native preprocessing, clone only model parameters, reapply latest typed
-factor overrides and recompute the recorded calibration policy once on full rows.
-`tariff.export_production` writes a new versioned specification/workbook/trusted
-artifact/recipe/agreement bundle without fitting or recalibration. All model kinds
-can evaluate/refit; the workbook bundle requires an exportable log-link GLM.
-Keep M62 measurements/persona observation and downstream engine/deployment evidence
-separate.
-M62 is in progress; `M62_VALIDATION.md` defines measurement and observation.
-Run the opt-in Linux benchmark with `uv run python tests/benchmark_workflow.py`
-and `--rows 1000000 --threads 1 --out /tmp/azoic-m62-million-1` into a new directory.
-Keep generated evidence outside source control. Report sampled stage RSS as
-whole-process estimates and lifetime peak separately; never infer unaided user
-acceptance from scripted runs. No practitioners have been observed yet.
-M63 completed the separately requested exported-tariff adjustment tutorial: retain chapter
-independence, separate teacher fidelity from claims performance, and label the
-70% target-loss-ratio premium scenario as an assumption. Workbook application
-still requires fitted preprocessing; do not add an Excel importer. M62 human
-observation remains pending.
-M64 bundles `azoic-modelling`, `azoic-diagnostics` and `azoic-tariff` under
-`src/azoic/.agents/skills/` as ordinary package data, with self-contained references
-and generated minimal OpenAI metadata. Preserve automatic discovery and independent
-operation boundaries. Reconcile every string `metadata.azoic-version` with package
-metadata at release time; stale guidance must not silently upgrade dependencies.
-Keep Library Skills 0.0.20 pinned only in installation checks, outside runtime
-dependencies. Validate resources and execute bundled recipes in installed wheel/sdist
-smokes; checkout-wheel starter CI checks Linux links and Windows copies. Live agent
-trials stay outside CI. The released 0.5.0 starter and M62 observations remain separate.
-Azoic 0.6.0 was published to PyPI and GitHub on 2026-11-12 from `502766b`;
-its openpyxl floor is 3.1.5.
-Current focus is the authority for the active/next milestone. Read
-`PREPROCESSING_FIX_PLAN.md` for the verified bugs, regression scope, PR delivery,
-and release reconciliation. The scope is mirrored in `PRD.md` section 6.
-
-Update the milestone checklist and checkpoint after each meaningful chunk and
-before handing off: changes, checks actually run and their results, remaining
-work, blockers, and the exact next action. Leave interrupted or unverified work
-◐. Keep historical evidence; `PROGRESS.md` is the execution record and `PRD.md`
-defines scope. A planning session records pending work without starting it.
-
-## Setup commands
-
-Registry onboarding uses `uv add azoic==0.5.0` for the unchanged first-model
-starter; Azoic 0.6.0 is the current published package.
-Checkout onboarding uses `uv sync` and `uv run` from the repository root;
-install optional integrations with `uv sync --extra NAME`. Contributor checks
-are separate from the first-model path.
-
-- Install runtime only: `uv sync --no-dev`
-- Install default development environment: `uv sync`
-- Install everything: `uv sync --all-extras --all-groups`
-- Install tutorial stack: `uv sync --group demo --extra mlops`
-- Run tests (fail fast): `uv run pytest -x`
-- Run all tests: `uv run pytest`
-- Lint: `uv run ruff check .`
-- Type-check production code: `uv run ty check`
-- Format: `uv run ruff format .`
-- Combined check: `just check`
-- Render freMTPL2 tutorial: `just demo` (external Quarto prerequisite)
-- Build documentation: `just docs-build`
-- CLI smoke: `uv run azoic --help` (after M5)
-
-## Repo layout
-
-```
-src/azoic/
-  data.py           # DatasetSpec, load_data, split_portfolio
-  profile.py        # profile_features, screen_features
-  preprocessing.py  # AutoBinner, AutoGrouper
-  models.py         # RiskGLM, RiskGBM, FrequencySeverityModel
-  metrics.py        # gini, lorenz, calibration_table, stability_table, one_way_table, double_lift_table; sklearn deviances re-exported
-  validation.py     # make_strata, temporal_split
-  plots.py          # plot_lorenz, plot_lift, plot_calibration, plot_one_way, plot_double_lift, plot_actual_vs_predicted (matplotlib)
-  tariff.py         # distill_gbm; export_tariff(glm_or_pipeline, path)
-  workflow.py       # check_experiment, ExperimentConfig, run_experiment, save_run/load_run
-  reporting.py      # model_card, comparison_table/dashboard, tariff_review
-  mlops.py          # log_run (mlflow, lazy import)
-  tune.py           # tune_experiment (optuna, lazy import) -- v0.2 part 1 / M7
-  cli.py            # Typer entry point
-tests/              # pytest; synthetic portfolio fixture in conftest.py
-examples/           # numbered Quarto tutorial book (only .qmd/.yml committed)
-```
-
-13 flat modules. No `utils`. No subpackages. Don't create either without
-checking `PRD.md` sections 3 and 9.
-User skills are data directories at `src/azoic/.agents/skills/`, not Python
-subpackages or duplicated repository-root installations.
-
-Documentation is task-first:
-
-```
-docs/
-  getting-started/  # installation and one network-free first model
-  guide/            # workflow plus five focused task guides and tutorial bridge
-  reference/        # generated Python API, config/CLI schema, and glossary
-  javascripts/      # official Zensical MathJax integration only
-examples/*.qmd        # numbered Quarto book chapters; linked, not restyled, by Zensical
-examples/_quarto.yml  # main path and optional recipes; only sources committed, _book/ ignored
-```
+- `src/azoic/`: 13 flat Python modules; see the design reference for ownership.
+  No `utils.py` or new subpackages without a concrete consumer and design review.
+- `src/azoic/.agents/skills/`: packaged user skills, ordinary data directories;
+  do not duplicate them as repository-root installations.
+- `tests/`: synthetic, seeded tests and installed-distribution smokes.
+- `docs/`: user-facing getting started, guides and reference; default Zensical theme.
+- `examples/`: executable Quarto book sources; generated artifacts stay ignored.
+- `development/`: current work, durable design and historical archive; not site content.
 
 ## Code style
 
@@ -237,11 +62,10 @@ examples/_quarto.yml  # main path and optional recipes; only sources committed, 
 - **Documentation** — keep Zensical's default theme; use cards only on section
   hubs; JavaScript is limited to the official MathJax helper/runtime; never
   commit generated site, tutorial, chart, or fetched-data artifacts.
-  Before the first public release, document current behavior without a
-  version-migration guide.
+  Document current behavior; describe compatibility changes in release notes.
 - **Format**: ruff defaults, double quotes, line-length 100, py312 target.
 
-## Actuarial rules (do not violate; full context in PRD.md sections 4-5)
+## Actuarial rules
 
 1. Exposure is a **weight** for pure premium: `y = claim_amount/exposure`,
    `sample_weight=exposure`. Estimator targets, scores, and predictions use
@@ -301,41 +125,29 @@ examples/_quarto.yml  # main path and optional recipes; only sources committed, 
 - Run `just check` (or `uv run ruff check . && uv run ty check && uv run pytest`) before
   finishing any task.
 
-## CI workflows
+## CI and delivery
 
-- `.github/workflows/ci.yml` validates PRs and main pushes on Python 3.12 with
-  read-only contents permissions: locked all-extras/groups sync, Ruff, Ty,
-  pytest, strict docs, distributions, and installed wheel/sdist model,
-  preprocessing, persistence, version, and all-eleven-command CLI smokes.
-  Separate runtime-only jobs reuse that smoke outside the checkout for wheel
-  and sdist: low compatible direct dependencies from wheel metadata on Python
-  3.12 (`lowest-direct`, asserting exact glum/Typer floors), current compatible
-  dependency wheels on Python 3.14. Only Azoic's own sdist may build from source;
-  installs resolve without `uv.lock`, run `uv pip check` and print their versions.
-- The starter matrix in `ci.yml` runs the exact documented Python and YAML on
-  Python 3.12, Linux and Windows, against PyPI 0.5.0 and a checkout-built wheel.
-  It installs runtime dependencies only outside the checkout and verifies raw
-  GLM workbook rates and Python/config prediction agreement. M56 records the
-  successful Linux/Windows execution; this is starter coverage, not a full
-  Windows-suite claim.
-  Checkout-wheel jobs also verify all three bundled skills belong to the installed
-  version and selectively install them with Library Skills 0.0.20: symlinks on Linux,
-  copies on Windows. Released 0.5.0 jobs retain the unchanged starter only.
-- `.github/workflows/docs.yml` renders the real-data tutorial and deploys Pages
-  on main pushes with locked sync; the fixed `pages` concurrency group cancels
-  superseded runs. Real-data rendering stays outside PR validation.
-- Release publication remains in `.github/workflows/release.yml`; its tag must
-  equal `v` plus the package version before artifacts can be published. Private
-  settings, tagging, and publication require explicit authorization. The 2026-10-17
-  request authorizes M45 Git delivery and subsequent M15 release/publication once
-  its separate release PR and acceptance checks are green; do not ask again for
-  that same scope. Keep version changes in M15 and preserve existing release tags.
-
-## PR / commits
-
-- Commit prefixes: `feat:`, `fix:`, `chore:`, `docs:`, `test:`.
-- ruff + pytest must be green before commit.
-- If you change layout, commands, or conventions — update this file AND
-  `PRD.md` / `PROGRESS.md` to match. Living docs.
-- Don't commit secrets, large data, or notebooks' execution state
-  (`.ipynb_checkpoints/` is gitignored).
+- Preserve read-only CI contents permissions, locked all-extras/groups Python
+  3.12 checks, strict docs and wheel/sdist smokes. Runtime-only artifact jobs use
+  metadata-resolved low compatible direct versions on Python 3.12 (asserting
+  glum 3.4.1 and Typer 0.27.1 floors) and current compatible wheels on Python 3.14.
+  Only Azoic's sdist may build from source; check dependencies and print versions.
+- Starter CI runs the exact documented Python/YAML outside the checkout on Linux
+  and Windows/Python 3.12, against released 0.5.0 and a checkout-built current wheel.
+  Preserve workbook/Python/config agreement. This is not full Windows-suite coverage.
+- Installed wheel/sdist smokes cover models, preprocessing, persistence, public
+  composition, version, packaged skills and all eleven CLI command helps.
+  Checkout-wheel starter jobs also test Linux skill links and Windows copies.
+  Keep Library Skills 0.0.20 pinned in installation checks, never runtime dependencies.
+  Reconcile every skill `metadata.azoic-version` string with package metadata at
+  release time; stale guidance must never silently upgrade dependencies. Live agent
+  trials remain outside CI and do not replace practitioner observations.
+- Main-branch documentation CI renders real-data tutorials and deploys Pages.
+  Keep fixed `pages` concurrency cancellation and real-data fetching outside PR tests.
+- Release tags must equal `v` plus package version. Private settings, tagging and
+  publication require explicit authorization. Preserve existing tags/artifacts;
+  historical authorization in archived records grants no new delivery permission.
+- Use Conventional Commit prefixes `feat:`, `fix:`, `chore:`, `docs:` or `test:`;
+  Ruff and pytest must be green before committing. Do not commit secrets, large data
+  or execution state. Update these instructions and the relevant development page
+  when layout, commands or conventions change.

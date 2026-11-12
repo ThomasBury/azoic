@@ -1,98 +1,175 @@
-# Azoic
+<p align="center">
+  <a href="https://thomasbury.github.io/azoic/">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/ThomasBury/azoic/main/docs/images/azoic-brand-assets/azoic_brand/banner/azoic-readme-dark.png">
+      <img src="https://raw.githubusercontent.com/ThomasBury/azoic/main/docs/images/azoic-brand-assets/azoic_brand/banner/azoic-readme-light.png" width="800" height="200" alt="Azoic — Actuarial modelling, from models to tariffs">
+    </picture>
+  </a>
+</p>
 
-A scikit-learn-compatible Python toolkit for non-life technical tariff (pure
-premium) modelling: actuarial preprocessing, GLM (glum) + GBM (LightGBM),
-frequency-severity decomposition, actuarial diagnostics, reproducible runs,
-GBM-to-GLM distillation, and multiplicative tariff export.
+<h1 align="center">Azoic</h1>
 
-- Documentation: <https://thomasbury.github.io/azoic/>
-- Hosted tutorial series: <https://thomasbury.github.io/azoic/tutorial/index.html>
-- Full spec and conventions: [`PRD.md`](PRD.md)
-- Agent quick rules: [`AGENTS.md`](AGENTS.md)
-- Status: [`PROGRESS.md`](PROGRESS.md)
+<p align="center"><strong>Non-life technical tariff and pure-premium modelling, inspectable by design.</strong></p>
+
+<p align="center">
+  <a href="https://pypi.org/project/azoic/"><img src="https://img.shields.io/pypi/v/azoic.svg" alt="PyPI version"></a>
+  <a href="https://thomasbury.github.io/azoic/"><img src="https://img.shields.io/badge/docs-guide-blue" alt="Documentation"></a>
+  <a href="https://github.com/ThomasBury/azoic/actions/workflows/ci.yml"><img src="https://github.com/ThomasBury/azoic/actions/workflows/ci.yml/badge.svg?branch=main&amp;event=push" alt="CI status"></a>
+  <a href="https://github.com/ThomasBury/azoic/blob/main/LICENSE"><img src="https://img.shields.io/pypi/l/azoic.svg" alt="MIT license"></a>
+</p>
+
+<p align="center">
+  <a href="https://thomasbury.github.io/azoic/"><strong>Website &amp; docs →</strong></a>
+</p>
+
+<p align="center">
+  <a href="https://thomasbury.github.io/azoic/getting-started/first-model/">First model</a> ·
+  <a href="https://thomasbury.github.io/azoic/tutorial/index.html">Tutorial</a> ·
+  <a href="https://pypi.org/project/azoic/">PyPI</a> ·
+  <a href="https://github.com/ThomasBury/azoic">GitHub</a>
+</p>
+
+Azoic is a scikit-learn-compatible Python toolkit for non-life technical tariff
+and pure-premium modelling. It keeps actuarial preprocessing, GLM (glum) and
+GBM (LightGBM) fitting, frequency–severity decomposition, ranking and
+calibration diagnostics, reproducible experiment runs, and multiplicative
+tariff export in one explicit workflow.
+
+> **Azoic means "without life."** The name points to non-life insurance.
 
 ## Install
 
-Requires Python 3.12 or newer. In your own uv project:
+Azoic 0.6.0 requires Python 3.12 or newer and pandas 3.0 or newer.
+
+With [uv](https://docs.astral.sh/uv/):
 
 ```bash
-uv add azoic==0.5.0
+uv add azoic==0.6.0
 uv run azoic --help
 ```
 
-For a new project, run `uv init --python 3.12 my-pricing-project` and
-`cd my-pricing-project` first. The [self-contained starter](docs/getting-started/first-model.md)
-compares a direct GLM and raw GBM and exports the fitted GLM using the released
-package. No checkout, test fixture or Quarto is required.
-
-The hosted site otherwise documents Azoic 0.6.0. Features such as
-`run_experiment(..., df=...)` are absent from 0.5.0; use the file-based starter
-configuration with that release. Azoic 0.6.0 is published on PyPI.
-
-The 0.6.0 package bundles three user-facing agent skills for modelling,
-diagnostics and tariff work. Follow [agent installation](docs/getting-started/agents.md)
-to discover and install them with `uvx library-skills`; 0.5.0 has no skill bundle.
-
-The full suite runs on locked Python 3.12 dependencies. Separate installed-package
-checks cover low-version Python 3.12 dependencies and Python 3.14 wheels; see
-[tested environments](docs/getting-started/installation.md#tested-environments).
-
-For development or the executable tutorial, clone this repository and run:
+With pip:
 
 ```bash
-uv sync --no-dev                    # runtime only
-uv sync                             # default development environment
-uv sync --all-extras --all-groups   # everything
+python -m pip install azoic==0.6.0
+azoic --help
 ```
 
-## Correctness conventions
+Azoic is pre-1.0: minor releases can include documented compatibility changes.
+Pin a version for production work and read the [changelog](https://github.com/ThomasBury/azoic/blob/main/CHANGELOG.md)
+before upgrading. The previous 0.5.0 release remains installable, but this
+README and the documentation target 0.6.0.
 
-Frequency models use `claim_count / exposure` with `sample_weight=exposure`.
-`deviance_test` is exposure-weighted mean Tweedie deviance with fixed
-`power=1.5`. Gini is a concentration Gini for ranking; equal prediction scores
-are evaluated as tied blocks.
+## First model
 
-Temporal holdouts never split equal timestamps. Tuning selects parameters on an
-inner split of the outer training partition, then refits on outer training data
-and reports development validation. Reserve a separate untouched final-test
-portfolio before experimenting; see the [workflow guide](docs/guide/actuarial-workflow.md).
-Exported tariffs reject unknown categorical levels and non-finite numeric inputs.
+> **New here?** The [first-model guide](https://thomasbury.github.io/azoic/getting-started/first-model/)
+> generates a synthetic portfolio, compares a Tweedie GLM with a raw-feature
+> GBM, and exports the fitted GLM to Excel. It needs no checkout, external data,
+> or Quarto.
 
-Positive-objective GBMs can be exported through `azoic export-tariff
---distill`; the workbook reproduces the distilled GLM student, not the teacher.
+The guide builds `train` and `validation` frames. The core API shape is:
 
-## Executable tutorial series
+```python
+from azoic.metrics import calibration_table, gini, op_ratio
+from azoic.models import RiskGLM
+from azoic.tariff import export_tariff
 
-The numbered Quarto book under [`examples/`](examples/) runs the complete
-technical-tariff workflow on pinned OpenML data and then covers tuning,
-temporal stability, protected-group audit, and manual tariff recipes. Install
-the Jupyter kernel plus the MLflow, Plotly, and tuning extras; install Quarto
-separately and ensure its `quarto` executable is on `PATH`.
+features = ["driver_age", "vehicle_age", "region"]
+glm = RiskGLM(family="tweedie", link="log", exposure_col="exposure", tweedie_power=1.5)
+glm.fit(train[features + ["exposure"]], train["claim_amount"] / train["exposure"])
+rates = glm.predict(validation[features + ["exposure"]])
 
-```bash
-uv sync --group demo --extra mlops --extra plot --extra tune
-just demo
+gini(validation["claim_amount"], rates, validation["exposure"])
+op_ratio(validation["claim_amount"], rates, validation["exposure"])
+calibration_table(validation["claim_amount"], rates, validation["exposure"])
+export_tariff(glm, "tariff.xlsx", recalibrate=False)
 ```
 
-The render produces the ignored book under `examples/_book/`; fetched data,
-the tariff workbook, reports, and local MLflow files stay under the ignored
-`examples/_artifacts/`. To inspect the recorded run afterward:
+## Why Azoic
 
-```bash
-uv run mlflow ui \
-  --backend-store-uri sqlite:///examples/_artifacts/fremtpl2/mlflow.db
-```
+- **Actuarial preprocessing.** `AutoBinner` and `AutoGrouper` learn inspectable
+  strata and category groups with native LightGBM trees, missing routing,
+  credibility floors, and fixed mappings that survive refits.
+- **GLM, GBM, and frequency–severity in one vocabulary.** `RiskGLM` (glum),
+  `RiskGBM` (LightGBM), and `FrequencySeverityModel` share scikit-learn
+  `fit`/`predict` semantics and pure-premium rate targets.
+- **Diagnostics that pair ranking with calibration.** Gini and Lorenz curves,
+  lift, calibration tables, one-way and double-lift views, temporal stability,
+  and observed/predicted ratios.
+- **Reproducible runs.** `ExperimentConfig`, `run_experiment`, `save_run` and
+  `load_run` keep data contracts, preprocessing, split membership, versions,
+  and fitted candidates together.
+- **Tariff operations, not only fitting.** GBM-to-GLM distillation, structural
+  or recalibrated workbook export, controlled revisions, tariff review,
+  final-test evaluation, and versioned production bundles.
+- **Agent skills included.** The package ships modelling, diagnostics, and
+  tariff skills for compatible agents; see the [agent skills guide](https://thomasbury.github.io/azoic/getting-started/agents/).
 
-## Dev
+## Four correctness rules
 
-Performance measurement commands and the pending practitioner-observation
-protocol are in [M62 validation](M62_VALIDATION.md). Benchmark results alone do
-not establish user acceptance or deployment readiness.
+1. **Exposure is a weight, not an offset.** Model pure-premium rates with
+   `y = claim_amount / exposure` and `sample_weight = exposure`; the configured
+   `exposure_col` does this inside `X`. Add `log(exposure)` as an offset only
+   when the target is aggregate claim amount, never both.
+2. **Frequency and severity stay separate.** Frequency models use
+   `claim_count / exposure` with Poisson and exposure weights. Severity models
+   fit only rows with `claim_count > 0`, using Gamma on positive average claim
+   amounts; `FrequencySeverityModel` applies that filter internally.
+3. **Ranking is not calibration.** Gini and Lorenz measure concentration, with
+   tied scores aggregated before integration. They say nothing about rate
+   level, so always pair them with a calibration table and the observed/predicted
+   ratio.
+4. **Evaluation boundaries are explicit.** Temporal splits keep equal
+   timestamps together. Tune on an inner split of training data, reserve final
+   test records before experimenting, and evaluate that final test once. Keep
+   development validation, final evidence, and production refit distinct.
 
-```bash
-just check          # ruff + ty + pytest
-just test           # pytest -x
-just lint
-just format
-uv run ty check     # production source types
-```
+## Documentation
+
+**Start**
+
+- [Installation](https://thomasbury.github.io/azoic/getting-started/installation/)
+- [First model](https://thomasbury.github.io/azoic/getting-started/first-model/)
+- [Agent skills](https://thomasbury.github.io/azoic/getting-started/agents/)
+
+**Guides**
+
+- [Actuarial workflow](https://thomasbury.github.io/azoic/guide/actuarial-workflow/)
+- [Data profiling and preprocessing](https://thomasbury.github.io/azoic/guide/data-preprocessing/)
+- [Model choice and fitting](https://thomasbury.github.io/azoic/guide/model-choice/)
+- [Experiments and CLI](https://thomasbury.github.io/azoic/guide/experiment-configuration/)
+- [Diagnostics and visualization](https://thomasbury.github.io/azoic/guide/diagnostics-visualization/)
+- [Reporting and operations](https://thomasbury.github.io/azoic/guide/operations/)
+
+**Tutorial**
+
+- [freMTPL2 tutorial series](https://thomasbury.github.io/azoic/tutorial/index.html)
+- [Tutorial bridge](https://thomasbury.github.io/azoic/guide/fremtpl2/)
+
+**Reference**
+
+- [Configuration and CLI](https://thomasbury.github.io/azoic/reference/configuration-cli/)
+- [Data and preparation](https://thomasbury.github.io/azoic/reference/data-preparation/)
+- [Models and evaluation](https://thomasbury.github.io/azoic/reference/models-evaluation/)
+- [Compatibility and composition](https://thomasbury.github.io/azoic/reference/compatibility/)
+- [Workflow and operations](https://thomasbury.github.io/azoic/reference/workflow-operations/)
+- [Glossary](https://thomasbury.github.io/azoic/reference/glossary/)
+
+**Project**
+
+- [Changelog](https://github.com/ThomasBury/azoic/blob/main/CHANGELOG.md)
+- [Contributing](https://github.com/ThomasBury/azoic/blob/main/CONTRIBUTING.md)
+
+## Scope
+
+Azoic models claim frequency, severity, and pure-premium technical tariffs. It is
+not a reserving, fraud, policy-administration, or AutoML system.
+
+## Development
+
+See [Contributing](https://github.com/ThomasBury/azoic/blob/main/CONTRIBUTING.md)
+for checkout setup, checks and documentation commands.
+
+## License
+
+MIT. Copyright (c) 2026 Thomas Bury. See [LICENSE](https://github.com/ThomasBury/azoic/blob/main/LICENSE).

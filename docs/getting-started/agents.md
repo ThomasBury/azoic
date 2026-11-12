@@ -20,7 +20,7 @@ uv run python -c 'from importlib.metadata import version; print(version("azoic")
 uvx library-skills
 ```
 
-The [0.5.0 first-model starter](first-model.md) remains available unchanged.
+The [first-model starter](first-model.md) uses Azoic 0.6.0.
 Installing skills does not upgrade Azoic or authorize a model fit.
 
 ## Choose a skill by the job
