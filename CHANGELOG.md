@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.6.0 — Unreleased
+## 0.6.0 — 2026-11-12
 
 This minor release collects the changes since 0.5.0. It adds an explicit path
 from development experiments to reviewed tariffs and production handoffs.

@@ -25,12 +25,11 @@ For a new project, run `uv init --python 3.12 my-pricing-project` and
 compares a direct GLM and raw GBM and exports the fitted GLM using the released
 package. No checkout, test fixture or Quarto is required.
 
-The hosted site otherwise documents the unreleased checkout. Features such as
+The hosted site otherwise documents Azoic 0.6.0. Features such as
 `run_experiment(..., df=...)` are absent from 0.5.0; use the file-based starter
-configuration with that release. The checkout is preparing version 0.6.0;
-it has not yet been published.
+configuration with that release. Azoic 0.6.0 is published on PyPI.
 
-The pending 0.6.0 wheel bundles three user-facing agent skills for modelling,
+The 0.6.0 package bundles three user-facing agent skills for modelling,
 diagnostics and tariff work. Follow [agent installation](docs/getting-started/agents.md)
 to discover and install them with `uvx library-skills`; 0.5.0 has no skill bundle.
 

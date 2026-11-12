@@ -1,11 +1,11 @@
 # Data profiling and preprocessing
 
-!!! note "Unreleased checkout documentation"
+!!! note "Azoic 0.6.0 documentation"
 
-    This page describes the current source checkout; some APIs differ from the
-    published 0.5.0 package. For a release-compatible journey, start with the
+    This page describes the published 0.6.0 package; some APIs differ from the
+    0.5.0 package. For the 0.5.0-compatible journey, start with the
     [first model](../getting-started/first-model.md). See
-    [installation](../getting-started/installation.md) for the version boundary.
+    [installation](../getting-started/installation.md) for version details.
 
 Pricing preprocessing should make a portfolio easier to reason about without
 hiding the learned tariff structure. Azoic separates cheap feature screening

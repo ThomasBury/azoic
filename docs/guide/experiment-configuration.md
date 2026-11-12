@@ -88,15 +88,15 @@ for name, result in run.models.items():
     print(name, result.metrics)
 ```
 
-## Additional checkout capabilities
+## Additional 0.6.0 capabilities
 
-The rest of this section describes the **unreleased checkout**, not the 0.5.0
+The rest of this section describes **Azoic 0.6.0**, not the 0.5.0
 installation. In particular, 0.5.0 lacks `df=`, per-model `preprocess: false`,
 the portfolio separation/check APIs, and the full constructor/runtime provenance fields below.
 
 Before a real modelling exercise, [freeze development/final-test membership](actuarial-workflow.md#freeze-portfolio-membership-before-experimenting).
 Keep the opening release-compatible example above unchanged; the following
-checkout-only YAML records that guide's development contract. Save it beside
+0.6.0-only YAML records that guide's development contract. Save it beside
 `development.parquet` as `development.yaml` and run the read-only check first.
 
 ```yaml

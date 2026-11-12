@@ -9,9 +9,8 @@ dependencies do not conflict with another project.
     The [first model](first-model.md) and the opening file-based
     [configuration example](../guide/experiment-configuration.md) target the
     published **0.5.0** package. The other guides and generated API reference
-    describe the current **unreleased 0.6.0 checkout**. A version bump in source
-    does not mean that a release has been published to PyPI.
-    Use a checkout for sections labelled checkout-only.
+    describe the published **0.6.0** package. Install `azoic==0.6.0` for
+    those sections.
 
 ## Tested environments
 
@@ -59,9 +58,12 @@ In an existing uv project, run just the last three commands. Then follow the
 With pip, activate a Python 3.12 virtual environment and run
 `python -m pip install azoic==0.5.0`, then `python first_model.py`.
 
+The 0.6.0 package provides the newer APIs described in the remaining guides;
+install `azoic==0.6.0` for those sections.
+
 Registry extras use package notation, for example
-`uv add 'azoic[mlops,tune]==0.5.0'` or
-`python -m pip install 'azoic[mlops,tune]==0.5.0'`.
+`uv add 'azoic[mlops,tune]==0.6.0'` or
+`python -m pip install 'azoic[mlops,tune]==0.6.0'`.
 
 ## Work from a checkout
 

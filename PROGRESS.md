@@ -9,12 +9,19 @@ Legend: ☐ pending · ◐ in progress · ☑ done
 
 ## Current focus
 
-- **M64 ◐ — three version-matched user skills** started on 2026-11-10 for the
-  pending 0.6.0 package. Bundle modelling, diagnostics and tariff skills under
+- **M64 ☑ — three version-matched user skills** completed on 2026-11-12 in
+  Azoic 0.6.0. Bundle modelling, diagnostics and tariff skills under
   `src/azoic/.agents/skills/`. Local checks, installed wheel/sdist recipes and all
-  six isolated agent trials passed; actual Windows copy-install CI remains pending
-  Git delivery authorization. The released 0.5.0 starter is preserved. M62's four
-  practitioner observations remain pending. Publication is a separate action.
+  six isolated agent trials passed; hosted Linux link and Windows copy checks
+  passed. The released 0.5.0 starter is preserved. M62's four practitioner
+  observations remain pending.
+
+- **Azoic 0.6.0 published** on 2026-11-12 from `502766b` after PR #26. The
+  Release workflow built and smoke-tested the wheel and sdist, then published
+  both to PyPI. All nine CI jobs and Documentation passed. Verified PyPI latest
+  0.6.0, `openpyxl>=3.1.5` metadata and a fresh installed CLI. Codex review was
+  unavailable because of account code-review usage limits; CodeRabbit found no
+  actionable comments.
 
 - **M63 ☑ — review and smooth an exported GBM-derived tariff** completed locally
   on 2026-11-05. Chapter 10 starts from exported factors, compares GBM/student/

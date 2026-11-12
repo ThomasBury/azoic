@@ -1,11 +1,11 @@
 # Reporting, comparison, tuning, MLflow, and tariff operations
 
-!!! note "Unreleased checkout documentation"
+!!! note "Azoic 0.6.0 documentation"
 
-    This page describes the current source checkout; some APIs differ from the
-    published 0.5.0 package. For a release-compatible journey, start with the
+    This page describes the published 0.6.0 package; some APIs differ from the
+    0.5.0 package. For the 0.5.0-compatible journey, start with the
     [first model](../getting-started/first-model.md). See
-    [installation](../getting-started/installation.md) for the version boundary.
+    [installation](../getting-started/installation.md) for version details.
 
 Once candidates have a valid outer-test result, Azoic reuses the same `Run` for
 human-readable reports, comparison, optional experiment tracking, and tariff
@@ -220,7 +220,7 @@ Frequency-severity tuning remains unsupported.
 
 ## Prepare a tariff review with an incumbent
 
-This unreleased checkout API writes a self-contained development review: a
+This Azoic 0.6.0 API writes a self-contained development review: a
 Markdown decision record, full CSV evidence and the existing lift/one-way plots.
 It scores fitted candidates without fitting or recalibrating them. Keep final-test
 data reserved for the later frozen evaluation; repeated development validation

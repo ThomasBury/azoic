@@ -40,7 +40,7 @@ features.
 
 ## Freeze portfolio membership before experimenting
 
-This section requires the **unreleased checkout**. It follows the synthetic
+This section requires **Azoic 0.6.0**. It follows the synthetic
 [first model](../getting-started/first-model.md), which creates `portfolio.parquet`.
 For your own portfolio, use an existing durable record ID and a documented
 cutoff or an externally chosen ID list independent of claims. The synthetic IDs

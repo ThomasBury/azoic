@@ -137,6 +137,8 @@ Keep Library Skills 0.0.20 pinned only in installation checks, outside runtime
 dependencies. Validate resources and execute bundled recipes in installed wheel/sdist
 smokes; checkout-wheel starter CI checks Linux links and Windows copies. Live agent
 trials stay outside CI. The released 0.5.0 starter and M62 observations remain separate.
+Azoic 0.6.0 was published to PyPI and GitHub on 2026-11-12 from `502766b`;
+its openpyxl floor is 3.1.5.
 Current focus is the authority for the active/next milestone. Read
 `PREPROCESSING_FIX_PLAN.md` for the verified bugs, regression scope, PR delivery,
 and release reconciliation. The scope is mirrored in `PRD.md` section 6.
@@ -149,7 +151,8 @@ defines scope. A planning session records pending work without starting it.
 
 ## Setup commands
 
-Registry onboarding uses `uv add azoic==0.5.0` in the user's project.
+Registry onboarding uses `uv add azoic==0.5.0` for the unchanged first-model
+starter; Azoic 0.6.0 is the current published package.
 Checkout onboarding uses `uv sync` and `uv run` from the repository root;
 install optional integrations with `uv sync --extra NAME`. Contributor checks
 are separate from the first-model path.

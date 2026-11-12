@@ -1,11 +1,11 @@
 # Compatibility and component composition
 
-!!! note "Unreleased checkout documentation"
+!!! note "Azoic 0.6.0 documentation"
 
-    This page describes the current source checkout; some APIs differ from the
-    published 0.5.0 package. For a release-compatible journey, start with the
+    This page describes the published 0.6.0 package; some APIs differ from the
+    0.5.0 package. For the 0.5.0-compatible journey, start with the
     [first model](../getting-started/first-model.md). See
-    [installation](../getting-started/installation.md) for the version boundary.
+    [installation](../getting-started/installation.md) for version details.
 
 Use Python composition to supply a frequency or severity estimator. Workflow
 `ModelSpec.kind` still supports only its documented GLM, GBM and frequency–severity
@@ -168,7 +168,7 @@ backend/component. They do not replace concrete public result and estimator type
 Importing reporting/logging avoids workflow and modelling backends; runtime
 `typing.get_type_hints` resolves their `azoic.Run` annotation on demand.
 
-## Azoic 0.x policy and unreleased migration
+## Azoic 0.x policy and 0.6.0 migration
 
 During `0.y.z`, patch releases preserve this documented contract. Justified
 incompatible changes require a minor release and migration notes, without a
@@ -176,30 +176,30 @@ mandatory warning period. This is Azoic's policy, stronger than
 [SemVer's 0.x baseline](https://semver.org/spec/v2.0.0.html#spec-item-4).
 It does not preserve defects or promise undocumented state.
 
-Unreleased M54 change: invalid RiskGBM Tweedie powers and monotonic controls now
+Azoic 0.6.0 change (M54): invalid RiskGBM Tweedie powers and monotonic controls now
 raise during `fit`, including values supplied through `set_params`. Constructors
 only store parameters so sklearn cloning and parameter search can inspect them.
 Move exception handling that surrounded construction to the fitting call. Valid
 controls, units and predictions are unchanged. This timing change requires a
-minor release under the policy above; M54 does not publish a release.
+minor release under the policy above and ships in 0.6.0.
 
-Unreleased M56 adds column names, invalid-row counts and up to five zero-based
+Azoic 0.6.0 adds column names, invalid-row counts and up to five zero-based
 row positions to portfolio outcome, numeric model-weight and missing-time errors.
 Validation policies and public function signatures are unchanged. The
 [first-model starter](../getting-started/first-model.md) and opening file-based
-configuration example are checked against both released 0.5.0 and the checkout;
-the in-memory `df=` workflow still requires the checkout.
+configuration example are checked against both 0.5.0 and 0.6.0; the in-memory
+`df=` workflow requires 0.6.0.
 
-Unreleased M57 adds `split_portfolio`, `check_experiment` and `azoic check`,
+Azoic 0.6.0 adds `split_portfolio`, `check_experiment` and `azoic check`,
 optional ID/excluded-column roles, portfolio-basis metadata and `Run.record_ids`.
 Checks require explicit predictors; ordinary fit/tune calls retain feature
 inference. Reports label development evidence, and comparison tables add the
 `evidence` column (including empty tables). CSV consumers with fixed schemas
 must accept this additional column; this schema change requires a minor release.
-The released starter remains unchanged. No artifact persistence or final-test
-scoring/refitting API is supplied by M57.
+The 0.5.0 starter remains unchanged. M57 itself does not supply artifact
+persistence or final-test scoring/refitting; those follow in 0.6.0.
 
-Unreleased M58 adds `save_run(run, estimators, path)` and `load_run(path)` in
+Azoic 0.6.0 adds `save_run(run, estimators, path)` and `load_run(path)` in
 `azoic.workflow` and the package root. Loading returns the existing
 `(Run, estimator_dict)` shape; `Run` and `ModelResult` identities are unchanged.
 Artifacts use standard pickle protocol 5, include fitted preprocessing and
@@ -212,7 +212,7 @@ config-based operations keep their explicit training behavior. Existing Python
 run/tuning return types and defaults remain unchanged. Final-test evaluation and
 production refit remain separate work; mapping/factor revisions follow below.
 
-Unreleased M59 adds optional fixed mappings to native transformer constructors,
+Azoic 0.6.0 adds optional fixed mappings to native transformer constructors,
 `RevisedTariff` / `revise_tariff`, and `workflow.revise_run` (also root exports).
 Workflow model kinds and ordinary fit/tune return types remain unchanged.
 `load_run` can now return revised scoring artifacts alongside native estimators;
@@ -228,7 +228,7 @@ These are technical tariff edits and development evidence; frozen final evaluati
 and production refit remain M61 work. Interface/schema changes require a
 minor release under the Azoic policy.
 
-Unreleased M60 adds `reporting.tariff_review` (also a lazy root export), returning
+Azoic 0.6.0 adds `reporting.tariff_review` (also a lazy root export), returning
 the path to a new Markdown/CSV/PNG review bundle. It accepts named Run/estimator
 pairs, the original development frame and an ID-aligned incumbent rate table;
 mixed contexts are rejected rather than warned about. Ordinary comparison/card
@@ -241,7 +241,7 @@ production refit or automated approval. See the
 
 ## Final evidence and production artifact boundary
 
-The unreleased `Run` adds `final_evaluation` and `production` records. Final
+The 0.6.0 `Run` adds `final_evaluation` and `production` records. Final
 scoring returns a copied development Run with separate final evidence bound to
 its selected fitted state. Production refit returns a new Run with full-training
 metrics, no own final evaluation and explicit predecessor lineage. Frozen native
@@ -255,6 +255,6 @@ GBMs are not silently converted. Bundles use `azoic.production.1` JSON and the
 existing trusted same-environment `azoic.run.1` persistence envelope. Fitted
 fingerprints are same-environment integrity comparisons, not authentication or
 cross-version portability guarantees. Public schema additions and production
-metric/evidence names require the planned minor release; 0.5.0 starter blocks
+metric/evidence names ship in 0.6.0; 0.5.0 starter blocks
 stay unchanged. No deployment API, receiving-engine certification or measured
 performance claim is introduced.

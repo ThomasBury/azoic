@@ -6,10 +6,10 @@ reproducible comparisons, and multiplicative tariff export explicit.
 
 !!! note "Documentation version"
 
-    This site describes the unreleased checkout. The [first-model starter](getting-started/first-model.md)
+    This site describes Azoic 0.6.0. The [first-model starter](getting-started/first-model.md)
     and opening [configuration example](guide/experiment-configuration.md)
-    are also checked against the published Azoic 0.5.0 package. Follow those
-    for installed-package onboarding; later checkout features need a source install.
+    remain checked against the published Azoic 0.5.0 package. Follow those
+    for the 0.5.0 onboarding path; later features need Azoic 0.6.0.
 
 !!! note "Scope"
 

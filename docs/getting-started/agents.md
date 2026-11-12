@@ -11,18 +11,11 @@ Select `azoic-modelling`, `azoic-diagnostics` and `azoic-tariff`, then select
 with the installed package. It runs in its own environment and is not an Azoic
 runtime dependency. See its [installation behavior](https://library-skills.io/use/).
 
-**The published 0.5.0 package contains no skill bundle.** The three skills target
-pending 0.6.0. Before publication, use the checkout-built wheel that has passed
-the distribution and installation checks. From an Azoic checkout:
+**Azoic 0.6.0 is published and includes the skill bundle.** The published 0.5.0
+package has no skills. From a project that uses Azoic 0.6.0:
 
 ```bash
-uv build --wheel --out-dir dist
-```
-
-Then, from your own project, use that wheel's actual path:
-
-```bash
-uv add /path/to/azoic/dist/azoic-0.6.0-py3-none-any.whl
+uv add azoic==0.6.0
 uv run python -c 'from importlib.metadata import version; print(version("azoic"))'
 uvx library-skills
 ```
