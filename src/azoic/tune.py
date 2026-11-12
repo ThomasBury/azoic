@@ -4,8 +4,8 @@ Optuna lives in the ``tune`` extra (``uv sync --extra tune``); ``tune_experiment
 imports it lazily and raises with a clear pointer when the extra is missing.
 
 For each named model, ``tune_experiment`` runs an optuna study whose per-trial
-objective is the actuarial-aware numeric penalty decided in PRD section 9 (in
-lieu of the cut TariffOptimizer constraint DSL):
+objective uses a numeric penalty rather than a constraint DSL (see
+``development/design.md``):
 
     deviance_test + calibration_penalty * |1 - op_ratio_test|
 
@@ -16,7 +16,7 @@ canonical ``Run``.
 
 The default search space touches only regularization / tree-structure
 hyperparams. A typed custom model space replaces that model's default space.
-Identity, routing, and seed params stay put, so PRD rules 1 and 4 are never
+Identity, routing, and seed params stay put, so AGENTS.md rules 1 and 4 are never
 violated by a search suggestion.
 """
 
@@ -59,7 +59,7 @@ def _suggest(
 
     Identity params (``family`` / ``link`` / ``objective`` / ``exposure_col`` /
     ``tweedie_power`` / ``tweedie_variance_power`` / ``random_state``) are
-    inherited from the YAML and never sampled -- PRD rules 1 and 4 stay
+    inherited from the YAML and never sampled -- AGENTS.md rules 1 and 4 stay
     inviolable under search.
     """
     out = dict(base)

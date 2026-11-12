@@ -31,6 +31,10 @@ nav = [
     ]},
 ]
 
+[project.theme]
+logo = "images/azoic-brand-assets/azoic_brand/favicon/favicon.svg"
+favicon = "images/azoic-brand-assets/azoic_brand/favicon/favicon.ico"
+
 [project.markdown_extensions]
 admonition = {}
 attr_list = {}

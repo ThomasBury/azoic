@@ -1,6 +1,6 @@
 """Actuarial diagnostics: ranking, calibration, stability, one-way, and double-lift.
 
-Pure-premium convention (see PRD.md section 5):
+Pure-premium convention (see AGENTS.md actuarial rules):
     y_true  = claim_amount (aggregate)
     y_pred  = predicted pure premium (rate per exposure unit)
     sample_weight = exposure

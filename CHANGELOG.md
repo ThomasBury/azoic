@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.1 — 2026-11-12
+
+- Replace README and documentation branding with the new Azoic banner, logo and
+  icons; keep four README badges for PyPI, documentation, CI and license.
+- Include the MIT license file in wheel/source distributions and declare its SPDX
+  identifier in package metadata.
+- Consolidate contributor instructions, current work and design contracts; retain
+  historical records in the development archive and align user guides with 0.6.x.
+- Keep runtime behavior, public APIs and dependency requirements unchanged.
+
 ## 0.6.0 — 2026-11-12
 
 This minor release collects the changes since 0.5.0. It adds an explicit path
@@ -42,7 +52,8 @@ policy of reserving incompatible public changes for minor releases.
   destinations only after successful saves and preserve existing permission bits.
 - Reduce tuning overhead and vectorize native preprocessing lookups. Linux
   million-row measurements and their hardware/memory limits are recorded in
-  `M62_VALIDATION.md`; they are not a general runtime promise.
+  [the archived M62 record](https://github.com/ThomasBury/azoic/blob/main/development/archive/M62_VALIDATION.md);
+  they are not a general runtime promise.
 
 ### Compatibility and migration
 

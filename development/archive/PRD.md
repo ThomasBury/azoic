@@ -1,5 +1,10 @@
 # Azoic — Product Requirements Document
 
+> Archived on 2026-11-12. Historical evidence only: statuses, next actions and
+> permissions below describe past sessions, not current instructions. Read the
+> [current work](../README.md), [design reference](../design.md) and
+> [agent instructions](../../AGENTS.md) for current authority.
+
 > Single source of truth for scope, architecture, and conventions.
 > For agent-facing quick rules see `AGENTS.md`. For status see `PROGRESS.md`.
 
@@ -394,7 +399,7 @@ preprocessing mappings and return interfaces are unchanged.
 #### M54 extension boundary — implemented locally
 
 The public contract and executable component recipe are published in
-[`docs/reference/compatibility.md`](docs/reference/compatibility.md). M54's
+[`docs/reference/compatibility.md`](../../docs/reference/compatibility.md). M54's
 acceptance and exact tested stacks are recorded in `PROGRESS.md`; M55 adds
 final-run provenance separately. Independent maintainer evidence remains pending.
 

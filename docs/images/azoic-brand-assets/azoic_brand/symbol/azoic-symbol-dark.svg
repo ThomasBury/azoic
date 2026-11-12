@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="460" height="250" viewBox="0 0 460 250" role="img" aria-label="azoic actuarial modelling logo"><rect width="460" height="250" fill="#171E22"/><g transform="translate(23 19) scale(1.06)"><defs><clipPath id="distribution-clip"><path d="M 29,180 C 44,160 57,85 80,49 C 90,34 98,28 105,28 C 131,26 152,49 178,72 C 216,107 248,128 286,145 C 318,158 348,171 372,180 Z"/></clipPath></defs>
+    <path fill="#DDD1B1" d="M 29,180 C 44,160 57,85 80,49 C 90,34 98,28 105,28 C 131,26 152,49 178,72 C 216,107 248,128 286,145 C 318,158 348,171 372,180 Z"/>
+    <g clip-path="url(#distribution-clip)">
+      <path fill="#D5C6A6" d="M 15,111 C 79,105 123,113 161,116 C 221,124 289,155 388,161 L388,190 H15Z"/>
+      <path fill="#E5DABE" d="M 12,137 C 71,128 126,136 170,140 C 231,149 292,166 389,175 L389,190 H12Z"/>
+      <path fill="#CFBE9C" d="M 12,159 C 71,151 130,157 183,163 C 249,171 313,177 389,181 L389,192 H12Z"/>
+    </g>
+    <path d="M 30,180 L 105,28 L 180,180 L 147,180 L 132,146 L 78,146 L 63,180 Z M 91,119 L 119,119 L 105,86 Z" fill="#A11B1F" fill-rule="evenodd"/>
+    </g></svg>

@@ -8,7 +8,7 @@ over the same Python workflow.
 
 Run the [first model](../getting-started/first-model.md) to create
 `portfolio.parquet`, then save this as `experiment.yaml` beside that file.
-This first configuration and its Python/CLI commands work with **Azoic 0.5.0**;
+This first configuration and its Python/CLI commands work with **Azoic 0.6.0**;
 no checkout or test fixture is needed. The two commands below each train fresh
 candidates, so choose Python or CLI for a run.
 
@@ -88,16 +88,16 @@ for name, result in run.models.items():
     print(name, result.metrics)
 ```
 
-## Additional 0.6.0 capabilities
+## Additional capabilities
 
-The rest of this section describes **Azoic 0.6.0**, not the 0.5.0
-installation. In particular, 0.5.0 lacks `df=`, per-model `preprocess: false`,
-the portfolio separation/check APIs, and the full constructor/runtime provenance fields below.
+The rest of this section uses the 0.6.0 APIs for in-memory frames, per-model
+`preprocess: false`, portfolio separation/checking, and the full
+constructor/runtime provenance fields below.
 
 Before a real modelling exercise, [freeze development/final-test membership](actuarial-workflow.md#freeze-portfolio-membership-before-experimenting).
-Keep the opening release-compatible example above unchanged; the following
-0.6.0-only YAML records that guide's development contract. Save it beside
-`development.parquet` as `development.yaml` and run the read-only check first.
+Keep the opening example above unchanged; the following YAML records that
+guide's development contract. Save it beside `development.parquet` as
+`development.yaml` and run the read-only check first.
 
 ```yaml
 name: development-candidates

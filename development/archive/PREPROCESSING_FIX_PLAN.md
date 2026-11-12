@@ -1,5 +1,10 @@
 # Preprocessing fixes and release plan
 
+> Archived on 2026-11-12. Historical evidence only: statuses, next actions and
+> permissions below describe past sessions, not current instructions. Read the
+> [current work](../README.md), [design reference](../design.md) and
+> [agent instructions](../../AGENTS.md) for current authority.
+
 Status: M45 merged in [PR #1](https://github.com/ThomasBury/azoic/pull/1).
 M15 completed 2026-10-17: `azoic==0.5.0` is public on PyPI.
 Plan recorded 2026-10-16; execution evidence lives in `PROGRESS.md`.

@@ -291,7 +291,7 @@ def test_tune_experiment_preserves_yaml_identity_params_in_final_run(
     assert glm_params["exposure_col"] == "exposure"
     assert glm_params["tweedie_power"] == 1.5
     assert gbm_params["objective"] == "tweedie"
-    assert gbm_params["tweedie_variance_power"] == 1.5  # PRD rule 4 never broken by search.
+    assert gbm_params["tweedie_variance_power"] == 1.5  # AGENTS.md rule 4 never broken by search.
 
 
 def test_tune_experiment_return_estimators(tmp_path: Path) -> None:

@@ -11,7 +11,7 @@ the base rate, and applies every other level as a relativity to that
 reference. ``extract_tariff`` returns that structure; ``apply_tariff``
 applies it back to data; ``export_tariff`` writes a 3-sheet xlsx.
 
-Three sheets per the PRD section 3 ``base / factors / mappings`` contract:
+The workbook contract has three sheets:
     * ``base_rate``        -- one row with the multiplicative base (intercept
       folded with reference-level factors) plus the GLM family / link and the
       recalibration flag. When ``(X, y, exposure_col)`` and
@@ -671,7 +671,7 @@ def export_tariff(
 ) -> Path:
     """Write a multiplicative-tariff xlsx from a fitted ``RiskGLM`` or pipeline.
 
-    Three sheets per PRD section 3: ``base_rate`` / ``factors`` / ``mappings``.
+    Three sheets: ``base_rate`` / ``factors`` / ``mappings``.
     By default ``recalibrate=True`` and an ``(X, y, exposure_col)`` triple is
     expected; the base is shifted so the tariff reproduces the observed
     portfolio total claim amount. Pass ``recalibrate=False`` for the structural

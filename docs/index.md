@@ -1,15 +1,18 @@
 # Azoic
 
+<p align="center">
+  <img src="images/azoic-brand-assets/azoic_brand/logo/azoic-horizontal-transparent.svg" alt="Azoic logo: a red A with a layered sandstone distribution" width="560" height="150">
+</p>
+
 Azoic is a scikit-learn-compatible toolkit for non-life technical tariff and
 pure-premium modelling. It keeps exposure weighting, actuarial diagnostics,
 reproducible comparisons, and multiplicative tariff export explicit.
 
-!!! note "Documentation version"
+!!! note "Current release"
 
-    This site describes Azoic 0.6.0. The [first-model starter](getting-started/first-model.md)
-    and opening [configuration example](guide/experiment-configuration.md)
-    remain checked against the published Azoic 0.5.0 package. Follow those
-    for the 0.5.0 onboarding path; later features need Azoic 0.6.0.
+    This site describes Azoic 0.6.1. See the
+    [changelog](https://github.com/ThomasBury/azoic/blob/main/CHANGELOG.md) for
+    changes since 0.5.0.
 
 !!! note "Scope"
 

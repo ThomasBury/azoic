@@ -1,11 +1,10 @@
 # Model choice and fitting
 
-!!! note "Azoic 0.6.0 documentation"
+!!! note "Azoic 0.6.1 documentation"
 
-    This page describes the published 0.6.0 package; some APIs differ from the
-    0.5.0 package. For the 0.5.0-compatible journey, start with the
-    [first model](../getting-started/first-model.md). See
-    [installation](../getting-started/installation.md) for version details.
+    This page describes Azoic 0.6.1. See the
+    [changelog](https://github.com/ThomasBury/azoic/blob/main/CHANGELOG.md)
+    for changes since 0.5.0.
 
 Start with the model whose constraints match the decision, then ask whether a
 more flexible candidate improves held-out evidence enough to justify itself.
