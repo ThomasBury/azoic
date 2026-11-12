@@ -1,8 +1,8 @@
 <p align="center">
   <a href="https://thomasbury.github.io/azoic/">
     <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/ThomasBury/azoic/main/docs/images/azoic-brand-assets/azoic_brand/banner/azoic-readme-dark.png">
-      <img src="https://raw.githubusercontent.com/ThomasBury/azoic/main/docs/images/azoic-brand-assets/azoic_brand/banner/azoic-readme-light.png" width="800" height="200" alt="Azoic — Actuarial modelling, from models to tariffs">
+      <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/ThomasBury/azoic/1259918172c2787321d06a295337ef1e3a10a841/docs/images/azoic-brand-assets/azoic_brand/banner/azoic-readme-dark.png">
+      <img src="https://raw.githubusercontent.com/ThomasBury/azoic/1259918172c2787321d06a295337ef1e3a10a841/docs/images/azoic-brand-assets/azoic_brand/banner/azoic-readme-light.png" width="800" height="200" alt="Azoic — Actuarial modelling, from models to tariffs">
     </picture>
   </a>
 </p>
@@ -15,7 +15,7 @@
   <a href="https://pypi.org/project/azoic/"><img src="https://img.shields.io/pypi/v/azoic.svg" alt="PyPI version"></a>
   <a href="https://thomasbury.github.io/azoic/"><img src="https://img.shields.io/badge/docs-guide-blue" alt="Documentation"></a>
   <a href="https://github.com/ThomasBury/azoic/actions/workflows/ci.yml"><img src="https://github.com/ThomasBury/azoic/actions/workflows/ci.yml/badge.svg?branch=main&amp;event=push" alt="CI status"></a>
-  <a href="https://github.com/ThomasBury/azoic/blob/main/LICENSE"><img src="https://img.shields.io/pypi/l/azoic.svg" alt="MIT license"></a>
+  <a href="https://github.com/ThomasBury/azoic/blob/1259918172c2787321d06a295337ef1e3a10a841/LICENSE"><img src="https://img.shields.io/pypi/l/azoic.svg" alt="MIT license"></a>
 </p>
 
 <p align="center">
@@ -39,26 +39,26 @@ tariff export in one explicit workflow.
 
 ## Install
 
-Azoic 0.6.0 requires Python 3.12 or newer and pandas 3.0 or newer.
+Azoic 0.6.1 requires Python 3.12 or newer and pandas 3.0 or newer.
 
 With [uv](https://docs.astral.sh/uv/):
 
 ```bash
-uv add azoic==0.6.0
+uv add azoic==0.6.1
 uv run azoic --help
 ```
 
 With pip:
 
 ```bash
-python -m pip install azoic==0.6.0
+python -m pip install azoic==0.6.1
 azoic --help
 ```
 
 Azoic is pre-1.0: minor releases can include documented compatibility changes.
 Pin a version for production work and read the [changelog](https://github.com/ThomasBury/azoic/blob/main/CHANGELOG.md)
-before upgrading. The previous 0.5.0 release remains installable, but this
-README and the documentation target 0.6.0.
+before upgrading. Earlier releases remain installable, but this
+README and the documentation target 0.6.1.
 
 ## First model
 
@@ -158,7 +158,7 @@ export_tariff(glm, "tariff.xlsx", recalibrate=False)
 **Project**
 
 - [Changelog](https://github.com/ThomasBury/azoic/blob/main/CHANGELOG.md)
-- [Contributing](https://github.com/ThomasBury/azoic/blob/main/CONTRIBUTING.md)
+- [Contributing](https://github.com/ThomasBury/azoic/blob/1259918172c2787321d06a295337ef1e3a10a841/CONTRIBUTING.md)
 
 ## Scope
 
@@ -167,9 +167,9 @@ not a reserving, fraud, policy-administration, or AutoML system.
 
 ## Development
 
-See [Contributing](https://github.com/ThomasBury/azoic/blob/main/CONTRIBUTING.md)
+See [Contributing](https://github.com/ThomasBury/azoic/blob/1259918172c2787321d06a295337ef1e3a10a841/CONTRIBUTING.md)
 for checkout setup, checks and documentation commands.
 
 ## License
 
-MIT. Copyright (c) 2026 Thomas Bury. See [LICENSE](https://github.com/ThomasBury/azoic/blob/main/LICENSE).
+MIT. Copyright (c) 2026 Thomas Bury. See [LICENSE](https://github.com/ThomasBury/azoic/blob/1259918172c2787321d06a295337ef1e3a10a841/LICENSE).

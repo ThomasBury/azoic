@@ -1,9 +1,14 @@
 # Changelog
 
-## Unreleased
+## 0.6.1 — 2026-11-12
 
 - Replace README and documentation branding with the new Azoic banner, logo and
   icons; keep four README badges for PyPI, documentation, CI and license.
+- Include the MIT license file in wheel/source distributions and declare its SPDX
+  identifier in package metadata.
+- Consolidate contributor instructions, current work and design contracts; retain
+  historical records in the development archive and align user guides with 0.6.x.
+- Keep runtime behavior, public APIs and dependency requirements unchanged.
 
 ## 0.6.0 — 2026-11-12
 

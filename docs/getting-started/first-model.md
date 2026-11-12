@@ -6,7 +6,7 @@ Excel. The only rating features are **driver age, vehicle age and region**.
 Exposure is a weight; period controls the split; claim amounts and counts are
 outcomes. None of those four columns is a rating feature.
 
-This complete starter works with **Azoic 0.6.0 from PyPI** and with the checkout.
+This complete starter targets **Azoic 0.6.1** and works with the checkout.
 It creates synthetic data locally and needs no repository, test fixtures,
 Quarto, optional extras or network after installation. It is a learning example,
 not a reviewed production tariff.

@@ -143,14 +143,29 @@ missing-heavy portfolios or Windows performance. No runtime, memory or readiness
 ## Latest checkpoint — 0.6.1 delivery — 2026-11-12
 
 - [x] Inspect the complete branch diff, previous checks and remote delivery conventions.
-- [ ] Create topical Conventional Commits and reconcile package/skill versions.
-- [ ] Run locked checks, strict docs and installed wheel/sdist smokes.
+- [x] Create topical Conventional Commits and reconcile package/skill versions.
+- [x] Run locked checks, strict docs and installed wheel/sdist smokes.
 - [ ] Open the PR with `documentation` and `release` labels; obtain bot review and repair findings.
 - [ ] Publish tag `v0.6.1` and the GitHub release from the reviewed commit; verify publication.
 
-Prior branding checks passed below. Release preparation is in progress; no tag or
-release has been created. Next action: commit the existing documentation/license
-work, prepare 0.6.1, validate and request review. M62 human acceptance stays pending.
+0.6.1 preparation passed: `uv sync --locked --all-extras --all-groups --offline`,
+`just docs-build`, Ruff, Ty and **1,517 tests** (4 skips, 2 expected failures,
+21 warnings; 450.86 seconds). Focused version/skill tests also passed (8 tests).
+The lockfile differs only in Azoic's version; every skill metadata version matches.
+Fresh Linux/Python 3.12 wheel and sdist installations with locked runtime-only
+dependencies passed `uv pip check` and the complete outside-checkout distribution
+smoke, including all eleven CLI helps, packaged skills and workbook agreement.
+Both artifacts include the MIT license; the wheel declares `License-Expression:
+MIT` and `License-File: LICENSE`. A README-only rebuild preserves every tested
+package file byte for byte. Runtime ASTs are unchanged except the version string.
+All 161 local file/anchor/image-source references resolve, and pinned README asset,
+license and contributor-guide targets exist in commit `1259918`.
+
+Artifacts and isolated environments are under `/tmp/azoic-release-u1ycw8dh/`;
+commands used `UV_CACHE_DIR=/tmp/azoic-doc-cleanup-uv-cache`. Prior rendered-preview
+evidence is retained below. No tag or release exists yet. Next action: push the
+release preparation, open the labelled PR and obtain Codex/CodeRabbit review and
+remote CI before publication. M62 human acceptance stays pending.
 
 ## Previous checkpoint — branding — 2026-11-12
 

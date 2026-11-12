@@ -1,8 +1,8 @@
 # Models and evaluation API
 
-!!! note "Azoic 0.6.0 documentation"
+!!! note "Azoic 0.6.1 documentation"
 
-    This page describes the published 0.6.0 package. See the
+    This page describes Azoic 0.6.1. See the
     [changelog](https://github.com/ThomasBury/azoic/blob/main/CHANGELOG.md)
     for changes since 0.5.0.
 

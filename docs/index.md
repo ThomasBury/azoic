@@ -10,7 +10,7 @@ reproducible comparisons, and multiplicative tariff export explicit.
 
 !!! note "Current release"
 
-    This site describes Azoic 0.6.0, the current published package. See the
+    This site describes Azoic 0.6.1. See the
     [changelog](https://github.com/ThomasBury/azoic/blob/main/CHANGELOG.md) for
     changes since 0.5.0.
 
