@@ -2,7 +2,7 @@
 name: azoic-modelling
 description: Prepare development data, configure preprocessing, fit or tune Azoic pure-premium candidates, and save runs when modelling is requested.
 metadata:
-  azoic-version: "0.6.1"
+  azoic-version: "0.6.2"
 ---
 
 # Azoic modelling

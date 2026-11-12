@@ -78,7 +78,7 @@ if TYPE_CHECKING:
     from .workflow import run_experiment as run_experiment
     from .workflow import save_run as save_run
 
-__version__ = "0.6.1"
+__version__ = "0.6.2"
 
 _EXPORTS = {
     name: module

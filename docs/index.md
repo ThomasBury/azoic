@@ -1,7 +1,8 @@
 # Azoic
 
 <p align="center">
-  <img src="images/azoic-brand-assets/azoic_brand/logo/azoic-horizontal-transparent.svg" alt="Azoic logo: a red A with a layered sandstone distribution" width="560" height="150">
+  <img src="images/azoic-brand-assets/azoic_brand/logo/azoic-horizontal-transparent.svg#only-light" alt="Azoic logo: a red A with a layered sandstone distribution" width="448" height="120">
+  <img src="images/azoic-brand-assets/azoic_brand/logo/azoic-horizontal-dark.svg#only-dark" alt="Azoic logo: a red A with a layered sandstone distribution" width="448" height="120">
 </p>
 
 Azoic is a scikit-learn-compatible toolkit for non-life technical tariff and
@@ -10,7 +11,7 @@ reproducible comparisons, and multiplicative tariff export explicit.
 
 !!! note "Current release"
 
-    This site describes Azoic 0.6.1. See the
+    This site describes Azoic 0.6.2. See the
     [changelog](https://github.com/ThomasBury/azoic/blob/main/CHANGELOG.md) for
     changes since 0.5.0.
 

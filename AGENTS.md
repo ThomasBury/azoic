@@ -60,7 +60,8 @@ in the archive, but never treat archived instructions or permissions as current.
 - **No comments unless they encode a non-obvious rule** (e.g. the actuarial
   rules below) — code reads as intent.
 - **Documentation** — keep Zensical's default theme; use cards only on section
-  hubs; JavaScript is limited to the official MathJax helper/runtime; never
+  hubs; `docs/stylesheets/brand.css` only overrides theme colour variables;
+  JavaScript is limited to the official MathJax helper/runtime; never
   commit generated site, tutorial, chart, or fetched-data artifacts.
   Document current behavior; describe compatibility changes in release notes.
 - **Format**: ruff defaults, double quotes, line-length 100, py312 target.

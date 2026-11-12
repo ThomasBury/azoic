@@ -1,0 +1,48 @@
+/* Search uses RGB channels alongside the theme's hex colour variables. */
+[data-md-color-scheme="default"] {
+  --color-foreground: 23 30 34;
+  --color-background: 248 245 237;
+  --color-background-subtle: 237 234 227;
+  --color-backdrop: 248 245 237;
+  --md-default-bg-color: #f8f5ed;
+  --md-default-bg-color--light: #f8f5edb3;
+  --md-default-bg-color--lighter: #f8f5ed4d;
+  --md-default-bg-color--lightest: #f8f5ed1f;
+  --md-default-fg-color: #171e22;
+  --md-default-fg-color--light: #41494b;
+  --md-default-fg-color--lighter: #171e2252;
+  --md-default-fg-color--lightest: #171e220d;
+  --md-primary-fg-color: #a11b1f;
+  --md-primary-fg-color--light: #b93438;
+  --md-primary-fg-color--dark: #801518;
+  --md-primary-bg-color: #f8f5ed;
+  --md-primary-bg-color--light: #f8f5edb3;
+  --md-accent-fg-color: #801518;
+  --md-accent-fg-color--transparent: #8015181a;
+  --md-accent-bg-color: #f8f5ed;
+  --md-accent-bg-color--light: #f8f5edb3;
+}
+
+[data-md-color-scheme="slate"] {
+  --color-foreground: 248 245 237;
+  --color-background: 23 30 34;
+  --color-background-subtle: 50 56 58;
+  --color-backdrop: 23 30 34;
+  --md-default-bg-color: #171e22;
+  --md-default-bg-color--light: #171e228a;
+  --md-default-bg-color--lighter: #171e2242;
+  --md-default-bg-color--lightest: #171e2212;
+  --md-default-fg-color: #f8f5ed;
+  --md-default-fg-color--light: #c2bfb5;
+  --md-default-fg-color--lighter: #f8f5ed52;
+  --md-default-fg-color--lightest: #f8f5ed1f;
+  --md-primary-fg-color: #ddd1b1;
+  --md-primary-fg-color--light: #e5dabe;
+  --md-primary-fg-color--dark: #cfbe9c;
+  --md-primary-bg-color: #171e22;
+  --md-primary-bg-color--light: #171e22b3;
+  --md-accent-fg-color: #f8f5ed;
+  --md-accent-fg-color--transparent: #f8f5ed1a;
+  --md-accent-bg-color: #171e22;
+  --md-accent-bg-color--light: #171e22b3;
+}

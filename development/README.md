@@ -6,10 +6,19 @@ Read historical records only when their evidence is needed.
 
 ## Current focus
 
+- **0.6.2 delivery ◐** — authorized on 2026-11-12: deliver the documentation
+  colours as a patch release, with matching package/skill/docs versions, a reviewed
+  PR and tag `v0.6.2`. Contributor checks, strict docs and fresh distribution
+  smokes passed; bot review is pending. Publication follows review.
+  No product milestone or merge is included.
+- **Documentation brand colours ☑** — completed on 2026-11-12: ivory/red light
+  mode, charcoal/sandstone dark mode and a compact, theme-aware homepage logo.
+  Strict docs, local browser checks and contributor checks passed. Changes remain
+  local and uncommitted; the default Zensical components and artwork are preserved.
 - **0.6.1 delivery ☑** — published on 2026-11-12 from reviewed commit `790ec57`.
   [GitHub v0.6.1](https://github.com/ThomasBury/azoic/releases/tag/v0.6.1) and
   [PyPI 0.6.1](https://pypi.org/project/azoic/0.6.1/) are public and verified.
-  [PR #27](https://github.com/ThomasBury/azoic/pull/27) remains open with
+  [PR #27](https://github.com/ThomasBury/azoic/pull/27) merged on 2026-11-12 with
   `documentation`/`release` labels. Codex found no issues; CodeRabbit's release-order
   finding is resolved. The post-publication commit records this checkpoint only.
 - **Branding replacement ☑** — completed on 2026-11-12: README banner and four-badge
@@ -39,7 +48,7 @@ Read historical records only when their evidence is needed.
 | External engine/deployment | Real receiving-engine agreement, deployment and rollback remain downstream evidence; synthetic agreement tests do not establish readiness. |
 
 Conditional features in [design](design.md#deferred-and-demand-gated-work) are
-not scheduled milestones. No next product milestone is selected; the 0.6.1
+not scheduled milestones. No next product milestone is selected; the 0.6.2
 maintenance release above is explicitly authorized.
 
 ## M62 observation protocol
@@ -144,7 +153,69 @@ measurement definitions, historical tables and limitations. Those measurements d
 not cover tuning/FSM, large reviews, production-bundle performance, high cardinality,
 missing-heavy portfolios or Windows performance. No runtime, memory or readiness promise follows.
 
-## Latest checkpoint — 0.6.1 delivery — 2026-11-12
+## Latest checkpoint — 0.6.2 delivery — 2026-11-12
+
+- [x] Inspect the complete diff, current releases and delivery conventions.
+- [x] Align the package, lockfile, bundled skills, docs and changelog with 0.6.2.
+- [x] Run contributor checks, strict docs and installed wheel/sdist smokes.
+- [ ] Create Conventional Commits and a PR labelled `documentation` and `release`.
+- [ ] Obtain Codex review; address findings and recheck the final commit.
+- [ ] Publish `v0.6.2`, verify GitHub/PyPI publication and record the handoff.
+
+The change adds documentation colours and a compact homepage logo in both modes.
+Runtime behavior and dependency requirements remain unchanged from 0.6.1. The
+README and documentation target 0.6.2; publish it before merging so their exact
+installation commands are available when the site updates.
+
+`uv sync --locked --all-extras --all-groups --offline` and `just docs-build`
+passed. Fresh Linux/Python 3.12 wheel and sdist installations with locked
+runtime-only dependencies passed `uv pip check` and the complete outside-checkout
+smoke, including all eleven CLI helps, packaged skill recipes, saved-run and
+production handoffs, and workbook-rate agreement. The runtime export matches the
+current lockfile. Package license metadata, all 156 local file/anchor references
+and 56 emitted branding references passed; runtime ASTs differ only in the version.
+Evidence is under `/tmp/azoic-062-release/`; commands use
+`UV_CACHE_DIR=/tmp/azoic-doc-cleanup-uv-cache`. `just check` passed Ruff, Ty and
+**1,517 tests** (4 skips, 2 expected failures, 21 warnings). Earlier browser evidence is retained below; previews and real-data
+rendering were not rerun. Next action: commit and request review.
+M62 stays pending actual practitioner observations.
+
+## Previous checkpoint — documentation brand colours — 2026-11-12
+
+- [x] Inspect current documentation, supplied artwork and native theme support.
+- [x] Apply the approved colour variables and theme-aware homepage logo.
+- [x] Verify desktop/mobile rendering, mode selection, controls and contrast.
+- [x] Run strict docs, contributor checks and diff checks; record results.
+
+One colour-only stylesheet sets the palette, including search's separate RGB
+variables. The homepage uses the supplied light/dark SVGs at 448 × 120 px with
+native theme selectors; the small header mark and favicon remain. The default
+layout, fonts and semantic code/warning colours are preserved. Secondary greys
+were adjusted from the plan to keep the native button hover fade accessible:
+`#41494B` in light mode and `#C2BFB5` in dark mode.
+
+`just docs-build` passed with no issues; `just check` passed Ruff, Ty and **1,517
+tests** (4 skips, 2 expected failures, 21 warnings; 269.90 seconds), using
+`UV_CACHE_DIR=/tmp/azoic-doc-cleanup-uv-cache`. `git diff --check` passed. All 56
+emitted branding image/favicon references resolve.
+
+Local headless Chrome passed twelve homepage/guide/reference renders at 1280/375 px
+in both modes, plus four search views with results. Checks cover proportions,
+overflow, image loading, keyboard focus, mobile navigation, system-default mode,
+manual switching against system preference, and persistence across reload/navigation.
+Selected homepage, guide, reference and search screenshots were visually inspected.
+Measured link contrast is 7.16:1 in light mode and 11.11:1 in dark mode; secondary
+button hover contrast is 4.58:1 and 4.84:1 respectively.
+
+Evidence and the temporary browser script are under `/tmp/azoic-doc-brand-colours/`.
+The sandbox blocked localhost sockets, so browser checks ran with approved local
+server/Chrome access. External font/MathJax requests were blocked; these are local
+previews, not deployed-site checks. Real-data tutorial renders and distribution
+smokes were not rerun. No runtime/API/dependency changes or generated assets are
+included. Changes are local and uncommitted; next action: review this documentation
+change. No release, deployment or product milestone was started; M62 remains pending.
+
+## Previous checkpoint — 0.6.1 delivery — 2026-11-12
 
 - [x] Inspect the complete branch diff, previous checks and remote delivery conventions.
 - [x] Create topical Conventional Commits and reconcile package/skill versions.
