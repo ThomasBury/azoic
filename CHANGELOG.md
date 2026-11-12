@@ -58,9 +58,10 @@ policy of reserving incompatible public changes for minor releases.
   Final-evaluation evidence and production `_full` metrics have distinct meanings.
 - Saved artifacts are trusted same-code/environment pickle, not a portable format.
   Do not assume that artifacts saved under 0.5.0 can be loaded under 0.6.0.
-- Dependency floors are now glum 3.4.1 and Typer 0.27.1. Python 3.12+ remains
-  supported in metadata; full checks use locked Python 3.12 dependencies, with
-  separate installed-artifact checks for low direct versions and Python 3.14.
+- Dependency floors are now glum 3.4.1, Typer 0.27.1 and openpyxl 3.1.5.
+  Python 3.12+ remains supported in metadata; full checks use locked Python 3.12
+  dependencies, with separate installed-artifact checks for low direct versions
+  and Python 3.14.
 - The documented first-model starter remains pinned to published 0.5.0 and is
   also tested against the checkout. This release draft does not change that
   starter's Python or YAML examples.
