@@ -39,26 +39,26 @@ tariff export in one explicit workflow.
 
 ## Install
 
-Azoic 0.6.1 requires Python 3.12 or newer and pandas 3.0 or newer.
+Azoic 0.6.2 requires Python 3.12 or newer and pandas 3.0 or newer.
 
 With [uv](https://docs.astral.sh/uv/):
 
 ```bash
-uv add azoic==0.6.1
+uv add azoic==0.6.2
 uv run azoic --help
 ```
 
 With pip:
 
 ```bash
-python -m pip install azoic==0.6.1
+python -m pip install azoic==0.6.2
 azoic --help
 ```
 
 Azoic is pre-1.0: minor releases can include documented compatibility changes.
 Pin a version for production work and read the [changelog](https://github.com/ThomasBury/azoic/blob/main/CHANGELOG.md)
 before upgrading. Earlier releases remain installable, but this
-README and the documentation target 0.6.1.
+README and the documentation target 0.6.2.
 
 ## First model
 

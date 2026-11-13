@@ -2,7 +2,7 @@
 name: azoic-diagnostics
 description: Interpret existing Azoic predictions or runs; investigate ranking, calibration, segments and stability without implicitly refitting or recalibrating.
 metadata:
-  azoic-version: "0.6.1"
+  azoic-version: "0.6.2"
 ---
 
 # Azoic diagnostics

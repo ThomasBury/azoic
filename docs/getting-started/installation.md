@@ -7,7 +7,7 @@ dependencies do not conflict with another project.
 !!! note "Current release"
 
     This site and the [first model](first-model.md) target
-    **Azoic 0.6.1**. See the
+    **Azoic 0.6.2**. See the
     [changelog](https://github.com/ThomasBury/azoic/blob/main/CHANGELOG.md) for
     changes since 0.5.0.
 
@@ -48,7 +48,7 @@ activation is needed. In a new directory:
 ```bash
 uv init --python 3.12 my-pricing-project
 cd my-pricing-project
-uv add azoic==0.6.1
+uv add azoic==0.6.2
 uv run python -c "import azoic; print(azoic.__version__)"
 uv run azoic --help
 ```
@@ -56,13 +56,13 @@ uv run azoic --help
 In an existing uv project, run just the last three commands. Then follow the
 [first model](first-model.md); you do not need Git, Quarto or contributor tools.
 With pip, activate a Python 3.12 virtual environment and run
-`python -m pip install azoic==0.6.1`, then `python first_model.py`.
+`python -m pip install azoic==0.6.2`, then `python first_model.py`.
 
-This site uses Azoic 0.6.1; its modelling APIs are unchanged from 0.6.0.
+This site uses Azoic 0.6.2; its modelling APIs are unchanged from 0.6.0.
 
 Registry extras use package notation, for example
-`uv add 'azoic[mlops,tune]==0.6.1'` or
-`python -m pip install 'azoic[mlops,tune]==0.6.1'`.
+`uv add 'azoic[mlops,tune]==0.6.2'` or
+`python -m pip install 'azoic[mlops,tune]==0.6.2'`.
 
 ## Work from a checkout
 

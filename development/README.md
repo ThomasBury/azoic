@@ -6,10 +6,21 @@ Read historical records only when their evidence is needed.
 
 ## Current focus
 
+- **0.6.2 delivery ☑** — published on 2026-11-12 from reviewed commit `d459cd4`.
+  [GitHub v0.6.2](https://github.com/ThomasBury/azoic/releases/tag/v0.6.2) and
+  [PyPI 0.6.2](https://pypi.org/project/azoic/0.6.2/) are public and verified.
+  [PR #28](https://github.com/ThomasBury/azoic/pull/28) is open with
+  `documentation`/`release` labels. Codex and CodeRabbit found no actionable issues;
+  all nine release-commit CI jobs passed. The final checkpoint records publication
+  only. No product milestone or merge is included.
+- **Documentation brand colours ☑** — completed on 2026-11-12: ivory/red light
+  mode, charcoal/sandstone dark mode and a compact, theme-aware homepage logo.
+  Strict docs, local browser checks and contributor checks passed. The changes
+  are included in 0.6.2; default Zensical components and artwork are preserved.
 - **0.6.1 delivery ☑** — published on 2026-11-12 from reviewed commit `790ec57`.
   [GitHub v0.6.1](https://github.com/ThomasBury/azoic/releases/tag/v0.6.1) and
   [PyPI 0.6.1](https://pypi.org/project/azoic/0.6.1/) are public and verified.
-  [PR #27](https://github.com/ThomasBury/azoic/pull/27) remains open with
+  [PR #27](https://github.com/ThomasBury/azoic/pull/27) merged on 2026-11-12 with
   `documentation`/`release` labels. Codex found no issues; CodeRabbit's release-order
   finding is resolved. The post-publication commit records this checkpoint only.
 - **Branding replacement ☑** — completed on 2026-11-12: README banner and four-badge
@@ -22,9 +33,9 @@ Read historical records only when their evidence is needed.
   session preparation passed; all four actual practitioner observations remain
   pending. No practitioners have been observed. Resume only with real participants;
   scripted runs, agent trials and maintainer walkthroughs cannot complete M62.
-- **Release baseline:** Azoic 0.6.1 is published from `790ec57`; runtime behavior
-  and dependencies are unchanged from 0.6.0. The previous 0.6.0 release was
-  published on 2026-11-12 from `502766b` after PR #26, with `openpyxl>=3.1.5`.
+- **Release baseline:** Azoic 0.6.2 is published from `d459cd4`; runtime behavior
+  and dependencies are unchanged from 0.6.1/0.6.0. Previous releases are 0.6.1
+  from `790ec57` (PR #27) and 0.6.0 from `502766b` (PR #26), both on 2026-11-12.
   M64 skills and their Linux-link/Windows-copy
   checks completed; M63 tutorial and M56–M61 implementation completed. These are
   recorded historical results, not checks rerun by this cleanup.
@@ -39,7 +50,7 @@ Read historical records only when their evidence is needed.
 | External engine/deployment | Real receiving-engine agreement, deployment and rollback remain downstream evidence; synthetic agreement tests do not establish readiness. |
 
 Conditional features in [design](design.md#deferred-and-demand-gated-work) are
-not scheduled milestones. No next product milestone is selected; the 0.6.1
+not scheduled milestones. No next product milestone is selected; the 0.6.2
 maintenance release above is explicitly authorized.
 
 ## M62 observation protocol
@@ -144,7 +155,89 @@ measurement definitions, historical tables and limitations. Those measurements d
 not cover tuning/FSM, large reviews, production-bundle performance, high cardinality,
 missing-heavy portfolios or Windows performance. No runtime, memory or readiness promise follows.
 
-## Latest checkpoint — 0.6.1 delivery — 2026-11-12
+## Latest checkpoint — 0.6.2 delivery — 2026-11-12
+
+- [x] Inspect the complete diff, current releases and delivery conventions.
+- [x] Align the package, lockfile, bundled skills, docs and changelog with 0.6.2.
+- [x] Run contributor checks, strict docs and installed wheel/sdist smokes.
+- [x] Create Conventional Commits and a PR labelled `documentation` and `release`.
+- [x] Obtain Codex review; address findings and recheck the release commit.
+- [x] Publish `v0.6.2`, verify GitHub/PyPI publication and record the handoff.
+
+The change adds documentation colours and a compact homepage logo in both modes.
+Runtime behavior and dependency requirements remain unchanged from 0.6.1. The
+README and documentation target 0.6.2; it was published before merge so their
+exact installation commands are available when the site updates.
+
+`uv sync --locked --all-extras --all-groups --offline` and `just docs-build`
+passed. Fresh Linux/Python 3.12 wheel and sdist installations with locked
+runtime-only dependencies passed `uv pip check` and the complete outside-checkout
+smoke, including all eleven CLI helps, packaged skill recipes, saved-run and
+production handoffs, and workbook-rate agreement. The runtime export matches the
+current lockfile. Package license metadata, all 156 local file/anchor references
+and 56 emitted branding references passed; runtime ASTs differ only in the version.
+Evidence is under `/tmp/azoic-062-release/`; commands use
+`UV_CACHE_DIR=/tmp/azoic-doc-cleanup-uv-cache`. `just check` passed Ruff, Ty and
+**1,517 tests** (4 skips, 2 expected failures, 21 warnings; 426.40 seconds). Earlier browser evidence is retained below; previews and real-data
+rendering were not rerun.
+
+Commit `d459cd4` is on [PR #28](https://github.com/ThomasBury/azoic/pull/28),
+labelled `documentation` and `release`. Codex completed review with no findings.
+CodeRabbit also reported no actionable findings. All nine CI jobs passed in
+[run 43250710885](https://github.com/ThomasBury/azoic/actions/runs/43250710885),
+including the full locked checks, Linux/Windows starters and low/current runtime
+wheel/sdist matrix on Python 3.12/3.14.
+[GitHub v0.6.2](https://github.com/ThomasBury/azoic/releases/tag/v0.6.2) is published
+from `d459cd4`; its tag matches package version 0.6.2. The
+[release workflow](https://github.com/ThomasBury/azoic/actions/runs/43251507486)
+passed build and PyPI publication. PyPI lists both the wheel and source archive.
+A fresh Python 3.12 install from the public PyPI index passed dependency and CLI
+checks; all 30 package, metadata and license files match the validated wheel byte
+for byte, including the bundled skills. The first default-index install did not
+yet see 0.6.2; an explicit `https://pypi.org/simple` install with
+`--refresh-package azoic` succeeded.
+
+The post-publication commit changes this checkpoint only and leaves the release
+tag on `d459cd4`. The PR remains open and `main` is unchanged; Pages will update
+after merge. Next action: maintainer review/merge of PR #28.
+M62 stays pending actual practitioner observations.
+
+## Previous checkpoint — documentation brand colours — 2026-11-12
+
+- [x] Inspect current documentation, supplied artwork and native theme support.
+- [x] Apply the approved colour variables and theme-aware homepage logo.
+- [x] Verify desktop/mobile rendering, mode selection, controls and contrast.
+- [x] Run strict docs, contributor checks and diff checks; record results.
+
+One colour-only stylesheet sets the palette, including search's separate RGB
+variables. The homepage uses the supplied light/dark SVGs at 448 × 120 px with
+native theme selectors; the small header mark and favicon remain. The default
+layout, fonts and semantic code/warning colours are preserved. Secondary greys
+were adjusted from the plan to keep the native button hover fade accessible:
+`#41494B` in light mode and `#C2BFB5` in dark mode.
+
+`just docs-build` passed with no issues; `just check` passed Ruff, Ty and **1,517
+tests** (4 skips, 2 expected failures, 21 warnings; 269.90 seconds), using
+`UV_CACHE_DIR=/tmp/azoic-doc-cleanup-uv-cache`. `git diff --check` passed. All 56
+emitted branding image/favicon references resolve.
+
+Local headless Chrome passed twelve homepage/guide/reference renders at 1280/375 px
+in both modes, plus four search views with results. Checks cover proportions,
+overflow, image loading, keyboard focus, mobile navigation, system-default mode,
+manual switching against system preference, and persistence across reload/navigation.
+Selected homepage, guide, reference and search screenshots were visually inspected.
+Measured link contrast is 7.16:1 in light mode and 11.11:1 in dark mode; secondary
+button hover contrast is 4.58:1 and 4.84:1 respectively.
+
+Evidence and the temporary browser script are under `/tmp/azoic-doc-brand-colours/`.
+The sandbox blocked localhost sockets, so browser checks ran with approved local
+server/Chrome access. External font/MathJax requests were blocked; these are local
+previews, not deployed-site checks. Real-data tutorial renders and distribution
+smokes were not rerun. No runtime/API/dependency changes or generated assets are
+included. Changes are local and uncommitted; next action: review this documentation
+change. No release, deployment or product milestone was started; M62 remains pending.
+
+## Previous checkpoint — 0.6.1 delivery — 2026-11-12
 
 - [x] Inspect the complete branch diff, previous checks and remote delivery conventions.
 - [x] Create topical Conventional Commits and reconcile package/skill versions.

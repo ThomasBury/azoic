@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.2 — 2026-11-12
+
+- Apply Azoic's ivory, charcoal, mineral-red and sandstone palette to the
+  documentation, with a light/dark toggle and matching compact homepage logos.
+
 ## 0.6.1 — 2026-11-12
 
 - Replace README and documentation branding with the new Azoic banner, logo and

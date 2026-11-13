@@ -12,15 +12,15 @@ with the installed package. It runs in its own environment and is not an Azoic
 runtime dependency. See its [installation behavior](https://library-skills.io/use/).
 
 **Azoic 0.6.0 and later include the skill bundle.** The published 0.5.0
-package has no skills. From a project that uses Azoic 0.6.1:
+package has no skills. From a project that uses Azoic 0.6.2:
 
 ```bash
-uv add azoic==0.6.1
+uv add azoic==0.6.2
 uv run python -c 'from importlib.metadata import version; print(version("azoic"))'
 uvx library-skills
 ```
 
-The [first-model starter](first-model.md) uses Azoic 0.6.1.
+The [first-model starter](first-model.md) uses Azoic 0.6.2.
 Installing skills does not upgrade Azoic or authorize a model fit.
 
 ## Choose a skill by the job
@@ -67,7 +67,7 @@ Confirm all three belong to your installed Azoic distribution before using them.
 
 ## Version and release checks
 
-Each skill declares string metadata `azoic-version: "0.6.1"`. Agents inspect
+Each skill declares string metadata `azoic-version: "0.6.2"`. Agents inspect
 `importlib.metadata.version("azoic")` in the user's project before following
 version-specific recipes. A mismatch identifies stale guidance and stops those
 recipes; it must not silently upgrade dependencies. This also catches old copies.

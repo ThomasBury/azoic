@@ -2,7 +2,7 @@
 name: azoic-tariff
 description: Review or revise fitted Azoic tariffs, export workbooks, evaluate frozen selections, or explicitly refit production; keep each operation separately scoped.
 metadata:
-  azoic-version: "0.6.1"
+  azoic-version: "0.6.2"
 ---
 
 # Azoic tariff
