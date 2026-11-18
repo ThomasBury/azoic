@@ -204,7 +204,9 @@ def test_refit_restores_saved_partition_categories_without_rounding(journey, tmp
     )
     assert restored.data_fingerprint == production.data_fingerprint
     X = full[list(fitted["glm"].feature_names_in_)]
-    np.testing.assert_array_equal(fitted["glm"].predict(X), restored_models["glm"].predict(X))
+    np.testing.assert_allclose(
+        fitted["glm"].predict(X), restored_models["glm"].predict(X), rtol=1e-12, atol=0
+    )
 
     full.to_parquet(tmp_path / "rounded.parquet", index=True)
     monkeypatch.setattr("azoic.workflow._score_portfolio", reject)

@@ -168,10 +168,16 @@ Package metadata, the lockfile, bundled skills, installation examples and
 changelog target 0.7.0. Locked offline sync, the strict docs build and
 `just check` passed (1,528 tests, 4 skips, 2 expected failures). Fresh
 Python 3.12 wheel and source distribution installs passed the full
-installed-package smoke. GitHub review, CI and publication are pending.
+installed-package smoke. [PR #29](https://github.com/ThomasBury/azoic/pull/29)
+is open.
 
-Next action: validate the release branch, open the PR and publish from the
-reviewed commit after checks pass.
+The first PR CI run found sub-`1e-15` relative differences between independent
+fits of the same verified data. The regression now uses a `1e-12` relative
+tolerance for the two sets of predictions and still checks the portfolio
+fingerprint exactly.
+
+Next action: verify bot review and CI on the updated PR head, then publish
+from that commit.
 
 ## Previous checkpoint — audit remediation milestone 2 — 2026-11-18
 
