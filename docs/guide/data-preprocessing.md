@@ -1,8 +1,8 @@
 # Data profiling and preprocessing
 
-!!! note "Azoic 0.6.2 documentation"
+!!! note "Azoic 0.7.0 documentation"
 
-    This page describes Azoic 0.6.2. See the
+    This page describes Azoic 0.7.0. See the
     [changelog](https://github.com/ThomasBury/azoic/blob/main/CHANGELOG.md)
     for changes since 0.5.0.
 
@@ -176,12 +176,14 @@ zero-based bin destination; index `len(edges) + 1` selects a separate `Missing`
 bin, preserving the quantile convention. Empty edges mean one interval; route
 missing to 0 or to a separate `Missing` bin at index 1.
 
-Categorical mappings use a list of `level` / `group` records, preserving scalar
-types: integer `1` and string `"1"` are different levels. Equal numeric/boolean
-aliases such as `1` and `true` are rejected. Both `missing` and `unseen` group
-destinations are required and may differ. Destination-only groups enter the
-output vocabulary; if training supplies no observations there, fitted factors
-have no direct experience for that group.
+Categorical mappings use a list of `level` / `group` records. Declared keys
+that compare equal, such as `1` and `true`, are rejected. Incoming values match
+by type and value. If the declared key is integer `1`, a float `1.0`, boolean
+`true` or string `"1"` takes the unseen route. Use a nullable integer column
+when integer codes can be missing. Both `missing` and `unseen` group destinations
+are required and may differ. Destination-only groups enter the output vocabulary.
+Without training observations there, fitted factors have no direct experience
+for that group.
 
 ```yaml
 preprocessing:

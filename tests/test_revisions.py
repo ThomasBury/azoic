@@ -125,12 +125,21 @@ def test_fixed_closure_clone_and_explicit_destinations(closure, expected):
 
 def test_fixed_typed_groups_and_distinct_missing_unseen():
     groups = [{"level": 1, "group": "integer"}, {"level": "1", "group": "string"}]
-    frame = pd.DataFrame({"code": pd.Series([1, "1", None, "new"], dtype=object)})
+    frame = pd.DataFrame(
+        {"code": pd.Series([np.int64(1), np.str_("1"), None, True, 1.0, "new"], dtype=object)}
+    )
     fitted = AutoGrouper(
         cols=["code"], fixed={"code": {"groups": groups, "missing": "integer", "unseen": "string"}}
     ).fit(frame)
     with pytest.warns(UserWarning, match="unseen"):
-        assert fitted.transform(frame).code.tolist() == ["integer", "string", "integer", "string"]
+        assert fitted.transform(frame).code.tolist() == [
+            "integer",
+            "string",
+            "integer",
+            "string",
+            "string",
+            "string",
+        ]
     assert list(fitted.mapping_["code"]) == [1, "1"]
     original = deepcopy(fitted.fixed)
     cloned = clone(fitted).fit(frame)
@@ -294,11 +303,12 @@ def test_revision_calibration_saved_scoring_and_workbook_match(candidate, tmp_pa
         "development",
     ]
     out = tmp_path / "revised.xlsx"
-    revised.source.distillation_metrics_ = {
+    workbook_candidate = deepcopy(revised)
+    workbook_candidate.source.distillation_metrics_ = {
         "teacher_student_deviance": 0.1,
         "student_teacher_total_ratio": 1.0,
     }
-    export_tariff(revised, out, recalibrate=False)
+    export_tariff(workbook_candidate, out, recalibrate=False)
     sheets = pd.read_excel(out, sheet_name=None)
     assert list(sheets) == ["base_rate", "factors", "mappings"]
     assert sheets["base_rate"].teacher_student_deviance.iloc[0] == 0.1
@@ -315,7 +325,7 @@ def test_revision_calibration_saved_scoring_and_workbook_match(candidate, tmp_pa
     assert row.multiplicative_factor == 1.4 and row.reason == changes[0]["reason"]
     assert row.original_factor == revised.revision["changes"][0]["original_factor"]
     artifact = tmp_path / "revised.pkl"
-    save_run(revised_run, revised_models, artifact)
+    save_run(revised_run, deepcopy(revised_models), artifact)
     restored_run, restored_models = load_run(artifact)
     np.testing.assert_array_equal(restored_models["glm"].predict(frame[run.feature_names]), rates)
     assert restored_run.models["glm"].revision == revised.revision

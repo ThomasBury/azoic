@@ -1252,10 +1252,14 @@ def test_changed_native_mapping_requires_explicit_missing_transactionally(cls):
     X = pd.DataFrame({"x": [10, 20, 30, 40, np.nan]})
     fitted = cls(cols=["x"]).fit(X, [1, 1, 5, 5, 5])
     out = fitted.transform(X)
+    if cls is AutoGrouper:
+        aliases = {int(level): group for level, group in fitted.mapping_["x"].items()}
+        with pytest.raises(ValueError, match="explicit missing destination"):
+            fitted.set_mapping({"x": aliases})
     mapping = (
         {"x": [25.0]}
         if cls is AutoBinner
-        else {"x": {10: "low", 20: "low", 30: "high", 40: "high"}}
+        else {"x": {10.0: "low", 20.0: "low", 30.0: "high", 40.0: "high"}}
     )
     with pytest.raises(ValueError, match="explicit missing destination"):
         fitted.set_mapping(mapping)

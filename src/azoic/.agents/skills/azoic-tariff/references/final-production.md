@@ -38,9 +38,10 @@ prevent reuse through external copies; preserve the procedural boundary.
 ## Explicitly refit production
 
 Only when requested: supply `evaluated.pkl`, the exact original development and
-final frames (including indices/dtypes) and `production-rationale.txt`. No new
-hyperparameter search or learned preprocessing. Do not substitute a cleaned or
-reconstructed full portfolio for the original fingerprinted rows.
+final frames or their unchanged source portfolio with record IDs, and
+`production-rationale.txt`. Keep row index labels and all column values,
+including excluded columns. Refit restores each partition's recorded categorical
+schema and checks both fingerprints before fitting.
 
 ```python
 from pathlib import Path
@@ -49,6 +50,7 @@ import pandas as pd
 from azoic import load_run, refit_production, save_run
 
 evaluated, estimators = load_run("evaluated.pkl")
+# For string categories, concatenate the original partitions with their indices.
 full = pd.concat([pd.read_parquet("development.parquet"),
                   pd.read_parquet("final-test.parquet")])
 production, fitted = refit_production(
@@ -57,6 +59,12 @@ production, fitted = refit_production(
 )
 save_run(production, fitted, "production.pkl")
 ```
+
+For integer categorical labels, convert each column in each original partition
+with `frame["policy_band"].astype(object).astype("Int64")` before concatenating.
+Use `UInt64` for unsigned labels. If writing the full portfolio to Parquet, use
+`index=True`. Labels rounded or changed during storage or concatenation fail
+the identity check.
 
 Native mappings stay frozen, model parameters are refitted, latest typed factor
 overrides are reapplied and the recorded calibration policy is recomputed once on
@@ -88,6 +96,8 @@ specification = export_production(
 
 This writes the specification, workbook, trusted artifact, scoring recipe and
 agreement cases without fitting/recalibration. Run `python production-v1/score.py`
-to check supplied unrounded rates/rejections. A receiving engine must separately
+to check supplied unrounded rates and rejections. Keep category scalar types in
+the scorer input. Integer `1`, float `1.0`, boolean `true` and string `"1"`
+use distinct lookups. A receiving engine must separately
 implement and validate that contract; export does not demonstrate deployment,
 independent engine agreement or practitioner acceptance.

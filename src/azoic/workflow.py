@@ -27,13 +27,24 @@ from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import dataclass
 from importlib.metadata import PackageNotFoundError, version
+from io import BytesIO
 from pathlib import Path
 from typing import Annotated, Any, Literal, Self, cast, overload
 
 import numpy as np
 import pandas as pd
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, FiniteFloat, model_serializer, model_validator
+from glum import GeneralizedLinearRegressor
+from lightgbm import Booster
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    FiniteFloat,
+    PrivateAttr,
+    model_serializer,
+    model_validator,
+)
 from sklearn.base import BaseEstimator
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import FunctionTransformer
@@ -477,15 +488,26 @@ class Run(BaseModel):
     final_evaluation: dict[str, Any] = Field(default_factory=dict)
     production: dict[str, Any] = Field(default_factory=dict)
 
+    _categorical_schema: dict[Any, pd.CategoricalDtype] = PrivateAttr(default_factory=dict)
+    _final_categorical_schema: dict[Any, pd.CategoricalDtype] = PrivateAttr(default_factory=dict)
+    _fitted_fingerprints: dict[str, str] = PrivateAttr(default_factory=dict)
 
-def _validate_candidates(run, estimators):
+
+def _validate_candidates(run: Run, estimators: Mapping[str, Any]) -> None:
     if set(estimators) != set(run.models):
         raise ValueError("estimator names must match run.models exactly")
+    fingerprints = getattr(run, "_fitted_fingerprints", {})
+    if not fingerprints or set(fingerprints) != set(run.models):
+        raise ValueError(
+            "run has no complete recorded fitted identities; use its original trusted environment"
+        )
     for name, estimator in estimators.items():
         revision = estimator.revision if isinstance(estimator, RevisedTariff) else {}
         if revision != run.models[name].revision:
             raise ValueError("candidate revision evidence must match its Run")
         check_is_fitted(estimator.source if isinstance(estimator, RevisedTariff) else estimator)
+        if _fitted_fingerprint(estimator) != fingerprints[name]:
+            raise ValueError(f"candidate {name!r} fitted state does not match its Run")
 
 
 def save_run(
@@ -623,20 +645,91 @@ def _split_indices(config: ExperimentConfig, df: pd.DataFrame) -> tuple[np.ndarr
     return perm[n_test:], perm[:n_test]
 
 
+def _typed_scalar(value: Any) -> bytes:
+    if isinstance(value, np.generic) and value.dtype.kind in "biufcSU":
+        value = value.item()
+    if isinstance(value, tuple):
+        value = tuple(_typed_scalar(part) for part in value)
+        return b"tuple" + pickle.dumps(value, protocol=5)
+    return pickle.dumps(value, protocol=5)
+
+
 def _data_fingerprint(df: pd.DataFrame) -> str:
-    digest = hashlib.sha256()
-    digest.update(str(df.shape).encode())
-    digest.update(pd.util.hash_pandas_object(df.columns, index=False).to_numpy().tobytes())
-    digest.update("\0".join(map(str, df.dtypes)).encode())
-    for position, dtype in enumerate(df.dtypes):
+    digest = hashlib.sha256(_typed_scalar(df.shape))
+
+    def hash_values(values):
+        dtype = values.dtype
+        digest.update(_typed_scalar(str(dtype)))
         if isinstance(dtype, pd.CategoricalDtype):
             categories = dtype.categories
-            digest.update(
-                repr((position, categories.dtype, dtype.ordered, len(categories))).encode()
-            )
-            digest.update(pd.util.hash_pandas_object(categories, index=False).to_numpy().tobytes())
-    digest.update(pd.util.hash_pandas_object(df, index=True).to_numpy().tobytes())
+            digest.update(_typed_scalar((str(categories.dtype), dtype.ordered, len(categories))))
+            for value in categories:
+                digest.update(_typed_scalar(value))
+            digest.update(values.array.codes.tobytes())
+        elif pd.api.types.is_object_dtype(dtype):
+            for value in values:
+                digest.update(_typed_scalar(value))
+        else:
+            digest.update(pd.util.hash_pandas_object(values, index=False).to_numpy().tobytes())
+
+    for axis in (df.columns, df.index):
+        digest.update(_typed_scalar(tuple(axis.names)))
+        if isinstance(axis, pd.MultiIndex):
+            digest.update(b"MultiIndex")
+            for level, codes in zip(axis.levels, axis.codes, strict=True):
+                digest.update(_typed_scalar(str(level.dtype)))
+                # Index materialization can round integer levels when a code is missing.
+                labels = [*map(_typed_scalar, level), b"\0"]
+                for code in codes:
+                    digest.update(labels[code])
+        else:
+            hash_values(axis)
+    for _, values in df.items():
+        hash_values(values)
     return digest.hexdigest()
+
+
+def _categorical_schema(df: pd.DataFrame) -> dict[Any, pd.CategoricalDtype]:
+    return {
+        column: dtype
+        for column, dtype in df.dtypes.items()
+        if isinstance(dtype, pd.CategoricalDtype)
+    }
+
+
+def _restore_categories(
+    df: pd.DataFrame, schema: Mapping[Any, pd.CategoricalDtype]
+) -> pd.DataFrame:
+    if not schema:
+        return df
+    restored = df.copy(deep=False)
+    for column, dtype in schema.items():
+        if column not in df:
+            raise ValueError(
+                f"production portfolio is missing recorded categorical column {column!r}"
+            )
+        values = df[column]
+        lookup = {_typed_scalar(level): code for code, level in enumerate(dtype.categories)}
+        if isinstance(values.dtype, pd.CategoricalDtype):
+            # Use codes directly: extracting numeric labels with missing values can round them.
+            recode = np.array(
+                [*(lookup.get(_typed_scalar(level), -2) for level in values.cat.categories), -1]
+            )
+            codes = recode[values.cat.codes.to_numpy()]
+        else:
+            codes = np.fromiter(
+                (lookup.get(_typed_scalar(value), -2) for value in values),
+                dtype=np.intp,
+                count=len(values),
+            )
+            codes[values.isna().to_numpy()] = -1
+        if (codes == -2).any():
+            raise ValueError(
+                f"production portfolio has labels outside the recorded categorical schema "
+                f"for {column!r}; preserve original label types and values"
+            )
+        restored[column] = pd.Categorical.from_codes(codes, dtype=dtype)
+    return restored
 
 
 def _validate_portfolio(config: ExperimentConfig, df: pd.DataFrame) -> None:
@@ -838,7 +931,7 @@ def _assemble_run(
     tuning_settings: dict[str, Any] | None = None,
 ) -> Run:
     """Snapshot final results and provenance once, after evaluation."""
-    return Run(
+    run = Run(
         config=config.model_copy(deep=True),
         runtime_versions={
             "python": platform.python_version(),
@@ -886,6 +979,11 @@ def _assemble_run(
             for name, result in results.items()
         },
     )
+    run._categorical_schema = _categorical_schema(df)
+    run._fitted_fingerprints = {
+        name: _fitted_fingerprint(result.estimator) for name, result in results.items()
+    }
+    return run
 
 
 @overload
@@ -943,10 +1041,28 @@ def run_experiment(
     return run
 
 
+class _FittedPickler(pickle.Pickler):
+    def persistent_id(self, obj):
+        if isinstance(obj, Booster):
+            # Booster copies discard training bookkeeping but retain trees and category levels.
+            return Booster, obj.model_to_string(num_iteration=-1), max(0, obj.best_iteration)
+        return None
+
+    def reducer_override(self, obj):
+        if isinstance(obj, GeneralizedLinearRegressor):
+            constructor, args, state, *items = obj.__reduce_ex__(5)
+            state = dict(state)
+            state.pop("_align_info_logs_emitted", None)
+            return (constructor, args, state, *items)
+        return NotImplemented
+
+
 def _fitted_fingerprint(estimator) -> str:
     # Normalize buffer ownership so first-save and reloaded state have the same identity.
     normalized = pickle.loads(pickle.dumps(estimator, protocol=5))
-    return hashlib.sha256(pickle.dumps(normalized, protocol=5)).hexdigest()
+    buffer = BytesIO()
+    _FittedPickler(buffer, protocol=5).dump(normalized)
+    return hashlib.sha256(buffer.getbuffer()).hexdigest()
 
 
 def _selection_fingerprint(run: Run) -> str:
@@ -1030,7 +1146,7 @@ def evaluate_final(
         "evidence": "final_test",
         "model": model,
         "rationale": rationale,
-        "fitted_fingerprint": _fitted_fingerprint(selected),
+        "fitted_fingerprint": run._fitted_fingerprints[model],
         "selection_fingerprint": _selection_fingerprint(run),
         "data_fingerprint": _data_fingerprint(df),
         "record_ids": tuple(df[id_col].tolist()),
@@ -1039,7 +1155,9 @@ def evaluate_final(
         "n_rows": len(df),
         "calibration": deepcopy(run.models[model].revision.get("calibration", {})),
     }
-    return run.model_copy(deep=True, update={"final_evaluation": evidence})
+    evaluated = run.model_copy(deep=True, update={"final_evaluation": evidence})
+    evaluated._final_categorical_schema = _categorical_schema(df)
+    return evaluated
 
 
 def refit_production(
@@ -1051,8 +1169,9 @@ def refit_production(
 ) -> tuple[Run, dict[str, Any]]:
     """Explicitly refit the evaluated selection on development plus final-test rows.
 
-    Preserve original rows, indices, dtypes and ID membership. Native pipeline
-    mappings are frozen; only the final estimator's parameters are fitted.
+    Preserve original rows, indices and ID membership. Verify the recorded
+    partition fingerprints after restoring their categorical schemas from typed
+    values. Native pipeline mappings stay frozen while fitting model parameters.
     Reapply the latest replacement for each typed factor and the recorded
     calibration policy on this full training population. No tuning or split is
     performed. The new Run has only full-training metrics, with predecessor
@@ -1068,7 +1187,7 @@ def refit_production(
         raise ValueError("selected configuration or development identity changed after evaluation")
     model = evaluation["model"]
     selected = estimators[model]
-    if _fitted_fingerprint(selected) != evaluation["fitted_fingerprint"]:
+    if run._fitted_fingerprints[model] != evaluation["fitted_fingerprint"]:
         raise ValueError("selected fitted state changed after final evaluation")
     _validate_portfolio(run.config, df)
     id_col = run.config.spec.id_col
@@ -1078,12 +1197,32 @@ def refit_production(
     if set(df[id_col]) != set(expected) or len(df) != len(expected):
         raise ValueError("full portfolio must contain exactly development and final-test IDs")
     positions = pd.Index(df[id_col])
-    development = df.iloc[positions.get_indexer(run.record_ids)]
-    final = df.iloc[positions.get_indexer(evaluation["record_ids"])]
+    development_schema = run._categorical_schema
+    final_schema = run._final_categorical_schema
+    development = _restore_categories(
+        df.iloc[positions.get_indexer(run.record_ids)], development_schema
+    )
+    final = _restore_categories(
+        df.iloc[positions.get_indexer(evaluation["record_ids"])], final_schema
+    )
     if _data_fingerprint(development) != run.data_fingerprint:
         raise ValueError("production development rows must match the original fingerprint")
     if _data_fingerprint(final) != evaluation["data_fingerprint"]:
         raise ValueError("production final-test rows must match evaluated fingerprint")
+    combined_schema = {}
+    for column in development_schema.keys() & final_schema.keys():
+        development_dtype, final_dtype = development_schema[column], final_schema[column]
+        levels = {
+            _typed_scalar(level): level
+            for dtype in (development_dtype, final_dtype)
+            for level in dtype.categories
+        }
+        label_dtype = development_dtype.categories.dtype
+        if label_dtype != final_dtype.categories.dtype:
+            label_dtype = object
+        categories = pd.Index(list(levels.values()), dtype=label_dtype, tupleize_cols=False)
+        combined_schema[column] = pd.CategoricalDtype(categories, ordered=development_dtype.ordered)
+    df = _restore_categories(df, combined_schema)
     source = selected.source if isinstance(selected, RevisedTariff) else selected
     old_rate, _, _ = _score_portfolio(selected, df, run.config.spec)
     fitted = deepcopy(source)
@@ -1092,9 +1231,10 @@ def refit_production(
     y = (df[run.config.spec.target] / df[run.config.spec.exposure]).to_numpy(dtype=float)
     if isinstance(fitted, Pipeline):
         # Frozen transformations must never relearn from the final-test outcomes.
-        from azoic.tariff import _pipeline_parts
+        from azoic.tariff import _tariff_features, _workbook_parts
 
-        _, transformed, _ = _pipeline_parts(fitted, X)
+        _workbook_parts(fitted)
+        transformed = _tariff_features(fitted, X)
         for _, step in fitted.steps[:-1]:
             if isinstance(step, AutoBinner):
                 step.set_params(
@@ -1169,7 +1309,7 @@ def refit_production(
         "predecessor_fitted_fingerprint": evaluation["fitted_fingerprint"],
         "predecessor_final_evaluation": deepcopy(evaluation),
         "predecessor_revision": deepcopy(run.models[model].revision),
-        "fitted_fingerprint": _fitted_fingerprint(fitted),
+        "fitted_fingerprint": production._fitted_fingerprints[model],
         "mapping_policy": "frozen fitted preprocessing; no relearning",
         "calibration_policy": "recompute on full training portfolio"
         if isinstance(fitted, RevisedTariff) and fitted.revision["calibration"]["applied"]

@@ -14,7 +14,7 @@ Both follow the scikit-learn transformer API and survive
 from __future__ import annotations
 
 import warnings
-from collections.abc import Hashable, Mapping, Sequence
+from collections.abc import Hashable, Iterable, Mapping, Sequence
 from numbers import Integral, Real
 from typing import Any, Self, overload
 
@@ -35,6 +35,28 @@ from azoic.data import EXPOSURE_FLOOR, MIN_EXPOSURE
 from azoic.validation import _weighted_quantile_edges
 
 __all__ = ["AutoBinner", "AutoGrouper"]
+
+
+def _category_key(value):
+    if isinstance(value, np.generic) and value.dtype.kind in "biufcSU":
+        value = value.item()
+    return type(value), value
+
+
+def _category_codes(series: pd.Series, levels: Iterable[Hashable]) -> np.ndarray:
+    """Match by scalar type and value, using -1 for unmatched values."""
+    lookup = {_category_key(level): code for code, level in enumerate(levels)}
+    if isinstance(series.dtype, pd.CategoricalDtype):
+        # Use codes directly to avoid converting integer labels to floats around missing rows.
+        recode = np.array(
+            [*(lookup.get(_category_key(level), -1) for level in series.cat.categories), -1]
+        )
+        return recode[series.cat.codes.to_numpy()]
+    return np.fromiter(
+        (lookup.get(_category_key(value), -1) for value in series),
+        dtype=np.intp,
+        count=len(series),
+    )
 
 
 def _fixed_specs(fixed, cols):
@@ -929,7 +951,7 @@ class AutoGrouper(TransformerMixin, BaseEstimator):
 
     @staticmethod
     def _encoded(series, levels):
-        codes = pd.Index(levels).get_indexer(series).astype(float)
+        codes = _category_codes(series, levels).astype(float)
         codes[codes < 0] = np.nan
         return codes
 
@@ -951,13 +973,16 @@ class AutoGrouper(TransformerMixin, BaseEstimator):
         out = X_df.copy()
         unseen = {}
         for col, mp in self.mapping_.items():
-            unknown = ~out[col].isin(mp)
-            if self.strategy == "similarity":
-                unknown &= out[col].notna()
+            missing = out[col].isna().to_numpy()
+            codes = _category_codes(out[col], self.levels_.get(col, mp))
+            unknown = codes < 0
+            if self.strategy == "similarity" or col in self.unseen_:
+                unknown &= ~missing
             if unknown.any():
                 unseen[col] = out.loc[unknown, col].drop_duplicates().tolist()
             if col in self.trees_:
-                values = self._encoded(out[col], self.levels_[col])
+                values = codes.astype(float)
+                values[codes < 0] = np.nan
                 groups = self.leaf_groups_[col]
                 group_codes = pd.Categorical(
                     [groups[leaf] for leaf in range(len(groups))],
@@ -968,17 +993,16 @@ class AutoGrouper(TransformerMixin, BaseEstimator):
                     group_codes[leaves], dtype=self.category_dtypes_[col]
                 )
             else:
-                out[col] = (
-                    out[col]
-                    .astype(object)
-                    .map(
-                        pd.Series(
-                            list(mp.values()), index=pd.Index(list(mp), dtype=object), dtype=object
-                        )
-                    )
-                    .mask(out[col].isna(), self.missing_[col])
-                    .fillna(self.unseen_.get(col, self.missing_[col]))
-                    .astype(self.category_dtypes_[col])
+                missing_group = self.missing_[col]
+                unseen_group = self.unseen_.get(col, missing_group)
+                group_codes = pd.Categorical(
+                    pd.Index([*mp.values(), missing_group, unseen_group], dtype=object),
+                    dtype=self.category_dtypes_[col],
+                ).codes
+                # Unmatched codes (-1) select the last destination, for unseen levels.
+                codes[missing] = len(mp)
+                out[col] = pd.Categorical.from_codes(
+                    group_codes[codes], dtype=self.category_dtypes_[col]
                 )
         if unseen:
             details = "; ".join(f"{column}={levels!r}" for column, levels in unseen.items())
@@ -1020,16 +1044,21 @@ class AutoGrouper(TransformerMixin, BaseEstimator):
         if set(missing) - set(replacement):
             raise ValueError("missing destinations must name mapping columns")
         trees, leaf_groups, levels, routes, dtypes = {}, {}, {}, {}, {}
+        unchanged = set()
         for col, values in replacement.items():
-            unchanged = values == self.tree_mappings_.get(col, self.mapping_[col])
-            if col in self.trees_ and unchanged and col not in missing:
+            current = self.tree_mappings_.get(col, self.mapping_[col])
+            if col not in missing and {
+                _category_key(level): _category_key(group) for level, group in values.items()
+            } == {_category_key(level): _category_key(group) for level, group in current.items()}:
+                unchanged.add(col)
+            if col in self.trees_ and col in unchanged:
                 trees[col] = self.trees_[col]
                 leaf_groups[col] = self.leaf_groups_[col]
                 levels[col] = self.levels_[col]
                 routes[col] = self.missing_[col]
                 dtypes[col] = self.category_dtypes_[col]
                 continue
-            if col not in self.trees_ and unchanged and col not in missing:
+            if col in unchanged:
                 routes[col] = self.missing_[col]
                 dtypes[col] = self.category_dtypes_[col]
                 continue
@@ -1044,9 +1073,7 @@ class AutoGrouper(TransformerMixin, BaseEstimator):
             )
             routes[col] = route
         unseen_routes = {
-            col: self.unseen_.get(col, routes[col])
-            if replacement[col] == self.mapping_[col] and col not in missing
-            else routes[col]
+            col: self.unseen_.get(col, routes[col]) if col in unchanged else routes[col]
             for col in replacement
         }
         self.mapping_ = replacement

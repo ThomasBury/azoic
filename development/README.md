@@ -6,10 +6,18 @@ Read historical records only when their evidence is needed.
 
 ## Current focus
 
+- **0.7.0 delivery ◐** — prepare and review the completed portfolio identity
+  and workbook/scorer fixes. This minor release documents the saved-run
+  compatibility change. The next audit milestone is still pending.
+- **0.6.2 audit remediation:** deliver one milestone per session in this order.
+  - ☑ Verify portfolio and fitted-model identity.
+  - ☑ Make workbook and scorer delivery agree.
+  - ☐ Harden preflight, tuning and large reviews.
+  - ☐ Close distribution, real-data tutorial, M62 and receiving-engine evidence.
 - **0.6.2 delivery ☑** — published on 2026-11-12 from reviewed commit `d459cd4`.
   [GitHub v0.6.2](https://github.com/ThomasBury/azoic/releases/tag/v0.6.2) and
   [PyPI 0.6.2](https://pypi.org/project/azoic/0.6.2/) are public and verified.
-  [PR #28](https://github.com/ThomasBury/azoic/pull/28) is open with
+  [PR #28](https://github.com/ThomasBury/azoic/pull/28) was merged with
   `documentation`/`release` labels. Codex and CodeRabbit found no actionable issues;
   all nine release-commit CI jobs passed. The final checkpoint records publication
   only. No product milestone or merge is included.
@@ -50,8 +58,7 @@ Read historical records only when their evidence is needed.
 | External engine/deployment | Real receiving-engine agreement, deployment and rollback remain downstream evidence; synthetic agreement tests do not establish readiness. |
 
 Conditional features in [design](design.md#deferred-and-demand-gated-work) are
-not scheduled milestones. No next product milestone is selected; the 0.6.2
-maintenance release above is explicitly authorized.
+outside the audit remediation milestones.
 
 ## M62 observation protocol
 
@@ -155,7 +162,55 @@ measurement definitions, historical tables and limitations. Those measurements d
 not cover tuning/FSM, large reviews, production-bundle performance, high cardinality,
 missing-heavy portfolios or Windows performance. No runtime, memory or readiness promise follows.
 
-## Latest checkpoint — 0.6.2 delivery — 2026-11-12
+## Latest checkpoint — 0.7.0 delivery — 2026-11-18
+
+Package metadata, the lockfile, bundled skills, installation examples and
+changelog target 0.7.0. Locked offline sync, the strict docs build and
+`just check` passed (1,528 tests, 4 skips, 2 expected failures). Fresh
+Python 3.12 wheel and source distribution installs passed the full
+installed-package smoke. GitHub review, CI and publication are pending.
+
+Next action: validate the release branch, open the PR and publish from the
+reviewed commit after checks pass.
+
+## Previous checkpoint — audit remediation milestone 2 — 2026-11-18
+
+The three-sheet export rejects overlong text and oversized numeric integer
+category cells before opening a workbook. Typed category matching rejects raw
+aliases and preserves distinct missing and unseen routes for fixed grouping.
+Production probes use fitted preprocessing directly, and export formats its
+preprocessing descriptions once.
+
+`just check` passed Ruff, Ty and **1,528 tests** (4 skips, 2 expected failures,
+29 warnings). The first full run stopped when the system temporary directory
+hit its quota. The successful rerun used temporary files under the ignored
+workspace test cache. The tests reopened workbooks at the supported limits,
+verified destination preservation on failure and independently reproduced
+rates from the workbook and specification. Both scorer modes agreed with
+fitted rates, including batch period costs. `just docs-build` and
+`git diff --check` passed.
+
+The next milestone is preflight, tuning and large reviews. Distribution checks
+belong to the release checkpoint above. The real-data tutorial, M62
+practitioner handoffs and receiving-engine agreement remain pending.
+
+## Previous checkpoint — audit remediation milestone 1 — 2026-11-18
+
+Implemented typed portfolio fingerprints, categorical partition recovery and
+shared fitted-state checks. Production refit accepts the original portfolio and
+lossless concatenations, checks both partitions before scoring, and uses the
+development category order followed by final-only levels. Same-name swaps fail
+before scoring or replacing a saved artifact. The operations guide and bundled
+tariff recipe show how to keep integer labels and indices exact. Artifacts
+without fitted-state fingerprints require their original trusted environment.
+
+`just check` passed Ruff, Ty and **1,523 tests** (4 skips, 2 expected failures,
+22 warnings). Focused checks covered persistence, production refit, review and
+revision, including fresh-process reload. The final tuned and revised copy
+assertions passed in a two-test rerun. `just docs-build` and `git diff --check`
+passed. The changes are included in the 0.7.0 release branch.
+
+## Previous checkpoint — 0.6.2 delivery — 2026-11-12
 
 - [x] Inspect the complete diff, current releases and delivery conventions.
 - [x] Align the package, lockfile, bundled skills, docs and changelog with 0.6.2.

@@ -1,8 +1,8 @@
 # Data and preparation API
 
-!!! note "Azoic 0.6.2 documentation"
+!!! note "Azoic 0.7.0 documentation"
 
-    This page describes Azoic 0.6.2. See the
+    This page describes Azoic 0.7.0. See the
     [changelog](https://github.com/ThomasBury/azoic/blob/main/CHANGELOG.md)
     for changes since 0.5.0.
 

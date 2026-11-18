@@ -395,7 +395,7 @@ def tariff_review(
     from azoic.metrics import calibration_table
     from azoic.models import RiskGLM
     from azoic.plots import plot_lift, plot_one_way
-    from azoic.tariff import RevisedTariff, _factors_frame, _pipeline_parts, extract_tariff
+    from azoic.tariff import RevisedTariff, _factors_frame, _workbook_parts, extract_tariff
     from azoic.workflow import _data_fingerprint, _validate_candidates, _validate_portfolio
 
     if not runs or not rationale.strip():
@@ -456,7 +456,7 @@ def tariff_review(
     candidates = {}
     metadata, mapping_frames, factor_frames, revisions = [], [], [], []
     mapping_snapshots, factor_snapshots = {}, {}
-    for alias, (run, estimators) in runs.items():
+    for run, estimators in runs.values():
         if (
             run.data_fingerprint != reference.data_fingerprint
             or run.config.spec.model_dump(exclude={"excluded_cols"}) != basis
@@ -475,6 +475,7 @@ def tariff_review(
         if not run.models:
             raise ValueError("review requires at least one model per run")
         _validate_candidates(run, estimators)
+    for alias, (run, estimators) in runs.items():
         for name, estimator in estimators.items():
             label = f"{alias}/{name}"
             if label in candidates:
@@ -493,7 +494,7 @@ def tariff_review(
                     scale = "revised structural"
                 revisions.extend({"candidate": label, **change} for change in revision["changes"])
             source = estimator.source if isinstance(estimator, RevisedTariff) else estimator
-            backend, _, mapping = _pipeline_parts(source, None)
+            backend, mapping = _workbook_parts(source)
             mapping_frames.append(mapping.assign(candidate=label))
             mapping_snapshots[label] = {
                 (row["feature"], row["role"]): repr(row)

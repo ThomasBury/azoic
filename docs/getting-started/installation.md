@@ -7,7 +7,7 @@ dependencies do not conflict with another project.
 !!! note "Current release"
 
     This site and the [first model](first-model.md) target
-    **Azoic 0.6.2**. See the
+    **Azoic 0.7.0**. See the
     [changelog](https://github.com/ThomasBury/azoic/blob/main/CHANGELOG.md) for
     changes since 0.5.0.
 
@@ -48,7 +48,7 @@ activation is needed. In a new directory:
 ```bash
 uv init --python 3.12 my-pricing-project
 cd my-pricing-project
-uv add azoic==0.6.2
+uv add azoic==0.7.0
 uv run python -c "import azoic; print(azoic.__version__)"
 uv run azoic --help
 ```
@@ -56,13 +56,23 @@ uv run azoic --help
 In an existing uv project, run just the last three commands. Then follow the
 [first model](first-model.md); you do not need Git, Quarto or contributor tools.
 With pip, activate a Python 3.12 virtual environment and run
-`python -m pip install azoic==0.6.2`, then `python first_model.py`.
-
-This site uses Azoic 0.6.2; its modelling APIs are unchanged from 0.6.0.
+`python -m pip install azoic==0.7.0`, then `python first_model.py`.
 
 Registry extras use package notation, for example
-`uv add 'azoic[mlops,tune]==0.6.2'` or
-`python -m pip install 'azoic[mlops,tune]==0.6.2'`.
+`uv add 'azoic[mlops,tune]==0.7.0'` or
+`python -m pip install 'azoic[mlops,tune]==0.7.0'`.
+
+## Upgrade from 0.6.x
+
+Keep the original trusted Azoic and dependency environment to use saved
+runs and production bundles from earlier versions. For a new workflow in
+0.7.0, fit and save a fresh run from the original data and configuration.
+Repeat final evaluation and production refit separately if needed.
+
+Keep the original category label types when preparing data for scoring.
+For example, a float `1.0` is a different category from an integer `1`.
+See [tariff operations](../guide/operations.md) for the workbook limits and
+production input rules.
 
 ## Work from a checkout
 
