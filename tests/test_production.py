@@ -223,6 +223,25 @@ def test_refit_restores_saved_partition_categories_without_rounding(journey, tmp
             refit_production(run, models, df=changed, rationale="Approved")
 
 
+def test_refit_preserves_typed_values_when_categories_cannot_be_combined(journey):
+    from azoic.workflow import _data_fingerprint
+
+    full, development, final, original, _ = journey
+    development["excluded_code"] = pd.Categorical([1] * len(development))
+    final["excluded_code"] = pd.Categorical([1.0] * len(final))
+    labels = pd.concat([frame.excluded_code.astype(object) for frame in (development, final)])
+    assert set(map(type, labels)) == {int, float}
+    full = full.assign(excluded_code=labels)
+    config = original.config.model_copy(deep=True)
+    config.spec.excluded_cols = ["excluded_code"]
+    run, models = run_experiment(config, df=development, return_estimators=True)
+    run, models = evaluated((full, development, final, run, models))
+
+    production, _ = refit_production(run, models, df=full, rationale="Approved")
+
+    assert production.data_fingerprint == _data_fingerprint(full)
+
+
 def test_refit_rejects_object_label_type_change_with_same_fixed_group(journey, monkeypatch):
     full, _, _, previous, _ = journey
     full["region"] = np.resize(np.array([1, "1", "other"], dtype=object), len(full))
@@ -566,15 +585,16 @@ def test_workbook_specification_and_batch_recipe_agree(journey, tmp_path, monkey
     full, development, _, original, candidates = journey
     cases = pd.DataFrame({"driver_age": [30.0, 60.0], "region": ["urban", "rural"]})
     units = {"driver_age": "years", "region": "category"}
+    numeric_feature = "synthetic-age"
     if revised:
-        full = full.assign(
+        full = full.rename(columns={"vehicle_age": numeric_feature}).assign(
             region=pd.Categorical.from_codes(
                 np.resize([0, 1, -1, 2], len(full)), categories=[1, 2, 3]
             )
         )
         development, final = full.iloc[:480], full.iloc[480:]
         config = original.config.model_copy(deep=True)
-        config.features.append("vehicle_age")
+        config.features.append(numeric_feature)
         config.preprocessing.grouper["fixed"] = {
             "region": {
                 "groups": [
@@ -597,8 +617,8 @@ def test_workbook_specification_and_batch_recipe_agree(journey, tmp_path, monkey
             ],
         )
         journey = (full, development, final, original, candidates)
-        cases = cases.assign(region=[1.0, np.nan], vehicle_age=[4.1, 9.2])
-        units["vehicle_age"] = "years"
+        cases = cases.assign(region=[1.0, np.nan], **{numeric_feature: [4.1, 9.2]})
+        units[numeric_feature] = "years"
     run, models = evaluated(journey)
     production, fitted = refit_production(run, models, df=full, rationale="Approved")
 
@@ -623,6 +643,10 @@ def test_workbook_specification_and_batch_recipe_agree(journey, tmp_path, monkey
     assert any("-at" in case["case"] for case in agreements)
     assert any("-below" in case["case"] for case in agreements)
     assert any("-above" in case["case"] for case in agreements)
+    if revised:
+        outcomes = {case["case"]: case["outcome"] for case in agreements}
+        assert outcomes[f"{numeric_feature}-missing"] == "reject"
+        assert outcomes[f"{numeric_feature}-nonfinite"] == "reject"
     sheets = pd.read_excel(path.parent / "tariff.xlsx", sheet_name=None)
     factors, mappings = sheets["factors"], sheets["mappings"]
     base = sheets["base_rate"].base_rate.iloc[0]
@@ -658,11 +682,11 @@ def test_workbook_specification_and_batch_recipe_agree(journey, tmp_path, monkey
             else group_map.get((type(region), region), groups.unseen_destination)
         )
         result = base * workbook_factors["driver_age", age_band] * workbook_factors["region", group]
-        if "vehicle_age" in values:
-            value = values["vehicle_age"]
+        if numeric_feature in values:
+            value = values[numeric_feature]
             if value is None or not np.isfinite(value):
                 raise ValueError("missing/nonfinite numeric")
-            result *= workbook_factors["vehicle_age", "_per_unit"] ** value
+            result *= workbook_factors[numeric_feature, "_per_unit"] ** value
         return result
 
     def score_specification(values):
@@ -742,7 +766,7 @@ def test_workbook_specification_and_batch_recipe_agree(journey, tmp_path, monkey
         rows.predicted_period_cost, expected * batch.exposure, rtol=1e-12, atol=0
     )
     np.testing.assert_allclose(
-        [case["expected_rate"] for case in agreements if case["case"].startswith("synthetic-")],
+        [case["expected_rate"] for case in agreements[: len(cases)]],
         expected,
         rtol=1e-12,
         atol=0,

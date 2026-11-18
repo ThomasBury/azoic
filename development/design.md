@@ -120,8 +120,9 @@ are repository-root pytest nodes; run them with `uv run pytest NODE` after contr
 ### Tariff review, final evaluation and production
 
 - Workbook export supports native bins/groups, workflow column removal and passthrough.
-  Reject unrepresentable transforms, text cells longer than 32,767 characters and
-  numeric integer category cells beyond 15 digits before opening workbooks.
+  Reject unrepresentable transforms, text cells longer than 32,767 characters,
+  numeric integer category cells beyond 15 digits and integer-valued float
+  category cells before opening workbooks.
   Generic distillation transforms remain supported. Preserve destination permission
   bits and replace only after fully saving a sibling temporary workbook. Retain
   the three-sheet contract.
@@ -141,10 +142,11 @@ are repository-root pytest nodes; run them with `uv run pytest NODE` after contr
   partitions by recorded ID and order and restores categorical columns only after
   validating typed membership. Both fingerprints must match before scoring or
   fitting. The full fit uses development category order followed by final-only
-  levels. Then freeze native preprocessing, clone model
-  parameters, reapply latest typed factor overrides and recompute the recorded
-  calibration policy once on full rows. Production metrics are `_full` training
-  evidence; predecessor final evidence remains attributed to the selected frozen fit.
+  levels. When pandas considers differently typed levels equal, keep the
+  verified scalar values in an object column. Then freeze native preprocessing,
+  clone model parameters, reapply latest typed factor overrides and recompute the
+  recorded calibration policy once on full rows. Production metrics are `_full`
+  training evidence; predecessor final evidence belongs to the selected frozen fit.
 - `export_production` creates a new versioned specification/workbook/trusted artifact/
   batch recipe/agreement bundle without fitting or recalibration. All model kinds
   can evaluate/refit; workbook delivery requires an exportable log-link GLM. Test

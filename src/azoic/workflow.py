@@ -1210,6 +1210,7 @@ def refit_production(
     if _data_fingerprint(final) != evaluation["data_fingerprint"]:
         raise ValueError("production final-test rows must match evaluated fingerprint")
     combined_schema = {}
+    object_columns = {}
     for column in development_schema.keys() & final_schema.keys():
         development_dtype, final_dtype = development_schema[column], final_schema[column]
         levels = {
@@ -1221,8 +1222,16 @@ def refit_production(
         if label_dtype != final_dtype.categories.dtype:
             label_dtype = object
         categories = pd.Index(list(levels.values()), dtype=label_dtype, tupleize_cols=False)
-        combined_schema[column] = pd.CategoricalDtype(categories, ordered=development_dtype.ordered)
+        if categories.is_unique:
+            combined_schema[column] = pd.CategoricalDtype(
+                categories, ordered=development_dtype.ordered
+            )
+        else:
+            # Pandas can consider typed labels such as 1 and 1.0 duplicates.
+            object_columns[column] = object
     df = _restore_categories(df, combined_schema)
+    if object_columns:
+        df = df.astype(object_columns)
     source = selected.source if isinstance(selected, RevisedTariff) else selected
     old_rate, _, _ = _score_portfolio(selected, df, run.config.spec)
     fitted = deepcopy(source)

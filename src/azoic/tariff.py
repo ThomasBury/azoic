@@ -671,16 +671,17 @@ def _validate_workbook_cells(sheets: dict[str, pd.DataFrame]) -> None:
                         f"export_tariff: {name}.{column} row {number} exceeds "
                         "Excel's 32,767-character cell limit"
                     )
-                if (
-                    name == "factors"
-                    and column == "level"
-                    and isinstance(value, Integral)
-                    and abs(int(value)) >= 10**15
-                ):
-                    raise ValueError(
-                        f"export_tariff: {name}.{column} row {number} has an integer "
-                        "category label outside Excel's 15-digit range"
-                    )
+                if name == "factors" and column == "level":
+                    if isinstance(value, Integral) and abs(int(value)) >= 10**15:
+                        raise ValueError(
+                            f"export_tariff: {name}.{column} row {number} has an integer "
+                            "category label outside Excel's 15-digit range"
+                        )
+                    if isinstance(value, (float, np.floating)) and value.is_integer():
+                        raise ValueError(
+                            f"export_tariff: {name}.{column} row {number} has an "
+                            "integer-valued float category label that Excel stores as an integer"
+                        )
 
 
 def export_tariff(
@@ -715,8 +716,8 @@ def export_tariff(
     transforms (including scalers, arbitrary functions and column transformers)
     raise ``ValueError`` before any workbook is opened. Preprocessing mapping
     rows retain pipeline order; removed columns have role ``"dropped"``. Text
-    cells over 32,767 characters and integer category cells over 15 digits
-    are rejected before writing.
+    cells over 32,767 characters, integer category cells over 15 digits and
+    integer-valued float category cells are rejected before writing.
 
     A sibling temporary workbook is fully written and closed before replacing
     the destination, preserving an existing destination's permission bits.
@@ -843,7 +844,7 @@ def _restore_raw_categories(frame, dtypes) -> None:
         frame[feature] = pd.Categorical.from_codes(codes, dtype=dtype)
 
 
-def _production_agreement(probes, estimator, glm, tariff, raw_categories):
+def _production_agreement(probes, estimator, glm, tariff, raw_categories, *, supplied_count):
     dtypes = {
         feature: pd.CategoricalDtype(
             pd.Index(schema["categories"], dtype=object), schema["ordered"]
@@ -853,7 +854,7 @@ def _production_agreement(probes, estimator, glm, tariff, raw_categories):
     revised = isinstance(estimator, RevisedTariff)
     source = estimator.source if revised else estimator
     agreement = []
-    for label, values in probes:
+    for index, (label, values) in enumerate(probes):
         frame = pd.DataFrame([values])
         try:
             _restore_raw_categories(frame, dtypes)
@@ -863,7 +864,7 @@ def _production_agreement(probes, estimator, glm, tariff, raw_categories):
             if expected.shape != (1,) or not np.isfinite(expected).all() or (expected < 0).any():
                 raise ValueError("invalid predicted rate")
         except (ValueError, TypeError) as error:
-            if label.startswith("synthetic-"):
+            if index < supplied_count:
                 raise ValueError(f"supplied synthetic case cannot be scored: {label}") from error
             agreement.append(
                 {"case": label, "input": values, "outcome": "reject", "error": type(error).__name__}
@@ -1091,7 +1092,9 @@ def export_production(
         staging = Path(temporary) / "bundle"
         staging.mkdir()
         export_tariff(estimator, staging / "tariff.xlsx", recalibrate=False)
-        agreement = _production_agreement(probes, estimator, glm, tariff, raw_categories)
+        agreement = _production_agreement(
+            probes, estimator, glm, tariff, raw_categories, supplied_count=len(cases)
+        )
         save_run(run, estimators, staging / "production.pkl")
         (staging / "agreement.json").write_text(
             json.dumps(encode(agreement), indent=2, allow_nan=False), encoding="utf-8"

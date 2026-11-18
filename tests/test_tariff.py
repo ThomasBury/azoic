@@ -1144,7 +1144,9 @@ def test_workbook_text_and_integer_limit_readback(tmp_path):
         workbook.close()
 
 
-@pytest.mark.parametrize("problem", ["oversized_mapping", "large_integer_labels"])
+@pytest.mark.parametrize(
+    "problem", ["oversized_mapping", "large_integer_labels", "integer_valued_float_labels"]
+)
 def test_unsafe_workbook_cells_fail_before_opening_destination(tmp_path, monkeypatch, problem):
     from sklearn.pipeline import Pipeline
 
@@ -1165,9 +1167,12 @@ def test_unsafe_workbook_cells_fail_before_opening_destination(tmp_path, monkeyp
         )
         model = Pipeline([("group", group), ("model", model)])
         error = r"mappings\.mapping .*32,767"
-    else:
+    elif problem == "large_integer_labels":
         levels = pd.Categorical([10**16 + 1, 10**16 + 2] * 10)
         error = r"factors\.level .*15-digit"
+    else:
+        levels = pd.Categorical([1.0, 2.5] * 10)
+        error = r"factors\.level .*integer-valued float"
     model.fit(pd.DataFrame({"code": levels}), np.linspace(1, 2, len(levels)))
     out = tmp_path / "existing.xlsx"
     out.write_bytes(b"previous workbook")

@@ -10,8 +10,9 @@
 - Verify typed portfolio values and restore the original categorical schemas
   before production refit. Accept the original portfolio or a losslessly
   concatenated union of its verified development and final-test rows.
-- Reject Excel tariff exports with cell text beyond 32,767 characters or
-  numeric integer category labels beyond 15 digits before writing a workbook.
+- Reject Excel tariff exports with cell text beyond 32,767 characters,
+  integer labels beyond 15 digits, or integer-valued float labels that
+  would read back as integers.
 - Match categorical predictors by scalar type and value in tariff application,
   native grouping and the production batch scorer. For example, a float
   `1.0` routes as unseen for a fixed group keyed by integer `1`.

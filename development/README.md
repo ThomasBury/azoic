@@ -176,6 +176,14 @@ fits of the same verified data. The regression now uses a `1e-12` relative
 tolerance for the two sets of predictions and still checks the portfolio
 fingerprint exactly.
 
+CodeRabbit also found three edge cases. Workbook export rejects integer-valued
+float factor labels before writing. Generated scoring probes retain their own
+origin even when a feature name starts with `synthetic-`. Production refit
+keeps verified scalar values when pandas cannot represent the combined category
+labels. The follow-up passed `just check` (1,530 tests, 4 skips, 2 expected
+failures), strict docs and fresh wheel and source distribution installs.
+CodeRabbit reported that its free review allowance was exhausted.
+
 Next action: verify bot review and CI on the updated PR head, then publish
 from that commit.
 

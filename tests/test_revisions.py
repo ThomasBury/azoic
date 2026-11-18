@@ -541,7 +541,7 @@ def test_workbook_preserves_revision_evidence_for_mixed_numeric_categories(tmp_p
     frame = pd.DataFrame(
         {
             "integer_code": pd.Categorical([1, 1, 2, 2] * 10),
-            "float_code": pd.Categorical([1.0, 2.5, 1.0, 2.5] * 10),
+            "float_code": pd.Categorical([1.25, 2.5, 1.25, 2.5] * 10),
             "exposure": 1.0,
         }
     )
@@ -550,16 +550,17 @@ def test_workbook_preserves_revision_evidence_for_mixed_numeric_categories(tmp_p
     )
     replacements = [
         {"feature": "integer_code", "level": 1, "factor": 1.2, "reason": "integer decision"},
-        {"feature": "float_code", "level": 1.0, "factor": 1.3, "reason": "float decision"},
+        {"feature": "float_code", "level": 1.25, "factor": 1.3, "reason": "float decision"},
     ]
     revised = revise_tariff(model, replacements, recalibrate=False)
     path = tmp_path / "typed-revision.xlsx"
     export_tariff(revised, path, recalibrate=False)
-    factors = pd.read_excel(path, sheet_name="factors")
+    factors = pd.read_excel(path, sheet_name="factors", dtype={"level": object})
     for change in revised.revision["changes"]:
         row = factors.loc[
             (factors.feature == change["feature"]) & (factors.level == change["level"])
         ].iloc[0]
+        assert type(row.level) is type(change["level"])
         assert row.reason == change["reason"]
         assert row.original_factor == pytest.approx(change["original_factor"])
         assert row.multiplicative_factor == change["factor"]

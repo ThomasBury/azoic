@@ -442,9 +442,9 @@ model. Keep those pipelines in Python for scoring, or use the supported
 preprocessing when a workbook is required.
 
 Export rejects cells containing more than 32,767 characters and numeric integer
-category labels containing more than 15 digits. This prevents Excel from
-truncating mapping descriptions or rounding distinct integer labels together.
-The error identifies the sheet, column and row.
+category labels containing more than 15 digits. It also rejects integer-valued
+float labels such as `1.0` in the factors sheet because workbook readers can
+return them as integers. The error identifies the sheet, column and row.
 
 Export writes and closes a temporary workbook beside the destination, then
 atomically replaces the destination. A serialization, save or replacement error
@@ -625,7 +625,9 @@ Use `UInt64` for unsigned integer labels. The intermediate `object` conversion
 keeps integer labels exact when categories contain missing values. Refit rejects
 labels that changed type or were rounded during concatenation or storage.
 When vocabularies differ, the full fit uses the development category order
-followed by levels found only in the final-test vocabulary.
+followed by levels found only in the final-test vocabulary. If pandas considers
+two differently typed levels equal, the full portfolio keeps the original values
+and types in an object column.
 
 Refitting freezes learned native bins and groups, including interval closure and
 missing and unseen destinations, and clones the final estimator's settings to
