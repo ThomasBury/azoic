@@ -1,8 +1,8 @@
 # Data profiling and preprocessing
 
-!!! note "Azoic 0.7.1 documentation"
+!!! note "Azoic 0.7.2 documentation"
 
-    This page describes Azoic 0.7.1. See the
+    This page describes Azoic 0.7.2. See the
     [changelog](https://github.com/ThomasBury/azoic/blob/main/CHANGELOG.md)
     for changes since 0.5.0.
 

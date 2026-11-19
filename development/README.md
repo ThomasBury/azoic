@@ -6,10 +6,17 @@ Read historical records only when their evidence is needed.
 
 ## Current focus
 
+- **0.7.2 delivery ☑** — published on 2026-11-19 from reviewed commit `15c9ec1`.
+  [GitHub v0.7.2](https://github.com/ThomasBury/azoic/releases/tag/v0.7.2) and
+  [PyPI 0.7.2](https://pypi.org/project/azoic/0.7.2/) are verified.
+  [PR #30](https://github.com/ThomasBury/azoic/pull/30) is open for merge.
+- **Pages tutorial snapshot ☑** — the Pages workflow uses the verified
+  freMTPL2 archive attached to GitHub v0.7.1 after two OpenML metadata failures.
+  The tutorial and strict site build passed locally. Pages verification awaits merge.
 - **0.7.1 delivery ☑** — published on 2026-11-19 from reviewed commit `eeda716`.
   [GitHub v0.7.1](https://github.com/ThomasBury/azoic/releases/tag/v0.7.1) and
   [PyPI 0.7.1](https://pypi.org/project/azoic/0.7.1/) are verified.
-  [PR #29](https://github.com/ThomasBury/azoic/pull/29) is open for merge.
+  [PR #29](https://github.com/ThomasBury/azoic/pull/29) merged at `bb2d04a`.
 - **0.7.0 delivery ☑** — published on 2026-11-18 from reviewed commit `c52ce88`.
   [GitHub v0.7.0](https://github.com/ThomasBury/azoic/releases/tag/v0.7.0) and
   [PyPI 0.7.0](https://pypi.org/project/azoic/0.7.0/) are verified.
@@ -165,7 +172,45 @@ measurement definitions, historical tables and limitations. Those measurements d
 not cover tuning/FSM, large reviews, production-bundle performance, high cardinality,
 missing-heavy portfolios or Windows performance. No runtime, memory or readiness promise follows.
 
-## Latest checkpoint — 0.7.1 delivery — 2026-11-19
+## Latest checkpoint — 0.7.2 delivery — 2026-11-19
+
+Locked offline sync, workflow lint, strict Zensical and `just check` passed
+(1,531 tests, four skips, two expected failures). Fresh Python 3.12 installs
+passed the wheel and source distribution smokes. A clean checkout rendered all
+eleven tutorial pages in one pass and assembled the site with OpenML blocked.
+
+[Codex](https://github.com/ThomasBury/azoic/pull/30#issuecomment-7016502818)
+and [CodeRabbit](https://github.com/ThomasBury/azoic/pull/30#issuecomment-7016504954)
+found no actionable issues on `15c9ec1`. All nine
+[PR CI jobs](https://github.com/ThomasBury/azoic/actions/runs/44575546525)
+passed on that commit. Tag `v0.7.2` points to `15c9ec1`.
+
+The [release workflow](https://github.com/ThomasBury/azoic/actions/runs/44576533620)
+passed build and PyPI publication. The public wheel and source archive match
+their published checksums. A fresh Python 3.12 install passed dependency,
+version and CLI checks. All 29 package and license files matched the local wheel.
+
+Verify the live Pages deployment after the maintainer merges PR #30.
+
+## Previous checkpoint — Pages tutorial snapshot — 2026-11-19
+
+The [November 19 Pages run](https://github.com/ThomasBury/azoic/actions/runs/44563426527)
+failed while fetching OpenML metadata for dataset 41214. The
+[workflow](../.github/workflows/docs.yml) now downloads the
+[freMTPL2 snapshot](https://github.com/ThomasBury/azoic/releases/download/v0.7.1/fremtpl2-openml-v1.tar.gz)
+from the existing GitHub release and verifies its SHA-256 before extraction.
+Both raw ARFF checksums match the pinned OpenML versions.
+
+The public download and checksum step passed. A corrupted archive was rejected
+before extraction. `actionlint` and `just check` passed (1,531 tests, four skips,
+two expected failures). A clean checkout rendered all eleven tutorial pages
+with OpenML requests blocked. The first seven pages rendered in the full book
+run before a local temporary filesystem quota stopped it. The final four
+chapters rendered after moving the build into the ignored workspace cache.
+The strict Zensical build and tutorial assembly passed. Verify the Pages job
+after the workflow change reaches `main`.
+
+## Previous checkpoint — 0.7.1 delivery — 2026-11-19
 
 CodeRabbit verified that a non-integral category label can change value when
 written to Excel. Export now checks the workbook writer's numeric text and
