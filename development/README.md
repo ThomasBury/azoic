@@ -6,10 +6,13 @@ Read historical records only when their evidence is needed.
 
 ## Current focus
 
+- **0.7.1 delivery ◐** — prepare the workbook precision correction found
+  in the follow-up review of PR #29.
 - **0.7.0 delivery ☑** — published on 2026-11-18 from reviewed commit `c52ce88`.
   [GitHub v0.7.0](https://github.com/ThomasBury/azoic/releases/tag/v0.7.0) and
   [PyPI 0.7.0](https://pypi.org/project/azoic/0.7.0/) are verified.
-  [PR #29](https://github.com/ThomasBury/azoic/pull/29) is open for merge.
+  [PR #29](https://github.com/ThomasBury/azoic/pull/29) carries the changes and
+  the 0.7.1 follow-up.
 - **0.6.2 audit remediation:** deliver one milestone per session in this order.
   - ☑ Verify portfolio and fitted-model identity.
   - ☑ Make workbook and scorer delivery agree.
@@ -160,7 +163,20 @@ measurement definitions, historical tables and limitations. Those measurements d
 not cover tuning/FSM, large reviews, production-bundle performance, high cardinality,
 missing-heavy portfolios or Windows performance. No runtime, memory or readiness promise follows.
 
-## Latest checkpoint — 0.7.0 delivery — 2026-11-19
+## Latest checkpoint — 0.7.1 delivery — 2026-11-19
+
+CodeRabbit verified that a non-integral category label can change value when
+written to Excel. Export now checks the workbook writer's numeric text and
+rejects float labels that change on readback. Locked offline sync passed.
+
+`just check` passed Ruff, Ty and 1,531 tests with four skips and two expected
+failures. The strict docs build and fresh Python 3.12 wheel and source
+distribution smokes passed.
+
+Next action: verify bot review and CI on the patch, then publish from the
+reviewed commit.
+
+## Previous checkpoint — 0.7.0 delivery — 2026-11-19
 
 Package metadata, the lockfile, bundled skills, installation examples and
 changelog target 0.7.0. Older saved runs and production bundles require
@@ -189,8 +205,8 @@ A fresh public PyPI install passed dependency, CLI and version checks. Its
 package and license files matched the local wheel byte for byte. Wheel metadata
 records the distinct local and CI uv generator versions.
 
-Next action: maintainer merge of PR #29. The real-data tutorial, M62 practitioner
-handoffs and receiving-engine agreement are pending.
+The real-data tutorial, M62 practitioner handoffs and receiving-engine
+agreement are pending.
 
 ## Previous checkpoint — audit remediation milestone 2 — 2026-11-18
 

@@ -121,8 +121,8 @@ are repository-root pytest nodes; run them with `uv run pytest NODE` after contr
 
 - Workbook export supports native bins/groups, workflow column removal and passthrough.
   Reject unrepresentable transforms, text cells longer than 32,767 characters,
-  numeric integer category cells beyond 15 digits and integer-valued float
-  category cells before opening workbooks.
+  numeric integer category cells beyond 15 digits and float category cells
+  whose type or value changes during round-trip before opening workbooks.
   Generic distillation transforms remain supported. Preserve destination permission
   bits and replace only after fully saving a sibling temporary workbook. Retain
   the three-sheet contract.

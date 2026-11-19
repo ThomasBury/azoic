@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.7.1 — 2026-11-19
+
+- Reject Excel tariff exports before writing when a float category label would
+  be rounded in the workbook, preserving exact category matching.
+
 ## 0.7.0 — 2026-11-18
 
 - Bind each saved candidate to its fitted state and verify the pair before

@@ -1,8 +1,8 @@
 # freMTPL2 tutorial
 
-!!! note "Azoic 0.7.0 documentation"
+!!! note "Azoic 0.7.1 documentation"
 
-    This page describes Azoic 0.7.0. See the
+    This page describes Azoic 0.7.1. See the
     [changelog](https://github.com/ThomasBury/azoic/blob/main/CHANGELOG.md)
     for changes since 0.5.0.
 

@@ -662,6 +662,8 @@ def _calibration_arrays(X, y, exposure_col):
 
 
 def _validate_workbook_cells(sheets: dict[str, pd.DataFrame]) -> None:
+    from openpyxl.compat import safe_string
+
     for name, sheet in sheets.items():
         rows = chain([sheet.columns], sheet.itertuples(index=False, name=None))
         for number, row in enumerate(rows, start=1):
@@ -677,11 +679,19 @@ def _validate_workbook_cells(sheets: dict[str, pd.DataFrame]) -> None:
                             f"export_tariff: {name}.{column} row {number} has an integer "
                             "category label outside Excel's 15-digit range"
                         )
-                    if isinstance(value, (float, np.floating)) and value.is_integer():
-                        raise ValueError(
-                            f"export_tariff: {name}.{column} row {number} has an "
-                            "integer-valued float category label that Excel stores as an integer"
-                        )
+                    if isinstance(value, (float, np.floating)):
+                        if value.is_integer():
+                            raise ValueError(
+                                f"export_tariff: {name}.{column} row {number} has an "
+                                "integer-valued float category label that Excel stores "
+                                "as an integer"
+                            )
+                        serialized = safe_string(value)
+                        if not serialized or float(serialized) != value:
+                            raise ValueError(
+                                f"export_tariff: {name}.{column} row {number} has a "
+                                "float category label that cannot round-trip exactly through Excel"
+                            )
 
 
 def export_tariff(
@@ -717,7 +727,7 @@ def export_tariff(
     raise ``ValueError`` before any workbook is opened. Preprocessing mapping
     rows retain pipeline order; removed columns have role ``"dropped"``. Text
     cells over 32,767 characters, integer category cells over 15 digits and
-    integer-valued float category cells are rejected before writing.
+    float category cells that would change type or value are rejected before writing.
 
     A sibling temporary workbook is fully written and closed before replacing
     the destination, preserving an existing destination's permission bits.

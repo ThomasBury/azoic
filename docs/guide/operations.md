@@ -1,8 +1,8 @@
 # Reporting, comparison, tuning, MLflow, and tariff operations
 
-!!! note "Azoic 0.7.0 documentation"
+!!! note "Azoic 0.7.1 documentation"
 
-    This page describes Azoic 0.7.0. See the
+    This page describes Azoic 0.7.1. See the
     [changelog](https://github.com/ThomasBury/azoic/blob/main/CHANGELOG.md)
     for changes since 0.5.0.
 
@@ -442,9 +442,10 @@ model. Keep those pipelines in Python for scoring, or use the supported
 preprocessing when a workbook is required.
 
 Export rejects cells containing more than 32,767 characters and numeric integer
-category labels containing more than 15 digits. It also rejects integer-valued
-float labels such as `1.0` in the factors sheet because workbook readers can
-return them as integers. The error identifies the sheet, column and row.
+category labels containing more than 15 digits. It also rejects float category
+labels in the factors sheet if the workbook would change their type or value.
+For example, `1.0` reads back as an integer, and `1.2345678901234567` reads back
+rounded. The error identifies the sheet, column and row.
 
 Export writes and closes a temporary workbook beside the destination, then
 atomically replaces the destination. A serialization, save or replacement error
