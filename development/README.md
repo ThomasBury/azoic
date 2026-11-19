@@ -6,9 +6,10 @@ Read historical records only when their evidence is needed.
 
 ## Current focus
 
-- **0.7.0 delivery ◐** — prepare and review the completed portfolio identity
-  and workbook/scorer fixes. This minor release documents the saved-run
-  compatibility change. The next audit milestone is still pending.
+- **0.7.0 delivery ☑** — published on 2026-11-18 from reviewed commit `c52ce88`.
+  [GitHub v0.7.0](https://github.com/ThomasBury/azoic/releases/tag/v0.7.0) and
+  [PyPI 0.7.0](https://pypi.org/project/azoic/0.7.0/) are verified.
+  [PR #29](https://github.com/ThomasBury/azoic/pull/29) is open for merge.
 - **0.6.2 audit remediation:** deliver one milestone per session in this order.
   - ☑ Verify portfolio and fitted-model identity.
   - ☑ Make workbook and scorer delivery agree.
@@ -41,12 +42,9 @@ Read historical records only when their evidence is needed.
   session preparation passed; all four actual practitioner observations remain
   pending. No practitioners have been observed. Resume only with real participants;
   scripted runs, agent trials and maintainer walkthroughs cannot complete M62.
-- **Release baseline:** Azoic 0.6.2 is published from `d459cd4`; runtime behavior
-  and dependencies are unchanged from 0.6.1/0.6.0. Previous releases are 0.6.1
-  from `790ec57` (PR #27) and 0.6.0 from `502766b` (PR #26), both on 2026-11-12.
-  M64 skills and their Linux-link/Windows-copy
-  checks completed; M63 tutorial and M56–M61 implementation completed. These are
-  recorded historical results, not checks rerun by this cleanup.
+- **Historical validation:** M64 skill installation passed on Linux and Windows.
+  M63 tutorial and M56–M61 implementation completed. See the release and
+  [historical records](archive/PROGRESS.md) for their original checks.
 
 ## Unfinished evidence and boundaries
 
@@ -162,14 +160,11 @@ measurement definitions, historical tables and limitations. Those measurements d
 not cover tuning/FSM, large reviews, production-bundle performance, high cardinality,
 missing-heavy portfolios or Windows performance. No runtime, memory or readiness promise follows.
 
-## Latest checkpoint — 0.7.0 delivery — 2026-11-18
+## Latest checkpoint — 0.7.0 delivery — 2026-11-19
 
 Package metadata, the lockfile, bundled skills, installation examples and
-changelog target 0.7.0. Locked offline sync, the strict docs build and
-`just check` passed (1,528 tests, 4 skips, 2 expected failures). Fresh
-Python 3.12 wheel and source distribution installs passed the full
-installed-package smoke. [PR #29](https://github.com/ThomasBury/azoic/pull/29)
-is open.
+changelog target 0.7.0. Older saved runs and production bundles require
+their original trusted environment. Locked offline sync passed.
 
 The first PR CI run found sub-`1e-15` relative differences between independent
 fits of the same verified data. The regression now uses a `1e-12` relative
@@ -184,8 +179,18 @@ labels. The follow-up passed `just check` (1,530 tests, 4 skips, 2 expected
 failures), strict docs and fresh wheel and source distribution installs.
 CodeRabbit reported that its free review allowance was exhausted.
 
-Next action: verify bot review and CI on the updated PR head, then publish
-from that commit.
+All four review threads are resolved. [Codex review](https://github.com/ThomasBury/azoic/pull/29#issuecomment-6986037092)
+found no issues on release commit `c52ce88` and all nine
+[PR CI jobs](https://github.com/ThomasBury/azoic/actions/runs/44356891584) passed.
+The `v0.7.0` tag points to that commit. The
+[release workflow](https://github.com/ThomasBury/azoic/actions/runs/44357870391)
+passed both build and PyPI publication. PyPI lists the wheel and source archive.
+A fresh public PyPI install passed dependency, CLI and version checks. Its
+package and license files matched the local wheel byte for byte. Wheel metadata
+records the distinct local and CI uv generator versions.
+
+Next action: maintainer merge of PR #29. The real-data tutorial, M62 practitioner
+handoffs and receiving-engine agreement are pending.
 
 ## Previous checkpoint — audit remediation milestone 2 — 2026-11-18
 
