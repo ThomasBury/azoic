@@ -6,8 +6,10 @@ Read historical records only when their evidence is needed.
 
 ## Current focus
 
-- **0.7.2 delivery ◐** — package the Pages workflow fix as a patch release.
-  Validate the version bump, obtain bot review and CI, and verify publication.
+- **0.7.2 delivery ☑** — published on 2026-11-19 from reviewed commit `15c9ec1`.
+  [GitHub v0.7.2](https://github.com/ThomasBury/azoic/releases/tag/v0.7.2) and
+  [PyPI 0.7.2](https://pypi.org/project/azoic/0.7.2/) are verified.
+  [PR #30](https://github.com/ThomasBury/azoic/pull/30) is open for merge.
 - **Pages tutorial snapshot ☑** — the Pages workflow uses the verified
   freMTPL2 archive attached to GitHub v0.7.1 after two OpenML metadata failures.
   The tutorial and strict site build passed locally. Pages verification awaits merge.
@@ -170,7 +172,27 @@ measurement definitions, historical tables and limitations. Those measurements d
 not cover tuning/FSM, large reviews, production-bundle performance, high cardinality,
 missing-heavy portfolios or Windows performance. No runtime, memory or readiness promise follows.
 
-## Latest checkpoint — Pages tutorial snapshot — 2026-11-19
+## Latest checkpoint — 0.7.2 delivery — 2026-11-19
+
+Locked offline sync, workflow lint, strict Zensical and `just check` passed
+(1,531 tests, four skips, two expected failures). Fresh Python 3.12 installs
+passed the wheel and source distribution smokes. A clean checkout rendered all
+eleven tutorial pages in one pass and assembled the site with OpenML blocked.
+
+[Codex](https://github.com/ThomasBury/azoic/pull/30#issuecomment-7016502818)
+and [CodeRabbit](https://github.com/ThomasBury/azoic/pull/30#issuecomment-7016504954)
+found no actionable issues on `15c9ec1`. All nine
+[PR CI jobs](https://github.com/ThomasBury/azoic/actions/runs/44575546525)
+passed on that commit. Tag `v0.7.2` points to `15c9ec1`.
+
+The [release workflow](https://github.com/ThomasBury/azoic/actions/runs/44576533620)
+passed build and PyPI publication. The public wheel and source archive match
+their published checksums. A fresh Python 3.12 install passed dependency,
+version and CLI checks. All 29 package and license files matched the local wheel.
+
+Verify the live Pages deployment after the maintainer merges PR #30.
+
+## Previous checkpoint — Pages tutorial snapshot — 2026-11-19
 
 The [November 19 Pages run](https://github.com/ThomasBury/azoic/actions/runs/44563426527)
 failed while fetching OpenML metadata for dataset 41214. The
