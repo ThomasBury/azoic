@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.7.1 — 2026-11-19
+
+- Reject Excel tariff exports before writing when a float category label would
+  be rounded in the workbook, preserving exact category matching.
+
+## 0.7.0 — 2026-11-18
+
+- Bind each saved candidate to its fitted state and verify the pair before
+  persistence, review, revision, final evaluation and production refit.
+  To use earlier saved runs and production bundles, recreate their original
+  trusted environment. Create fresh runs from the original data and
+  configuration for workflows in 0.7.0.
+- Verify typed portfolio values and restore the original categorical schemas
+  before production refit. Accept the original portfolio or a losslessly
+  concatenated union of its verified development and final-test rows.
+- Reject Excel tariff exports with cell text beyond 32,767 characters,
+  integer labels beyond 15 digits, or integer-valued float labels that
+  would read back as integers.
+- Match categorical predictors by scalar type and value in tariff application,
+  native grouping and the production batch scorer. For example, a float
+  `1.0` routes as unseen for a fixed group keyed by integer `1`.
+- Format workbook mapping descriptions once per production bundle so agreement
+  cases can score directly through the fitted preprocessing.
+
 ## 0.6.2 — 2026-11-12
 
 - Apply Azoic's ivory, charcoal, mineral-red and sandstone palette to the

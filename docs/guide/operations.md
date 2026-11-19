@@ -1,8 +1,8 @@
 # Reporting, comparison, tuning, MLflow, and tariff operations
 
-!!! note "Azoic 0.6.2 documentation"
+!!! note "Azoic 0.7.1 documentation"
 
-    This page describes Azoic 0.6.2. See the
+    This page describes Azoic 0.7.1. See the
     [changelog](https://github.com/ThomasBury/azoic/blob/main/CHANGELOG.md)
     for changes since 0.5.0.
 
@@ -48,8 +48,9 @@ not read `config.data_path`, fit models or relearn mappings. Python prediction
 returns pure-premium rates; multiply by exposure only when period costs are
 needed. Preserve predictor names, order, types and category representation.
 
-The file includes config, versions, data fingerprint, split positions, recorded
-IDs and aggregate diagnostics. Portfolio row frames are excluded; retain them
+The file includes config, versions, the data fingerprint, split positions, recorded
+IDs and aggregate diagnostics. A fitted-state fingerprint binds each named
+candidate to its run. Portfolio row frames are excluded. Retain them
 separately for audit and export recalibration. IDs, category vocabulary, model
 state and aggregate claims remain sensitive information. New files use temporary
 file permissions (user-only on POSIX); replacements preserve permission bits.
@@ -60,6 +61,8 @@ A failed serialization or replacement preserves the previous artifact.
     Pickle loading can execute code. Only load files whose source and integrity
     you trust. Keep the same Azoic source revision and Python/dependency lock;
     `load_run` rejects differing recorded runtime versions after unpickling.
+    Use artifacts that predate fitted-state fingerprints in their original
+    trusted environment.
     This check does not authenticate the file or make untrusted loading safe.
     Cross-version portability and arbitrary custom Python components are not
     supported. See scikit-learn's
@@ -438,6 +441,12 @@ Earlier exports could silently omit these transforms and misdescribe the fitted
 model. Keep those pipelines in Python for scoring, or use the supported
 preprocessing when a workbook is required.
 
+Export rejects cells containing more than 32,767 characters and numeric integer
+category labels containing more than 15 digits. It also rejects float category
+labels in the factors sheet if the workbook would change their type or value.
+For example, `1.0` reads back as an integer, and `1.2345678901234567` reads back
+rounded. The error identifies the sheet, column and row.
+
 Export writes and closes a temporary workbook beside the destination, then
 atomically replaces the destination. A serialization, save or replacement error
 preserves an existing workbook and removes the temporary file. Existing
@@ -556,9 +565,10 @@ evaluated = evaluate_final(
 )
 save_run(evaluated, estimators, "evaluated.pkl")
 
-# This is a separate, explicit fitting operation on the original full portfolio.
-full = pd.concat([pd.read_parquet("development.parquet"), final_test])
-full.to_parquet("full-production.parquet")
+# This example concatenates partitions with string categories.
+development = pd.read_parquet("development.parquet")
+full = pd.concat([development, final_test])
+full.to_parquet("full-production.parquet", index=True)
 production, fitted = refit_production(
     evaluated, estimators, df=full,
     rationale="Approved parameter refit on development plus the final-test portfolio",
@@ -591,13 +601,38 @@ again through this API. A caller can still reuse an older copy or inspect data
 outside Azoic; predeclaration and one-time final use remain procedural controls.
 
 `refit_production` requires that evaluated candidate and exactly the union of
-its development and final-test membership. It verifies both original frames'
-values, column order, dtypes and indices. Concatenate the exact saved
-development/final frames as above and retain their indices when writing the full
-Parquet; an earlier raw source file may lack the declared IDs/partition metadata.
-The full frame may be reordered. Refitting freezes learned native
-bins/groups, including interval closure and missing/unseen destinations, and
-clones only the final estimator's settings to fit new parameters. It never
+its development and final-test membership. Supply the unchanged source portfolio
+with the declared IDs and original index, or concatenate the exact frames used
+for fitting and evaluation. Refit recovers each partition by ID, restores its
+recorded categorical vocabulary, label dtype and ordering, then checks both
+fingerprints. Keep all columns in their original order, including excluded
+columns, and keep their original values and index labels. The full frame may
+arrive in any row order.
+
+For integer categories, convert each partition's labels through `object` to
+a nullable integer dtype **before** concatenating or writing Parquet. For example,
+if `policy_band` holds signed integer categories in both original frames:
+
+```python
+parts = [
+    frame.assign(policy_band=frame["policy_band"].astype(object).astype("Int64"))
+    for frame in (development, final_test)
+]
+full = pd.concat(parts)
+full.to_parquet("full-production.parquet", index=True)
+```
+
+Use `UInt64` for unsigned integer labels. The intermediate `object` conversion
+keeps integer labels exact when categories contain missing values. Refit rejects
+labels that changed type or were rounded during concatenation or storage.
+When vocabularies differ, the full fit uses the development category order
+followed by levels found only in the final-test vocabulary. If pandas considers
+two differently typed levels equal, the full portfolio keeps the original values
+and types in an object column.
+
+Refitting freezes learned native bins and groups, including interval closure and
+missing and unseen destinations, and clones the final estimator's settings to
+fit new parameters. It never
 searches hyperparameters or relearns transformations. Recorded factor overrides
 are reapplied (the latest approved replacement per typed level); the recorded
 calibration policy is recomputed once on the full training portfolio.
@@ -639,13 +674,15 @@ The new handoff directory contains:
 | `agreement.json` | Caller synthetic cases plus exact/neighboring boundaries, known levels, missing/unseen inputs and nonfinite numeric probes; expected unrounded rate or explicit rejection |
 | `score.py` | With no arguments, verifies agreement cases; with input Parquet/output CSV arguments, batch scores rates and optional exposure-period costs |
 
-JSON uses `{"$float": "inf"}`, `-inf` or `nan` for nonfinite values; `null` is
-missing. Category levels remain typed scalar records. Raw categorical predictors
-also record their fitted category vocabulary and ordering; probe construction
-and both recipe modes restore that categorical dtype, including integer/boolean
-categories. Unseen raw values are rejected before conversion can turn them into
-missing values. Agreement uses relative tolerance `1e-12` and absolute tolerance zero; rates are never rounded. Period
-cost is rate times exposure in years. The recipe preserves input order and
+JSON uses `{"$float": "inf"}`, `-inf` or `nan` for nonfinite values. A JSON
+`null` represents missing input. Category levels match by scalar type and
+value. For example, `true`, `1`, `1.0`, and `"1"` are distinct.
+Probe construction and both recipe modes use the recorded category vocabulary
+and order. Unmatched raw categories are rejected before dtype conversion.
+Fixed groups send unmatched values to the declared unseen destination and
+missing values to the declared missing destination. Agreement uses relative
+tolerance `1e-12` and absolute tolerance zero. Rates are unrounded. Period cost
+is rate times exposure in years. The recipe preserves input order and
 available IDs. An existing handoff directory is rejected; failed writes remove
 staging and preserve earlier bundles. The specification and saved run include
 real membership IDs and aggregate outcomes; apply portfolio data controls even

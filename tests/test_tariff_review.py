@@ -24,6 +24,7 @@ from azoic import (
     tariff_review,
 )
 from azoic.cli import app
+from azoic.tariff import RevisedTariff
 from tests.conftest import make_synthetic_portfolio
 
 
@@ -289,7 +290,9 @@ def test_review_cli_saved_candidates_without_fit(journey, tmp_path, monkeypatch)
     assert missing.exit_code == 2 and "requires" in missing.output
 
 
-def test_review_zero_rates_missing_counts_periods_and_default_segments(journey, tmp_path):
+def test_review_zero_rates_missing_counts_periods_and_default_segments(
+    journey, tmp_path, monkeypatch
+):
     frame, incumbent, runs = journey
     run, fitted = runs["fitted"]
     config = run.config.model_copy(deep=True)
@@ -297,10 +300,8 @@ def test_review_zero_rates_missing_counts_periods_and_default_segments(journey, 
     revised_run, revised = revise_run(
         run, fitted, model="glm", df=frame, replacements=[], recalibrate=False
     )
-    revised["glm"].tariff["base_rate"] = 0.0
-    revised["glm"].revision["structural_base"] = 0.0
+    monkeypatch.setattr(RevisedTariff, "predict", lambda self, X: np.zeros(len(X)))
     revised_run = revised_run.model_copy(update={"config": config})
-    revised_run.models["glm"].revision["structural_base"] = 0.0
     path = tariff_review(
         {"zero": (revised_run, revised)},
         df=frame,
@@ -363,16 +364,24 @@ def test_review_missing_segments_raw_gbm_and_multiple_models(journey, tmp_path):
 @pytest.mark.parametrize("issue", ["negative", "nonfinite", "column", "overflow"])
 def test_review_rejects_invalid_predictions(journey, tmp_path, monkeypatch, issue):
     frame, incumbent, runs = journey
-    runs = deepcopy(runs)
-    estimator = runs["fitted"][1]["glm"]
     if issue == "column":
-        monkeypatch.setattr(estimator, "predict", lambda X: np.ones((len(X), 1)))
+        monkeypatch.setattr(RiskGLM, "predict", lambda self, X: np.ones((len(X), 1)))
     else:
         value = {"negative": -1, "nonfinite": np.nan, "overflow": 1e308}[issue]
-        monkeypatch.setattr(estimator, "predict", lambda X: np.full(len(X), value))
+        monkeypatch.setattr(RiskGLM, "predict", lambda self, X: np.full(len(X), value))
     with pytest.raises(ValueError, match="finite"):
         review((frame, incumbent, runs), tmp_path / "review")
     assert list(tmp_path.iterdir()) == []
+
+
+def test_review_rejects_same_name_model_swap_before_scoring(journey, tmp_path, monkeypatch):
+    frame, incumbent, runs = journey
+    run, _ = runs["remapped"]
+    swapped = {"fitted": runs["fitted"], "remapped": (run, runs["fitted"][1])}
+    monkeypatch.setattr(RiskGLM, "predict", reject)
+    with pytest.raises(ValueError, match="candidate 'glm' fitted state"):
+        review((frame, incumbent, swapped), tmp_path / "swapped")
+    assert not list(tmp_path.iterdir())
 
 
 @pytest.mark.parametrize("failure", ["run", "data", "save"])

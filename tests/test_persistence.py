@@ -4,6 +4,7 @@ import os
 import pickle
 import subprocess
 import sys
+from copy import deepcopy
 from pathlib import Path
 
 import numpy as np
@@ -12,7 +13,17 @@ import pytest
 import yaml
 from typer.testing import CliRunner
 
-from azoic import DatasetSpec, ExperimentConfig, ModelSpec, load_run, run_experiment, save_run
+from azoic import (
+    DatasetSpec,
+    ExperimentConfig,
+    ModelSpec,
+    evaluate_final,
+    load_run,
+    refit_production,
+    revise_run,
+    run_experiment,
+    save_run,
+)
 from azoic.cli import app
 from azoic.models import FrequencySeverityModel, RiskGBM, RiskGLM
 from azoic.preprocessing import AutoBinner, AutoGrouper
@@ -46,6 +57,7 @@ def candidates(tmp_path):
         models={
             "glm": ModelSpec(params={"family": "tweedie", "link": "log"}),
             "gbm": ModelSpec(kind="gbm", preprocess=False, params={"n_estimators": 5, "n_jobs": 1}),
+            "gbm-pipeline": ModelSpec(kind="gbm", params={"n_estimators": 5, "n_jobs": 1}),
             "fsm": ModelSpec(
                 kind="frequency_severity",
                 frequency=ModelSpec(params={"family": "poisson", "link": "log"}),
@@ -83,6 +95,9 @@ def test_fresh_process_exact_predictions_and_mapping_fidelity(candidates, tmp_pa
     probe.loc[probe.index[-1], "region"] = "previously-unseen"
     probe.to_parquet(tmp_path / "probe.parquet")
     expected = {name: est.predict(probe) for name, est in estimators.items()}
+    copied = deepcopy(estimators)
+    copied["glm"].named_steps["model"].backend_._align_info_logs_emitted = {"test cache entry"}
+    save_run(run, copied, artifact)
     code = """
 import numpy as np
 import pandas as pd
@@ -241,6 +256,60 @@ def test_load_rejects_unknown_format_and_mismatched_environment(candidates):
         load_run(artifact)
 
 
+def test_same_name_swap_fails_before_scoring_or_replacing_artifact(
+    candidates, tmp_path, monkeypatch
+):
+    frame, _, run, estimators, artifact = candidates
+    final = frame.head(60).assign(record_id=np.arange(800, 860))
+    final_args = {
+        "model": "glm",
+        "df": final,
+        "final_test_ids": final.record_id.tolist(),
+        "rationale": "Frozen",
+    }
+    evaluated = evaluate_final(run, estimators, **final_args)
+    config = run.config.model_copy(update={"models": {"gbm": run.config.models["gbm"]}})
+    _, alternate = run_experiment(
+        config, df=frame.assign(claim_amount=2 * frame.claim_amount), return_estimators=True
+    )
+    swapped = {**estimators, **alternate}
+    artifact.chmod(0o640)
+    before = artifact.read_bytes()
+    monkeypatch.setattr(RiskGLM, "predict", reject_fit)
+    for operation in (
+        lambda: save_run(run, swapped, artifact),
+        lambda: evaluate_final(run, swapped, **final_args),
+        lambda: revise_run(run, swapped, model="glm", df=frame, replacements=[]),
+        lambda: refit_production(
+            evaluated, swapped, df=pd.concat([frame, final]), rationale="Approved"
+        ),
+    ):
+        with pytest.raises(ValueError, match="candidate 'gbm' fitted state"):
+            operation()
+    assert artifact.read_bytes() == before
+    assert artifact.stat().st_mode & 0o777 == 0o640
+    wrong_pair = tmp_path / "swapped.pkl"
+    envelope = pickle.loads(before)
+    envelope["estimators"] = swapped
+    wrong_pair.write_bytes(pickle.dumps(envelope, protocol=5))
+    with pytest.raises(ValueError, match="candidate 'gbm' fitted state"):
+        load_run(wrong_pair)
+
+
+def test_legacy_saved_run_requires_original_environment(candidates):
+    _, _, run, estimators, artifact = candidates
+    envelope = pickle.loads(artifact.read_bytes())
+    del envelope["run"]._fitted_fingerprints
+    artifact.write_bytes(pickle.dumps(envelope, protocol=5))
+    with pytest.raises(ValueError, match="no complete recorded fitted identities"):
+        load_run(artifact)
+    legacy = envelope["run"]
+    with pytest.raises(ValueError, match="original trusted environment"):
+        save_run(legacy, estimators, artifact)
+    assert not hasattr(legacy, "_fitted_fingerprints")
+    assert set(run.model_dump()) == set(legacy.model_dump())
+
+
 def test_fit_and_tune_cli_save_selected_candidates(candidates, tmp_path, monkeypatch):
     pytest.importorskip("optuna")
     _, _, run, _, _ = candidates
@@ -268,6 +337,9 @@ def test_fit_and_tune_cli_save_selected_candidates(candidates, tmp_path, monkeyp
             selected = ExperimentConfig.from_yaml(best)
             assert selected == saved.config
             assert saved.tuning_settings["n_trials"] == 1
+            fitted = deepcopy(fitted)
+            fitted["glm"].predict(pd.read_parquet(config.data_path)[config.features])
+            save_run(saved, fitted, artifact)
         code = """
 import sys
 import numpy as np

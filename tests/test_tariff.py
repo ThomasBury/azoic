@@ -466,6 +466,25 @@ def test_apply_tariff_unknown_categorical_level_raises() -> None:
         apply_tariff(tariff, X)
 
 
+def test_apply_tariff_matches_category_scalar_types():
+    levels = {"integer": {1: 2.0}, "boolean": {True: 3.0}, "float": {1.0: 5.0}}
+    tariff = {"base_rate": 1.0, "numeric": {}, "categorical": levels}
+    frame = pd.DataFrame(
+        {"integer": [np.int64(1)], "boolean": [np.bool_(True)], "float": [np.float64(1.0)]}
+    )
+    assert apply_tariff(tariff, frame) == pytest.approx([30.0])
+    for feature, value in [
+        ("integer", True),
+        ("integer", 1.0),
+        ("integer", "1"),
+        ("integer", None),
+        ("boolean", 1),
+        ("float", 1),
+    ]:
+        with pytest.raises(ValueError, match=f"{feature}.*unknown levels"):
+            apply_tariff(tariff, frame.assign(**{feature: pd.Categorical([value])}))
+
+
 # ---------------------------------------------------------------------------
 # recalibrate_for_total
 # ---------------------------------------------------------------------------
@@ -1090,6 +1109,89 @@ def test_export_records_scalar_column_removal_once(tmp_path):
     out = export_tariff(model, tmp_path / "scalar.xlsx", recalibrate=False)
     mappings = pd.read_excel(out, sheet_name="mappings")
     assert mappings.query("role == 'dropped'")["feature"].tolist() == ["amount"]
+
+
+def test_workbook_text_and_integer_limit_readback(tmp_path):
+    from openpyxl import load_workbook
+    from sklearn.pipeline import Pipeline
+
+    from azoic.preprocessing import AutoGrouper
+
+    raw_level = "a" * (32_767 - len("'' -> 'group'"))
+    limit = 10**15 - 1
+    frame = pd.DataFrame({"region": [raw_level] * 20, "code": pd.Categorical([limit, -limit] * 10)})
+    grouper = AutoGrouper(
+        cols=["region"],
+        fixed={
+            "region": {
+                "groups": [{"level": raw_level, "group": "group"}],
+                "missing": "group",
+                "unseen": "group",
+            }
+        },
+    )
+    model = Pipeline([("group", grouper), ("model", RiskGLM(family="poisson", link="log"))])
+    model.fit(frame, np.tile([1.0, 2.0], 10))
+    out = export_tariff(model, tmp_path / "limit.xlsx", recalibrate=False)
+    workbook = load_workbook(out, read_only=True)
+    try:
+        assert workbook.sheetnames == ["base_rate", "factors", "mappings"]
+        mappings = list(workbook["mappings"].values)
+        assert mappings[-1][mappings[0].index("mapping")] == f"{raw_level!r} -> 'group'"
+        factors = list(workbook["factors"].values)
+        assert {level for feature, level, *_ in factors[1:] if feature == "code"} == {-limit, limit}
+    finally:
+        workbook.close()
+
+
+@pytest.mark.parametrize(
+    "problem",
+    ["oversized_mapping", "large_integer_labels", "integer_valued_float_labels", "rounded_float"],
+)
+def test_unsafe_workbook_cells_fail_before_opening_destination(tmp_path, monkeypatch, problem):
+    from sklearn.pipeline import Pipeline
+
+    from azoic.preprocessing import AutoGrouper
+
+    model = RiskGLM(family="poisson", link="log")
+    if problem == "oversized_mapping":
+        levels = [f"region_code_{i:05}" for i in range(2_400)]
+        group = AutoGrouper(
+            cols=["code"],
+            fixed={
+                "code": {
+                    "groups": [{"level": level, "group": "same"} for level in levels],
+                    "missing": "same",
+                    "unseen": "same",
+                }
+            },
+        )
+        model = Pipeline([("group", group), ("model", model)])
+        error = r"mappings\.mapping .*32,767"
+    elif problem == "large_integer_labels":
+        levels = pd.Categorical([10**16 + 1, 10**16 + 2] * 10)
+        error = r"factors\.level .*15-digit"
+    elif problem == "integer_valued_float_labels":
+        levels = pd.Categorical([1.0, 2.5] * 10)
+        error = r"factors\.level .*integer-valued float"
+    else:
+        levels = pd.Categorical([1.2345678901234567, 2.5] * 10)
+        error = r"factors\.level .*float category label.*cannot round-trip exactly"
+    model.fit(pd.DataFrame({"code": levels}), np.linspace(1, 2, len(levels)))
+    out = tmp_path / "existing.xlsx"
+    out.write_bytes(b"previous workbook")
+    out.chmod(0o640)
+    before = S_IMODE(out.stat().st_mode)
+
+    def fail_if_opened(*args, **kwargs):
+        pytest.fail("the workbook must be validated before opening the temporary file")
+
+    monkeypatch.setattr("azoic.tariff.NamedTemporaryFile", fail_if_opened)
+    with pytest.raises(ValueError, match=error):
+        export_tariff(model, out, recalibrate=False)
+    assert list(tmp_path.iterdir()) == [out]
+    assert out.read_bytes() == b"previous workbook"
+    assert S_IMODE(out.stat().st_mode) == before
 
 
 @pytest.mark.skipif(os.name != "posix", reason="POSIX permission bits")

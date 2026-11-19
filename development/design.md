@@ -106,6 +106,9 @@ are repository-root pytest nodes; run them with `uv run pytest NODE` after contr
 - `save_run`/`load_run` persist the existing Run/fitted-estimator pair as trusted,
   same-environment protocol-5 pickle, excluding portfolio frames. Version checks
   occur after unpickling and are not a security boundary. Never load untrusted pickle.
+  The shared run assembler records a private fitted-state fingerprint per model.
+  All saved-pair operations validate it. Legacy artifacts without fitted identities
+  require their original trusted environment.
 - Keep saved report/compare/predict/export no-fit operations separate from config
   training. Saved GLM recalibration requires the original fingerprinted development
   frame and saved training positions; saved export cannot distill.
@@ -117,9 +120,16 @@ are repository-root pytest nodes; run them with `uv run pytest NODE` after contr
 ### Tariff review, final evaluation and production
 
 - Workbook export supports native bins/groups, workflow column removal and passthrough.
-  Reject unrepresentable transforms before opening workbooks. Generic distillation
-  transforms remain supported. Preserve destination permission bits; replace only
-  after fully saving a sibling temporary workbook. Retain the three-sheet contract.
+  Reject unrepresentable transforms, text cells longer than 32,767 characters,
+  numeric integer category cells beyond 15 digits and float category cells
+  whose type or value changes during round-trip before opening workbooks.
+  Generic distillation transforms remain supported. Preserve destination permission
+  bits and replace only after fully saving a sibling temporary workbook. Retain
+  the three-sheet contract.
+- Tariff application, native grouping and production's raw-category conversion
+  use typed scalar matching. Equivalent Python and NumPy scalars match. Boolean,
+  integer, float and string keys are distinct. Raw tariffs reject unseen levels.
+  Fixed groups apply their explicit unseen route separately from the missing route.
 - Tariff review scores frozen candidates on original fingerprinted development data,
   aligns incumbent technical rates by unique ID and rejects mixed basis/splits.
   Require a new output directory, complete CSV evidence and explicit candidate scales;
@@ -127,15 +137,23 @@ are repository-root pytest nodes; run them with `uv run pytest NODE` after contr
   while reporting. Selection and rationale are human declarations.
 - `evaluate_final` evaluates the selected frozen fit without fitting/calibration.
   Require predeclared disjoint final membership and exact original full-portfolio
-  identity. `refit_production` is separate: freeze native preprocessing, clone model
-  parameters, reapply latest typed factor overrides and recompute the recorded
-  calibration policy once on full rows. Production metrics are `_full` training
-  evidence; predecessor final evidence remains attributed to the selected frozen fit.
+  identity. Portfolio fingerprints cover typed values, indices and categorical
+  vocabulary, label dtype and ordering. `refit_production` recovers both
+  partitions by recorded ID and order and restores categorical columns only after
+  validating typed membership. Both fingerprints must match before scoring or
+  fitting. The full fit uses development category order followed by final-only
+  levels. When pandas considers differently typed levels equal, keep the
+  verified scalar values in an object column. Then freeze native preprocessing,
+  clone model parameters, reapply latest typed factor overrides and recompute the
+  recorded calibration policy once on full rows. Production metrics are `_full`
+  training evidence; predecessor final evidence belongs to the selected frozen fit.
 - `export_production` creates a new versioned specification/workbook/trusted artifact/
   batch recipe/agreement bundle without fitting or recalibration. All model kinds
   can evaluate/refit; workbook delivery requires an exportable log-link GLM. Test
-  exact/neighboring boundaries, missing/unseen rejection and rate versus period-cost
-  units. Synthetic/Python agreement is not downstream engine or deployment evidence.
+  exact/neighboring boundaries, known levels, missing/unseen and nonfinite cases,
+  and rate versus period-cost units. Agreement probes use fitted preprocessing
+  directly and workbook mapping descriptions are formatted once. Synthetic/Python
+  agreement is not downstream engine or deployment evidence.
 
 ## Documentation, tutorial and packaged skills
 

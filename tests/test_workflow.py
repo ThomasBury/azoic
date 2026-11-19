@@ -30,6 +30,27 @@ from azoic.workflow import (
 from tests.conftest import make_synthetic_portfolio
 
 
+class _RecordingEstimator(BaseEstimator):
+    def fit(self, X, y):
+        self.fit_frame_ = X.copy()
+        self.fit_target_ = y.copy()
+        return self
+
+    def predict(self, X):
+        return 100.0 + 2.0 * X["driver_age"].to_numpy()
+
+
+class _FixedEstimator(BaseEstimator):
+    def __init__(self, scale):
+        self.scale = scale
+
+    def fit(self, X, y):
+        return self
+
+    def predict(self, X):
+        return self.scale * (100.0 + X["driver_age"].to_numpy())
+
+
 def test_documented_development_recipe_and_yaml(tmp_path, monkeypatch):
     import json
 
@@ -681,16 +702,7 @@ def test_run_records_exact_fit_and_holdout_positions(monkeypatch, tmp_path: Path
         models={"first": ModelSpec(), "second": ModelSpec()},
     )
 
-    class RecordingEstimator(BaseEstimator):
-        def fit(self, X, y):
-            self.fit_frame_ = X.copy()
-            self.fit_target_ = y.copy()
-            return self
-
-        def predict(self, X):
-            return 100.0 + 2.0 * X["driver_age"].to_numpy()
-
-    monkeypatch.setattr(ModelSpec, "build", lambda self, spec: RecordingEstimator())
+    monkeypatch.setattr(ModelSpec, "build", lambda self, spec: _RecordingEstimator())
     run, estimators = run_experiment(config, return_estimators=True)
 
     assert isinstance(run.train_indices, tuple)
@@ -749,6 +761,23 @@ def test_data_fingerprint_covers_values_columns_dtypes_and_index() -> None:
     assert _data_fingerprint(df.rename(columns={"x": "y"})) != fingerprint
     assert _data_fingerprint(df.astype({"x": "float64"})) != fingerprint
     assert _data_fingerprint(df.set_axis([11, 20])) != fingerprint
+
+
+def test_data_fingerprint_distinguishes_typed_object_values_and_labels():
+    axis = pd.Index([1], dtype=object)
+    frame = pd.DataFrame([[1]], index=axis, columns=axis, dtype=object)
+    string_axis = pd.Index(["1"], dtype=object)
+    fingerprint = _data_fingerprint(frame)
+    for changed in (
+        frame.set_axis(string_axis),
+        frame.set_axis(string_axis, axis=1),
+        pd.DataFrame([["1"]], index=axis, columns=axis, dtype=object),
+    ):
+        assert _data_fingerprint(changed) != fingerprint
+
+    integer = pd.DataFrame({"group": pd.Categorical([1], categories=axis)})
+    string = pd.DataFrame({"group": pd.Categorical(["1"], categories=string_axis)})
+    assert _data_fingerprint(integer) != _data_fingerprint(string)
 
 
 @pytest.mark.parametrize(
@@ -1372,17 +1401,9 @@ def test_tutorial_freezes_all_training_factors_and_labels_holdout_metrics(monkey
     ]
     features = ["driver_age", "vehicle_age"]
 
-    class FixedEstimator(BaseEstimator):
-        def __init__(self, scale):
-            self.scale = scale
-
-        def fit(self, X, y):
-            return self
-
-        def predict(self, X):
-            return self.scale * (100.0 + X["driver_age"].to_numpy())
-
-    monkeypatch.setattr(ModelSpec, "build", lambda self, spec: FixedEstimator(self.params["scale"]))
+    monkeypatch.setattr(
+        ModelSpec, "build", lambda self, spec: _FixedEstimator(self.params["scale"])
+    )
     config = ExperimentConfig(
         data_path=str(path),
         spec={"target": "claim_amount", "exposure": "exposure", "claim_count": "claim_count"},

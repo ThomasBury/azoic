@@ -20,6 +20,7 @@ from azoic import (
     revise_run,
     run_experiment,
     save_run,
+    split_portfolio,
 )
 from azoic.models import RiskGLM
 from azoic.preprocessing import AutoBinner, AutoGrouper
@@ -147,6 +148,128 @@ def test_refit_freezes_mappings_and_keeps_holdout_with_predecessor(journey, monk
     assert not np.array_equal(
         before, fitted["glm"].predict(full[list(fitted["glm"].feature_names_in_)])
     )
+
+
+def test_refit_restores_saved_partition_categories_without_rounding(journey, tmp_path, monkeypatch):
+    full, _, _, original, _ = journey
+    full.index = pd.Index(np.arange(len(full)) * 7 + 11, name="policy_row")
+    final_mask = full.record_id % 5 == 0
+    full["region"] = pd.Categorical(
+        np.where(final_mask, np.where(full.record_id % 2, "coastal", "rural"), "urban"),
+        categories=["urban", "rural", "coastal", "unused"],
+        ordered=True,
+    )
+    large = 2**63 + 1
+    full["excluded_code"] = pd.Categorical.from_codes(
+        np.where(full.record_id % 3 == 0, -1, final_mask.astype(int)),
+        categories=pd.Index([large, large + 2], dtype="uint64"),
+        ordered=True,
+    )
+    final_ids = full.loc[final_mask, "record_id"].tolist()
+    development, final = split_portfolio(full, final_ids, id_col="record_id")
+    final["region"] = final.region.cat.reorder_categories(["coastal", "rural"])
+    assert development.region.cat.categories.tolist() == ["urban"]
+    assert final.region.cat.categories.tolist() == ["coastal", "rural"]
+
+    config = original.config.model_copy(deep=True)
+    config.spec.excluded_cols = ["excluded_code"]
+    config.preprocessing.grouper["fixed"] = {
+        "region": {
+            "groups": [{"level": level, "group": level} for level in ("urban", "rural", "coastal")],
+            "missing": "rural",
+            "unseen": "coastal",
+        }
+    }
+    for name, frame in [("development", development), ("final", final)]:
+        frame.to_pickle(tmp_path / f"{name}.pkl")
+    development = pd.read_pickle(tmp_path / "development.pkl")
+    final = pd.read_pickle(tmp_path / "final.pkl")
+    artifact = tmp_path / "candidates.pkl"
+    run, models = run_experiment(config, df=development, return_estimators=True)
+    save_run(run, models, artifact)
+    run, models = load_run(artifact)
+    run, models = evaluated((full, development, final, run, models))
+    save_run(run, models, artifact)
+    run, models = load_run(artifact)
+
+    production, fitted = refit_production(run, models, df=full, rationale="Approved")
+    parts = [
+        frame.assign(excluded_code=frame.excluded_code.astype(object).astype("UInt64"))
+        for frame in (development, final)
+    ]
+    union = pd.concat(parts).loc[full.index]
+    union.to_parquet(tmp_path / "lossless.parquet", index=True)
+    restored, restored_models = refit_production(
+        run, models, df=pd.read_parquet(tmp_path / "lossless.parquet"), rationale="Approved"
+    )
+    assert restored.data_fingerprint == production.data_fingerprint
+    X = full[list(fitted["glm"].feature_names_in_)]
+    np.testing.assert_allclose(
+        fitted["glm"].predict(X), restored_models["glm"].predict(X), rtol=1e-12, atol=0
+    )
+
+    full.to_parquet(tmp_path / "rounded.parquet", index=True)
+    monkeypatch.setattr("azoic.workflow._score_portfolio", reject)
+    for lossy in (pd.concat([development, final]), pd.read_parquet(tmp_path / "rounded.parquet")):
+        with pytest.raises(ValueError, match="categorical schema.*excluded_code"):
+            refit_production(run, models, df=lossy, rationale="Approved")
+    for changed in (
+        full.reset_index(drop=True),
+        full.iloc[:-1],
+        full.assign(claim_amount=full.claim_amount * 2),
+        full.assign(excluded_code=full.excluded_code.cat.remove_categories([large])),
+    ):
+        with pytest.raises(ValueError):
+            refit_production(run, models, df=changed, rationale="Approved")
+
+
+def test_refit_preserves_typed_values_when_categories_cannot_be_combined(journey):
+    from azoic.workflow import _data_fingerprint
+
+    full, development, final, original, _ = journey
+    development["excluded_code"] = pd.Categorical([1] * len(development))
+    final["excluded_code"] = pd.Categorical([1.0] * len(final))
+    labels = pd.concat([frame.excluded_code.astype(object) for frame in (development, final)])
+    assert set(map(type, labels)) == {int, float}
+    full = full.assign(excluded_code=labels)
+    config = original.config.model_copy(deep=True)
+    config.spec.excluded_cols = ["excluded_code"]
+    run, models = run_experiment(config, df=development, return_estimators=True)
+    run, models = evaluated((full, development, final, run, models))
+
+    production, _ = refit_production(run, models, df=full, rationale="Approved")
+
+    assert production.data_fingerprint == _data_fingerprint(full)
+
+
+def test_refit_rejects_object_label_type_change_with_same_fixed_group(journey, monkeypatch):
+    full, _, _, previous, _ = journey
+    full["region"] = np.resize(np.array([1, "1", "other"], dtype=object), len(full))
+    config = previous.config.model_copy(deep=True)
+    config.preprocessing.grouper["fixed"] = {
+        "region": {
+            "groups": [
+                {"level": 1, "group": "one"},
+                {"level": "1", "group": "one"},
+                {"level": "other", "group": "other"},
+            ],
+            "missing": "other",
+            "unseen": "other",
+        }
+    }
+    development, final = full.iloc[:480], full.iloc[480:]
+    run, models = run_experiment(config, df=development, return_estimators=True)
+    run, models = evaluated((full, development, final, run, models))
+    changed = full.copy()
+    changed.loc[0, "region"] = "1"
+    grouper = models["glm"].named_steps["grouper"]
+    grouper_input = list(grouper.feature_names_in_)
+    pd.testing.assert_frame_equal(
+        grouper.transform(full[grouper_input]), grouper.transform(changed[grouper_input])
+    )
+    monkeypatch.setattr("azoic.workflow._score_portfolio", reject)
+    with pytest.raises(ValueError, match="development rows must match the original fingerprint"):
+        refit_production(run, models, df=changed, rationale="Approved")
 
 
 @pytest.mark.parametrize(
@@ -453,33 +576,126 @@ def test_new_cli_input_errors_are_actionable(tmp_path, command):
     assert not (tmp_path / "out").exists()
 
 
-def test_specification_independently_scores_every_agreement_case(journey, tmp_path):
-    full, _, _, _, _ = journey
+@pytest.mark.parametrize("revised", [False, True])
+def test_workbook_specification_and_batch_recipe_agree(journey, tmp_path, monkeypatch, revised):
+    from ast import literal_eval
+
+    from azoic import tariff
+
+    full, development, _, original, candidates = journey
+    cases = pd.DataFrame({"driver_age": [30.0, 60.0], "region": ["urban", "rural"]})
+    units = {"driver_age": "years", "region": "category"}
+    numeric_feature = "synthetic-age"
+    if revised:
+        full = full.rename(columns={"vehicle_age": numeric_feature}).assign(
+            region=pd.Categorical.from_codes(
+                np.resize([0, 1, -1, 2], len(full)), categories=[1, 2, 3]
+            )
+        )
+        development, final = full.iloc[:480], full.iloc[480:]
+        config = original.config.model_copy(deep=True)
+        config.features.append(numeric_feature)
+        config.preprocessing.grouper["fixed"] = {
+            "region": {
+                "groups": [
+                    {"level": 1, "group": "one"},
+                    {"level": 2, "group": "two"},
+                    {"level": 3, "group": "unseen"},
+                ],
+                "missing": "missing",
+                "unseen": "unseen",
+            }
+        }
+        original, candidates = run_experiment(config, df=development, return_estimators=True)
+        original, candidates = revise_run(
+            original,
+            candidates,
+            model="glm",
+            df=development,
+            replacements=[
+                {"feature": "region", "level": "unseen", "factor": 1.3, "reason": "Review"}
+            ],
+        )
+        journey = (full, development, final, original, candidates)
+        cases = cases.assign(region=[1.0, np.nan], **{numeric_feature: [4.1, 9.2]})
+        units[numeric_feature] = "years"
     run, models = evaluated(journey)
     production, fitted = refit_production(run, models, df=full, rationale="Approved")
+
+    workbook_parts = tariff._workbook_parts
+    mapping_calls = []
+
+    def describe_mappings(estimator):
+        mapping_calls.append(estimator)
+        return workbook_parts(estimator)
+
+    monkeypatch.setattr(tariff, "_workbook_parts", describe_mappings)
     path = export_production(
         production,
         fitted,
-        cases=pd.DataFrame({"driver_age": [30.0], "region": ["urban"]}),
-        feature_units={"driver_age": "years", "region": "category"},
+        cases=cases,
+        feature_units=units,
         out=tmp_path / "bundle",
     )
     spec = json.loads(path.read_text())
     agreements = json.loads((path.parent / "agreement.json").read_text())
-    factors = pd.read_excel(path.parent / "tariff.xlsx", sheet_name="factors")
-    base = pd.read_excel(path.parent / "tariff.xlsx", sheet_name="base_rate").base_rate.iloc[0]
-    assert base == pytest.approx(spec["base_rate"])
+    assert len(agreements) > len(cases) and len(mapping_calls) == 1
+    assert any("-at" in case["case"] for case in agreements)
+    assert any("-below" in case["case"] for case in agreements)
+    assert any("-above" in case["case"] for case in agreements)
+    if revised:
+        outcomes = {case["case"]: case["outcome"] for case in agreements}
+        assert outcomes[f"{numeric_feature}-missing"] == "reject"
+        assert outcomes[f"{numeric_feature}-nonfinite"] == "reject"
+    sheets = pd.read_excel(path.parent / "tariff.xlsx", sheet_name=None)
+    factors, mappings = sheets["factors"], sheets["mappings"]
+    base = sheets["base_rate"].base_rate.iloc[0]
+    bins = mappings.query("role == 'binned'").iloc[0]
+    groups = mappings.query("role == 'grouped'").iloc[0]
+    edges = [float(edge) for edge in str(bins.mapping).split(", ")]
+    bin_labels = factors.query("feature == 'driver_age'").level.tolist()
+    group_map = {
+        (type(key), key): value
+        for entry in groups.mapping.split("; ")
+        for key, value in [tuple(map(literal_eval, entry.split(" -> ")))]
+    }
+    workbook_factors = {
+        (row.feature, row.level): row.multiplicative_factor for row in factors.itertuples()
+    }
 
-    def score(values):
-        values = {
-            key: (float(value["$float"]) if isinstance(value, dict) else value)
-            for key, value in values.items()
-        }
+    def score_workbook(values):
+        age, region = values["driver_age"], values["region"]
+        if pd.isna(age):
+            age_band = bins.missing_destination
+        else:
+            if not np.isfinite(age):
+                raise ValueError("nonfinite numeric")
+            age_band = bin_labels[
+                sum(
+                    age > edge if bins.interval_closure == "right" else age >= edge
+                    for edge in edges
+                )
+            ]
+        group = (
+            groups.missing_destination
+            if pd.isna(region)
+            else group_map.get((type(region), region), groups.unseen_destination)
+        )
+        result = base * workbook_factors["driver_age", age_band] * workbook_factors["region", group]
+        if numeric_feature in values:
+            value = values[numeric_feature]
+            if value is None or not np.isfinite(value):
+                raise ValueError("missing/nonfinite numeric")
+            result *= workbook_factors[numeric_feature, "_per_unit"] ** value
+        return result
+
+    def score_specification(values):
+        values = values.copy()
         for transform in spec["transformations"]:
             for feature, mapping in transform["features"].items():
                 value = values[feature]
                 if transform["type"] == "bins":
-                    if value is None:
+                    if pd.isna(value):
                         bin_index = mapping["missing_bin"]
                     else:
                         if not np.isfinite(value):
@@ -492,7 +708,7 @@ def test_specification_independently_scores_every_agreement_case(journey, tmp_pa
                 else:
                     values[feature] = (
                         mapping["missing"]
-                        if value is None
+                        if pd.isna(value)
                         else next(
                             (
                                 entry["group"]
@@ -515,19 +731,46 @@ def test_specification_independently_scores_every_agreement_case(journey, tmp_pa
                 for entry in term["levels"]
                 if type(entry["level"]) is type(value) and entry["level"] == value
             )
-            workbook_factor = factors[
-                (factors.feature == term["feature"]) & (factors.level == value)
-            ].multiplicative_factor.iloc[0]
-            assert factor == pytest.approx(workbook_factor, rel=1e-12)
             result *= factor
         return result
 
     for case in agreements:
+        values = {
+            key: (float(value["$float"]) if isinstance(value, dict) else value)
+            for key, value in case["input"].items()
+        }
         if case["outcome"] == "reject":
-            with pytest.raises((ValueError, StopIteration)):
-                score(case["input"])
+            with pytest.raises(ValueError):
+                score_workbook(values)
+            with pytest.raises(ValueError):
+                score_specification(values)
         else:
-            assert score(case["input"]) == pytest.approx(case["expected_rate"], rel=1e-12)
+            assert score_workbook(values) == pytest.approx(case["expected_rate"], rel=1e-12)
+            assert score_specification(values) == pytest.approx(case["expected_rate"], rel=1e-12)
+
+    script = [sys.executable, str(path.parent / "score.py")]
+    result = subprocess.run(script, capture_output=True, text=True)
+    assert result.returncode == 0, result.stdout + result.stderr
+    batch = cases.assign(record_id=[81, 19], exposure=[0.637, 0.024])
+    batch.to_parquet(tmp_path / "inputs.parquet")
+    output = tmp_path / "rates.csv"
+    result = subprocess.run(
+        [*script, str(tmp_path / "inputs.parquet"), str(output)], capture_output=True, text=True
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    rows = pd.read_csv(output)
+    assert rows.record_id.tolist() == batch.record_id.tolist()
+    expected = fitted["glm"].predict(cases)
+    np.testing.assert_allclose(rows.predicted_rate, expected, rtol=1e-12, atol=0)
+    np.testing.assert_allclose(
+        rows.predicted_period_cost, expected * batch.exposure, rtol=1e-12, atol=0
+    )
+    np.testing.assert_allclose(
+        [case["expected_rate"] for case in agreements[: len(cases)]],
+        expected,
+        rtol=1e-12,
+        atol=0,
+    )
 
 
 @pytest.mark.parametrize("problem", ["missing_predictor", "no_ids", "no_rationale"])
@@ -616,11 +859,19 @@ def test_raw_typed_categorical_handoff_preserves_schema_and_rejects_unseen(journ
             "vehicle_age": [4.0, 6.0],
         }
     )
+    units = {"ordered_int": "category", "flag": "category", "vehicle_age": "years"}
+    for bad_cases in [cases.assign(ordered_int=True), cases.assign(flag=1)]:
+        with pytest.raises(ValueError, match="supplied synthetic case cannot be scored"):
+            export_production(
+                production, fitted, cases=bad_cases, feature_units=units, out=tmp_path / "invalid"
+            )
+        assert not list(tmp_path.iterdir())
+
     path = export_production(
         production,
         fitted,
         cases=cases,
-        feature_units={"ordered_int": "category", "flag": "category", "vehicle_age": "years"},
+        feature_units=units,
         out=tmp_path / "bundle",
     )
     specification = json.loads(path.read_text())
@@ -656,7 +907,7 @@ def test_raw_typed_categorical_handoff_preserves_schema_and_rejects_unseen(journ
     np.testing.assert_allclose(
         pd.read_csv(tmp_path / "rates.csv").predicted_rate, fitted["glm"].predict(cases), rtol=1e-12
     )
-    records["ordered_int"] = 999
+    records["ordered_int"] = True
     records.to_parquet(tmp_path / "unseen.parquet")
     result = subprocess.run(
         [
@@ -669,6 +920,7 @@ def test_raw_typed_categorical_handoff_preserves_schema_and_rejects_unseen(journ
         text=True,
     )
     assert result.returncode != 0
+    assert "unknown raw category for 'ordered_int'" in result.stderr
     assert not (tmp_path / "unseen.csv").exists()
 
 

@@ -6,10 +6,24 @@ Read historical records only when their evidence is needed.
 
 ## Current focus
 
+- **0.7.1 delivery ☑** — published on 2026-11-19 from reviewed commit `eeda716`.
+  [GitHub v0.7.1](https://github.com/ThomasBury/azoic/releases/tag/v0.7.1) and
+  [PyPI 0.7.1](https://pypi.org/project/azoic/0.7.1/) are verified.
+  [PR #29](https://github.com/ThomasBury/azoic/pull/29) is open for merge.
+- **0.7.0 delivery ☑** — published on 2026-11-18 from reviewed commit `c52ce88`.
+  [GitHub v0.7.0](https://github.com/ThomasBury/azoic/releases/tag/v0.7.0) and
+  [PyPI 0.7.0](https://pypi.org/project/azoic/0.7.0/) are verified.
+  [PR #29](https://github.com/ThomasBury/azoic/pull/29) carries the changes and
+  the 0.7.1 follow-up.
+- **0.6.2 audit remediation:** deliver one milestone per session in this order.
+  - ☑ Verify portfolio and fitted-model identity.
+  - ☑ Make workbook and scorer delivery agree.
+  - ☐ Harden preflight, tuning and large reviews.
+  - ☐ Close distribution, real-data tutorial, M62 and receiving-engine evidence.
 - **0.6.2 delivery ☑** — published on 2026-11-12 from reviewed commit `d459cd4`.
   [GitHub v0.6.2](https://github.com/ThomasBury/azoic/releases/tag/v0.6.2) and
   [PyPI 0.6.2](https://pypi.org/project/azoic/0.6.2/) are public and verified.
-  [PR #28](https://github.com/ThomasBury/azoic/pull/28) is open with
+  [PR #28](https://github.com/ThomasBury/azoic/pull/28) was merged with
   `documentation`/`release` labels. Codex and CodeRabbit found no actionable issues;
   all nine release-commit CI jobs passed. The final checkpoint records publication
   only. No product milestone or merge is included.
@@ -33,12 +47,9 @@ Read historical records only when their evidence is needed.
   session preparation passed; all four actual practitioner observations remain
   pending. No practitioners have been observed. Resume only with real participants;
   scripted runs, agent trials and maintainer walkthroughs cannot complete M62.
-- **Release baseline:** Azoic 0.6.2 is published from `d459cd4`; runtime behavior
-  and dependencies are unchanged from 0.6.1/0.6.0. Previous releases are 0.6.1
-  from `790ec57` (PR #27) and 0.6.0 from `502766b` (PR #26), both on 2026-11-12.
-  M64 skills and their Linux-link/Windows-copy
-  checks completed; M63 tutorial and M56–M61 implementation completed. These are
-  recorded historical results, not checks rerun by this cleanup.
+- **Historical validation:** M64 skill installation passed on Linux and Windows.
+  M63 tutorial and M56–M61 implementation completed. See the release and
+  [historical records](archive/PROGRESS.md) for their original checks.
 
 ## Unfinished evidence and boundaries
 
@@ -50,8 +61,7 @@ Read historical records only when their evidence is needed.
 | External engine/deployment | Real receiving-engine agreement, deployment and rollback remain downstream evidence; synthetic agreement tests do not establish readiness. |
 
 Conditional features in [design](design.md#deferred-and-demand-gated-work) are
-not scheduled milestones. No next product milestone is selected; the 0.6.2
-maintenance release above is explicitly authorized.
+outside the audit remediation milestones.
 
 ## M62 observation protocol
 
@@ -155,7 +165,99 @@ measurement definitions, historical tables and limitations. Those measurements d
 not cover tuning/FSM, large reviews, production-bundle performance, high cardinality,
 missing-heavy portfolios or Windows performance. No runtime, memory or readiness promise follows.
 
-## Latest checkpoint — 0.6.2 delivery — 2026-11-12
+## Latest checkpoint — 0.7.1 delivery — 2026-11-19
+
+CodeRabbit verified that a non-integral category label can change value when
+written to Excel. Export now checks the workbook writer's numeric text and
+rejects float labels that change on readback. Locked offline sync passed.
+
+`just check` passed Ruff, Ty and 1,531 tests with four skips and two expected
+failures. The strict docs build and fresh Python 3.12 wheel and source
+distribution smokes passed.
+
+[Codex review](https://github.com/ThomasBury/azoic/pull/29#issuecomment-7011511974)
+found no issues on release commit `eeda716`. All five review threads are
+resolved. CodeRabbit reached its free review limit for the rerun. All nine
+[PR CI jobs](https://github.com/ThomasBury/azoic/actions/runs/44540263464)
+passed on the release commit. Tag `v0.7.1` points to that commit.
+
+The [release workflow](https://github.com/ThomasBury/azoic/actions/runs/44541362796)
+passed build and PyPI publication. PyPI lists the wheel and source archive.
+A fresh public install passed dependency, version and CLI checks. Its package
+and license files matched the locally validated wheel byte for byte.
+
+Next action: maintainer merge of PR #29.
+
+## Previous checkpoint — 0.7.0 delivery — 2026-11-19
+
+Package metadata, the lockfile, bundled skills, installation examples and
+changelog target 0.7.0. Older saved runs and production bundles require
+their original trusted environment. Locked offline sync passed.
+
+The first PR CI run found sub-`1e-15` relative differences between independent
+fits of the same verified data. The regression now uses a `1e-12` relative
+tolerance for the two sets of predictions and still checks the portfolio
+fingerprint exactly.
+
+CodeRabbit also found three edge cases. Workbook export rejects integer-valued
+float factor labels before writing. Generated scoring probes retain their own
+origin even when a feature name starts with `synthetic-`. Production refit
+keeps verified scalar values when pandas cannot represent the combined category
+labels. The follow-up passed `just check` (1,530 tests, 4 skips, 2 expected
+failures), strict docs and fresh wheel and source distribution installs.
+CodeRabbit reported that its free review allowance was exhausted.
+
+All four review threads are resolved. [Codex review](https://github.com/ThomasBury/azoic/pull/29#issuecomment-6986037092)
+found no issues on release commit `c52ce88` and all nine
+[PR CI jobs](https://github.com/ThomasBury/azoic/actions/runs/44356891584) passed.
+The `v0.7.0` tag points to that commit. The
+[release workflow](https://github.com/ThomasBury/azoic/actions/runs/44357870391)
+passed both build and PyPI publication. PyPI lists the wheel and source archive.
+A fresh public PyPI install passed dependency, CLI and version checks. Its
+package and license files matched the local wheel byte for byte. Wheel metadata
+records the distinct local and CI uv generator versions.
+
+The real-data tutorial, M62 practitioner handoffs and receiving-engine
+agreement are pending.
+
+## Previous checkpoint — audit remediation milestone 2 — 2026-11-18
+
+The three-sheet export rejects overlong text and oversized numeric integer
+category cells before opening a workbook. Typed category matching rejects raw
+aliases and preserves distinct missing and unseen routes for fixed grouping.
+Production probes use fitted preprocessing directly, and export formats its
+preprocessing descriptions once.
+
+`just check` passed Ruff, Ty and **1,528 tests** (4 skips, 2 expected failures,
+29 warnings). The first full run stopped when the system temporary directory
+hit its quota. The successful rerun used temporary files under the ignored
+workspace test cache. The tests reopened workbooks at the supported limits,
+verified destination preservation on failure and independently reproduced
+rates from the workbook and specification. Both scorer modes agreed with
+fitted rates, including batch period costs. `just docs-build` and
+`git diff --check` passed.
+
+The next milestone is preflight, tuning and large reviews. Distribution checks
+belong to the release checkpoint above. The real-data tutorial, M62
+practitioner handoffs and receiving-engine agreement remain pending.
+
+## Previous checkpoint — audit remediation milestone 1 — 2026-11-18
+
+Implemented typed portfolio fingerprints, categorical partition recovery and
+shared fitted-state checks. Production refit accepts the original portfolio and
+lossless concatenations, checks both partitions before scoring, and uses the
+development category order followed by final-only levels. Same-name swaps fail
+before scoring or replacing a saved artifact. The operations guide and bundled
+tariff recipe show how to keep integer labels and indices exact. Artifacts
+without fitted-state fingerprints require their original trusted environment.
+
+`just check` passed Ruff, Ty and **1,523 tests** (4 skips, 2 expected failures,
+22 warnings). Focused checks covered persistence, production refit, review and
+revision, including fresh-process reload. The final tuned and revised copy
+assertions passed in a two-test rerun. `just docs-build` and `git diff --check`
+passed. The changes are included in the 0.7.0 release branch.
+
+## Previous checkpoint — 0.6.2 delivery — 2026-11-12
 
 - [x] Inspect the complete diff, current releases and delivery conventions.
 - [x] Align the package, lockfile, bundled skills, docs and changelog with 0.6.2.

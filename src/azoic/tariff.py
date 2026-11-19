@@ -30,8 +30,9 @@ from __future__ import annotations
 from collections.abc import Hashable, Mapping
 from copy import deepcopy
 from dataclasses import dataclass
+from itertools import chain
 from math import fsum
-from numbers import Real
+from numbers import Integral, Real
 from pathlib import Path
 from stat import S_IMODE
 from tempfile import NamedTemporaryFile
@@ -47,7 +48,7 @@ import azoic
 from azoic.data import EXPOSURE_FLOOR
 from azoic.metrics import mean_tweedie_deviance
 from azoic.models import RiskGBM, RiskGLM
-from azoic.preprocessing import AutoBinner, AutoGrouper
+from azoic.preprocessing import AutoBinner, AutoGrouper, _category_codes
 
 __all__ = [
     "export_production",
@@ -402,16 +403,14 @@ def apply_tariff(tariff: dict, X: pd.DataFrame) -> np.ndarray:
             raise ValueError(
                 f"apply_tariff: categorical factors {feat!r} must be positive and finite"
             )
-        factors = X[feat].map(
-            pd.Series(level_values, index=pd.Index(list(lvl_factors), dtype=object))
-        )
-        if factors.isna().any():
-            unknown = X.loc[factors.isna(), feat].drop_duplicates().tolist()
+        codes = _category_codes(X[feat], lvl_factors)
+        if (codes < 0).any():
+            unknown = X.loc[codes < 0, feat].drop_duplicates().tolist()
             raise ValueError(
                 f"apply_tariff: categorical feature {feat!r} has unknown levels: {unknown}"
             )
         with np.errstate(over="ignore", invalid="ignore"):
-            linear += np.log(factors.to_numpy(dtype=float))
+            linear += np.log(level_values[codes])
 
     if base == 0:
         return np.zeros(len(X), dtype=float)
@@ -448,14 +447,13 @@ def recalibrate_for_total(
     )
 
 
-def _pipeline_parts(estimator, X):
+def _workbook_parts(estimator):
     if not isinstance(estimator, Pipeline):
-        return estimator, X, pd.DataFrame()
+        return estimator, pd.DataFrame()
 
     from azoic.workflow import _drop_columns
 
     rows = []
-    transformed = X
     for name, step in estimator.steps[:-1]:
         if step is None or (isinstance(step, str) and step == "passthrough"):
             continue
@@ -515,9 +513,13 @@ def _pipeline_parts(estimator, X):
                 f"({type(step).__name__}); only AutoBinner, AutoGrouper, workflow "
                 "column removal, None and 'passthrough' can be represented in the workbook"
             )
-        if transformed is not None:
-            transformed = step.transform(transformed)
-    return estimator.steps[-1][1], transformed, pd.DataFrame(rows)
+    return estimator.steps[-1][1], pd.DataFrame(rows)
+
+
+def _tariff_features(source, frame):
+    if isinstance(source, Pipeline) and len(source.steps) > 1:
+        return source[:-1].transform(frame)
+    return frame
 
 
 @dataclass(frozen=True)
@@ -539,8 +541,7 @@ class RevisedTariff:
     def predict(self, X: pd.DataFrame) -> np.ndarray:
         """Predict revised pure-premium rates on raw feature columns."""
         X = X[[column for column in self.feature_names_in_ if column in X]]
-        _, transformed, _ = _pipeline_parts(self.source, X)
-        return apply_tariff(self.tariff, transformed)
+        return apply_tariff(self.tariff, _tariff_features(self.source, X))
 
 
 def revise_tariff(
@@ -561,7 +562,7 @@ def revise_tariff(
     """
     previous = model if isinstance(model, RevisedTariff) else None
     source = deepcopy(model.source if isinstance(model, RevisedTariff) else model)
-    glm, _, _ = _pipeline_parts(source, None)
+    glm, _ = _workbook_parts(source)
     if not isinstance(glm, RiskGLM):
         raise ValueError("revise_tariff requires a fitted RiskGLM or supported GLM pipeline")
     tariff = deepcopy(previous.tariff) if previous is not None else extract_tariff(glm)
@@ -619,8 +620,9 @@ def revise_tariff(
             )
         exposure, amounts = _calibration_arrays(X, y, exposure_col)
         predictors = X[[column for column in source.feature_names_in_ if column in X]]
-        _, transformed, _ = _pipeline_parts(source, predictors)
-        predicted_total = float(np.dot(apply_tariff(tariff, transformed), exposure))
+        predicted_total = float(
+            np.dot(apply_tariff(tariff, _tariff_features(source, predictors)), exposure)
+        )
         observed_total = float(amounts.sum())
         tariff["base_rate"] = recalibrate_for_total(
             tariff, predicted_total=predicted_total, observed_total=observed_total
@@ -659,6 +661,39 @@ def _calibration_arrays(X, y, exposure_col):
     return exposure, amounts
 
 
+def _validate_workbook_cells(sheets: dict[str, pd.DataFrame]) -> None:
+    from openpyxl.compat import safe_string
+
+    for name, sheet in sheets.items():
+        rows = chain([sheet.columns], sheet.itertuples(index=False, name=None))
+        for number, row in enumerate(rows, start=1):
+            for column, value in zip(sheet.columns, row, strict=True):
+                if isinstance(value, str) and len(value) > 32_767:
+                    raise ValueError(
+                        f"export_tariff: {name}.{column} row {number} exceeds "
+                        "Excel's 32,767-character cell limit"
+                    )
+                if name == "factors" and column == "level":
+                    if isinstance(value, Integral) and abs(int(value)) >= 10**15:
+                        raise ValueError(
+                            f"export_tariff: {name}.{column} row {number} has an integer "
+                            "category label outside Excel's 15-digit range"
+                        )
+                    if isinstance(value, (float, np.floating)):
+                        if value.is_integer():
+                            raise ValueError(
+                                f"export_tariff: {name}.{column} row {number} has an "
+                                "integer-valued float category label that Excel stores "
+                                "as an integer"
+                            )
+                        serialized = safe_string(value)
+                        if not serialized or float(serialized) != value:
+                            raise ValueError(
+                                f"export_tariff: {name}.{column} row {number} has a "
+                                "float category label that cannot round-trip exactly through Excel"
+                            )
+
+
 def export_tariff(
     glm: RiskGLM | Pipeline | RevisedTariff,
     path: str | Path,
@@ -690,7 +725,9 @@ def export_tariff(
     steps, workflow column removal, ``None`` and ``"passthrough"``. Other
     transforms (including scalers, arbitrary functions and column transformers)
     raise ``ValueError`` before any workbook is opened. Preprocessing mapping
-    rows retain pipeline order; removed columns have role ``"dropped"``.
+    rows retain pipeline order; removed columns have role ``"dropped"``. Text
+    cells over 32,767 characters, integer category cells over 15 digits and
+    float category cells that would change type or value are rejected before writing.
 
     A sibling temporary workbook is fully written and closed before replacing
     the destination, preserving an existing destination's permission bits.
@@ -708,10 +745,10 @@ def export_tariff(
             "pass recalibrate=False for the structural (model-predictive) tariff."
         )
 
-    distillation_metrics = getattr(
-        revised.source if revised is not None else glm, "distillation_metrics_", None
-    )
-    glm, transformed_X, upstream_mappings = _pipeline_parts(revised.source if revised else glm, X)
+    source = revised.source if revised is not None else glm
+    distillation_metrics = getattr(source, "distillation_metrics_", None)
+    glm, upstream_mappings = _workbook_parts(source)
+    transformed_X = _tariff_features(source, X) if X is not None else None
     if not isinstance(glm, RiskGLM):
         raise ValueError("export_tariff requires a RiskGLM or a pipeline ending in RiskGLM")
     if revised is not None and reference is not None:
@@ -780,6 +817,8 @@ def export_tariff(
     mapping_sheet = tariff["mapping"]
     if not upstream_mappings.empty:
         mapping_sheet = pd.concat([mapping_sheet, upstream_mappings], ignore_index=True)
+    sheets = {"base_rate": base_sheet, "factors": factors_sheet, "mappings": mapping_sheet}
+    _validate_workbook_cells(sheets)
 
     p = Path(path)
     with NamedTemporaryFile(
@@ -791,9 +830,8 @@ def export_tariff(
             temporary.open("wb") as workbook,
             pd.ExcelWriter(workbook, engine="openpyxl") as writer,
         ):
-            base_sheet.to_excel(writer, sheet_name="base_rate", index=False)
-            factors_sheet.to_excel(writer, sheet_name="factors", index=False)
-            mapping_sheet.to_excel(writer, sheet_name="mappings", index=False)
+            for name, sheet in sheets.items():
+                sheet.to_excel(writer, sheet_name=name, index=False)
             for sheet in writer.sheets.values():
                 for row in sheet:
                     for cell in row:
@@ -805,6 +843,56 @@ def export_tariff(
     finally:
         temporary.unlink(missing_ok=True)
     return p
+
+
+def _restore_raw_categories(frame, dtypes) -> None:
+    for feature, dtype in dtypes.items():
+        values = frame[feature]
+        codes = _category_codes(values, dtype.categories)
+        if ((codes < 0) & values.notna().to_numpy()).any():
+            raise ValueError(f"unknown raw category for {feature!r}")
+        frame[feature] = pd.Categorical.from_codes(codes, dtype=dtype)
+
+
+def _production_agreement(probes, estimator, glm, tariff, raw_categories, *, supplied_count):
+    dtypes = {
+        feature: pd.CategoricalDtype(
+            pd.Index(schema["categories"], dtype=object), schema["ordered"]
+        )
+        for feature, schema in raw_categories.items()
+    }
+    revised = isinstance(estimator, RevisedTariff)
+    source = estimator.source if revised else estimator
+    agreement = []
+    for index, (label, values) in enumerate(probes):
+        frame = pd.DataFrame([values])
+        try:
+            _restore_raw_categories(frame, dtypes)
+            transformed = _tariff_features(source, frame)
+            predicted = apply_tariff(tariff, transformed) if revised else glm.predict(transformed)
+            expected = np.asarray(predicted, dtype=float)
+            if expected.shape != (1,) or not np.isfinite(expected).all() or (expected < 0).any():
+                raise ValueError("invalid predicted rate")
+        except (ValueError, TypeError) as error:
+            if index < supplied_count:
+                raise ValueError(f"supplied synthetic case cannot be scored: {label}") from error
+            agreement.append(
+                {"case": label, "input": values, "outcome": "reject", "error": type(error).__name__}
+            )
+        else:
+            if not revised and not np.allclose(
+                apply_tariff(tariff, transformed), expected, rtol=1e-12, atol=0
+            ):
+                raise ValueError("tariff arithmetic disagrees with fitted synthetic rates")
+            agreement.append(
+                {
+                    "case": label,
+                    "input": values,
+                    "outcome": "rate",
+                    "expected_rate": float(expected[0]),
+                }
+            )
+    return agreement
 
 
 def export_production(
@@ -829,7 +917,7 @@ def export_production(
     import json
     import tempfile
 
-    from azoic.workflow import _fitted_fingerprint, _validate_candidates, save_run
+    from azoic.workflow import _validate_candidates, save_run
 
     destination = Path(out)
     if destination.exists():
@@ -838,7 +926,7 @@ def export_production(
     if not run.production or run.final_evaluation or len(estimators) != 1:
         raise ValueError("handoff requires one explicit production-refit candidate")
     model, estimator = next(iter(estimators.items()))
-    if _fitted_fingerprint(estimator) != run.production["fitted_fingerprint"]:
+    if run._fitted_fingerprints[model] != run.production["fitted_fingerprint"]:
         raise ValueError("production fitted state changed after refit")
     if set(feature_units) != set(run.feature_names) or any(
         not isinstance(unit, str) or not unit.strip() for unit in feature_units.values()
@@ -847,7 +935,7 @@ def export_production(
     if cases.empty or not cases.columns.is_unique or set(cases.columns) != set(run.feature_names):
         raise ValueError("supply nonempty synthetic cases with exactly the selected predictors")
     source = estimator.source if isinstance(estimator, RevisedTariff) else estimator
-    glm, _, _ = _pipeline_parts(source, None)
+    glm = source.steps[-1][1] if isinstance(source, Pipeline) else source
     if not isinstance(glm, RiskGLM):
         raise ValueError("production workbook handoff requires a log-link GLM tariff")
     tariff = estimator.tariff if isinstance(estimator, RevisedTariff) else extract_tariff(glm)
@@ -898,7 +986,9 @@ def export_production(
         for feature, levels in tariff["categorical"].items()
         if feature in cases and feature not in transformed_features
     }
-    probes = [(f"synthetic-{i}", row) for i, row in enumerate(cases.to_dict("records"))]
+    probes = [
+        (f"synthetic-{i}", row) for i, row in enumerate(cases[run.feature_names].to_dict("records"))
+    ]
     baseline = probes[0][1]
     for transform in transforms:
         for feature, mapping in transform["features"].items():
@@ -933,35 +1023,6 @@ def export_production(
             for i, level in enumerate(tariff["categorical"].get(feature, {})):
                 if not any(feature in transform["features"] for transform in transforms):
                     probes.append((f"{feature}-level-{i}", {**baseline, feature: level}))
-    agreement = []
-    for label, values in probes:
-        frame = pd.DataFrame([values], columns=run.feature_names)
-        try:
-            for feature, schema in raw_categories.items():
-                if (frame[feature].notna() & ~frame[feature].isin(schema["categories"])).any():
-                    raise ValueError(f"unknown raw category for {feature!r}")
-                frame[feature] = frame[feature].astype(pd.CategoricalDtype(**schema))
-            expected = np.asarray(estimator.predict(frame), dtype=float)
-            if expected.shape != (1,) or not np.isfinite(expected).all() or (expected < 0).any():
-                raise ValueError("invalid predicted rate")
-        except (ValueError, TypeError) as error:
-            if label.startswith("synthetic-"):
-                raise ValueError(f"supplied synthetic case cannot be scored: {label}") from error
-            agreement.append(
-                {"case": label, "input": values, "outcome": "reject", "error": type(error).__name__}
-            )
-        else:
-            _, transformed, _ = _pipeline_parts(source, frame)
-            if not np.allclose(apply_tariff(tariff, transformed), expected, rtol=1e-12, atol=0):
-                raise ValueError("tariff arithmetic disagrees with fitted synthetic rates")
-            agreement.append(
-                {
-                    "case": label,
-                    "input": values,
-                    "outcome": "rate",
-                    "expected_rate": float(expected[0]),
-                }
-            )
     specification = {
         "format": "azoic.production.1",
         "model": model,
@@ -1000,8 +1061,9 @@ def export_production(
         "transformations": transforms,
         "formula": "base_rate * exp(sum(log_coefficient * value)) * product(category factors)",
         "input_rules": (
-            "ordered transformations first; reject unseen raw GLM levels and nonfinite "
-            "numerics; explicit native missing/unseen routes above"
+            "ordered transformations first; categories match by scalar type and value; "
+            "reject unseen raw GLM levels and nonfinite numerics; use explicit native "
+            "missing/unseen routes above"
         ),
         "calibration_application": "already included in base_rate; do not multiply again",
         "interval_rules": "right: upper-inclusive <=; left: lower-inclusive >=",
@@ -1039,8 +1101,11 @@ def export_production(
     ) as temporary:
         staging = Path(temporary) / "bundle"
         staging.mkdir()
-        save_run(run, estimators, staging / "production.pkl")
         export_tariff(estimator, staging / "tariff.xlsx", recalibrate=False)
+        agreement = _production_agreement(
+            probes, estimator, glm, tariff, raw_categories, supplied_count=len(cases)
+        )
+        save_run(run, estimators, staging / "production.pkl")
         (staging / "agreement.json").write_text(
             json.dumps(encode(agreement), indent=2, allow_nan=False), encoding="utf-8"
         )
@@ -1065,20 +1130,19 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from azoic import load_run
+from azoic.tariff import _restore_raw_categories
 
 root = Path(__file__).resolve().parent
 run, estimators = load_run(root / "production.pkl")
 model = next(iter(estimators.values()))
 specification = json.loads((root / "specification.json").read_text())
-categories = {feature["name"]: pd.CategoricalDtype(feature["categories"], feature["ordered"])
+categories = {feature["name"]: pd.CategoricalDtype(
+                  pd.Index(feature["categories"], dtype=object), feature["ordered"])
               for feature in specification["features"] if "categories" in feature}
 
 def predict(frame):
     frame = frame[run.feature_names].copy()
-    for feature, dtype in categories.items():
-        if (frame[feature].notna() & ~frame[feature].isin(dtype.categories)).any():
-            raise ValueError(f"unknown raw category for {feature!r}")
-        frame[feature] = frame[feature].astype(dtype)
+    _restore_raw_categories(frame, categories)
     return model.predict(frame)
 
 if len(sys.argv) == 1:
