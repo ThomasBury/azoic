@@ -6,8 +6,10 @@ Read historical records only when their evidence is needed.
 
 ## Current focus
 
-- **0.7.1 delivery ◐** — prepare the workbook precision correction found
-  in the follow-up review of PR #29.
+- **0.7.1 delivery ☑** — published on 2026-11-19 from reviewed commit `eeda716`.
+  [GitHub v0.7.1](https://github.com/ThomasBury/azoic/releases/tag/v0.7.1) and
+  [PyPI 0.7.1](https://pypi.org/project/azoic/0.7.1/) are verified.
+  [PR #29](https://github.com/ThomasBury/azoic/pull/29) is open for merge.
 - **0.7.0 delivery ☑** — published on 2026-11-18 from reviewed commit `c52ce88`.
   [GitHub v0.7.0](https://github.com/ThomasBury/azoic/releases/tag/v0.7.0) and
   [PyPI 0.7.0](https://pypi.org/project/azoic/0.7.0/) are verified.
@@ -173,8 +175,18 @@ rejects float labels that change on readback. Locked offline sync passed.
 failures. The strict docs build and fresh Python 3.12 wheel and source
 distribution smokes passed.
 
-Next action: verify bot review and CI on the patch, then publish from the
-reviewed commit.
+[Codex review](https://github.com/ThomasBury/azoic/pull/29#issuecomment-7011511974)
+found no issues on release commit `eeda716`. All five review threads are
+resolved. CodeRabbit reached its free review limit for the rerun. All nine
+[PR CI jobs](https://github.com/ThomasBury/azoic/actions/runs/44540263464)
+passed on the release commit. Tag `v0.7.1` points to that commit.
+
+The [release workflow](https://github.com/ThomasBury/azoic/actions/runs/44541362796)
+passed build and PyPI publication. PyPI lists the wheel and source archive.
+A fresh public install passed dependency, version and CLI checks. Its package
+and license files matched the locally validated wheel byte for byte.
+
+Next action: maintainer merge of PR #29.
 
 ## Previous checkpoint — 0.7.0 delivery — 2026-11-19
 
