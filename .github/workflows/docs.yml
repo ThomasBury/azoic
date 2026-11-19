@@ -26,6 +26,16 @@ jobs:
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
       - uses: quarto-dev/quarto-actions/setup@v2
       - run: uv sync --locked --all-extras --all-groups
+      - name: Restore tutorial data snapshot
+        run: |
+          snapshot="$RUNNER_TEMP/fremtpl2-openml-v1.tar.gz"
+          curl --fail --silent --show-error --location --retry 3 --max-time 60 \
+            --output "$snapshot" \
+            https://github.com/ThomasBury/azoic/releases/download/v0.7.1/fremtpl2-openml-v1.tar.gz
+          printf '%s  %s\n' 'c3da448cb7e690dbb50f47ff090c65d23c1b33dd768262d145b06130c74594de' "$snapshot" \
+            | sha256sum --check --strict
+          mkdir -p examples/_artifacts/fremtpl2
+          tar -xzf "$snapshot" -C examples/_artifacts/fremtpl2
       - run: uv run quarto render examples/
       - run: uv run zensical build --strict
       - run: mkdir -p site/tutorial && cp -r examples/_book/. site/tutorial/

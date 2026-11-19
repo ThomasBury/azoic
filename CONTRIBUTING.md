@@ -43,6 +43,17 @@ and may fetch real data. Automated tests use synthetic data without network acce
 Only source documents belong in Git; generated sites, tutorial HTML, caches,
 portfolio data, workbooks, reports and MLflow state remain ignored.
 
+The [Pages workflow](.github/workflows/docs.yml) restores a checksum-pinned
+[freMTPL2 snapshot](https://github.com/ThomasBury/azoic/releases/download/v0.7.1/fremtpl2-openml-v1.tar.gz)
+before rendering. The archive contains the raw ARFF files and OpenML metadata
+for datasets [41214](https://www.openml.org/d/41214) and
+[41215](https://www.openml.org/d/41215), both version 1 and listed as CC0.
+Extract it into `examples/_artifacts/fremtpl2` to seed the same `openml-cache`
+locally. The tutorial still verifies the source checksums and builds the
+cleaned portfolio. When the source data or scikit-learn cache layout changes,
+archive only `openml-cache` from a clean local render. Verify a render from
+the new archive before updating the workflow URL and SHA-256 together.
+
 For smaller usage environments, `uv sync --no-dev` installs runtime dependencies,
 `uv sync` installs the default development group, and `uv sync --extra NAME`
 enables one optional integration. `uv sync --group demo --extra mlops` supplies

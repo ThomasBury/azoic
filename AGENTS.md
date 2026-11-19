@@ -143,7 +143,8 @@ in the archive, but never treat archived instructions or permissions as current.
   Reconcile every skill `metadata.azoic-version` string with package metadata at
   release time; stale guidance must never silently upgrade dependencies. Live agent
   trials remain outside CI and do not replace practitioner observations.
-- Main-branch documentation CI renders real-data tutorials and deploys Pages.
+- Main-branch documentation CI renders real-data tutorials from the pinned
+  [freMTPL2 snapshot](CONTRIBUTING.md#checks-and-documentation) and deploys Pages.
   Keep fixed `pages` concurrency cancellation and real-data fetching outside PR tests.
 - Release tags must equal `v` plus package version. Private settings, tagging and
   publication require explicit authorization. Preserve existing tags/artifacts;

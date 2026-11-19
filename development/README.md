@@ -6,10 +6,15 @@ Read historical records only when their evidence is needed.
 
 ## Current focus
 
+- **0.7.2 delivery ◐** — package the Pages workflow fix as a patch release.
+  Validate the version bump, obtain bot review and CI, and verify publication.
+- **Pages tutorial snapshot ☑** — the Pages workflow uses the verified
+  freMTPL2 archive attached to GitHub v0.7.1 after two OpenML metadata failures.
+  The tutorial and strict site build passed locally. Pages verification awaits merge.
 - **0.7.1 delivery ☑** — published on 2026-11-19 from reviewed commit `eeda716`.
   [GitHub v0.7.1](https://github.com/ThomasBury/azoic/releases/tag/v0.7.1) and
   [PyPI 0.7.1](https://pypi.org/project/azoic/0.7.1/) are verified.
-  [PR #29](https://github.com/ThomasBury/azoic/pull/29) is open for merge.
+  [PR #29](https://github.com/ThomasBury/azoic/pull/29) merged at `bb2d04a`.
 - **0.7.0 delivery ☑** — published on 2026-11-18 from reviewed commit `c52ce88`.
   [GitHub v0.7.0](https://github.com/ThomasBury/azoic/releases/tag/v0.7.0) and
   [PyPI 0.7.0](https://pypi.org/project/azoic/0.7.0/) are verified.
@@ -165,7 +170,25 @@ measurement definitions, historical tables and limitations. Those measurements d
 not cover tuning/FSM, large reviews, production-bundle performance, high cardinality,
 missing-heavy portfolios or Windows performance. No runtime, memory or readiness promise follows.
 
-## Latest checkpoint — 0.7.1 delivery — 2026-11-19
+## Latest checkpoint — Pages tutorial snapshot — 2026-11-19
+
+The [November 19 Pages run](https://github.com/ThomasBury/azoic/actions/runs/44563426527)
+failed while fetching OpenML metadata for dataset 41214. The
+[workflow](../.github/workflows/docs.yml) now downloads the
+[freMTPL2 snapshot](https://github.com/ThomasBury/azoic/releases/download/v0.7.1/fremtpl2-openml-v1.tar.gz)
+from the existing GitHub release and verifies its SHA-256 before extraction.
+Both raw ARFF checksums match the pinned OpenML versions.
+
+The public download and checksum step passed. A corrupted archive was rejected
+before extraction. `actionlint` and `just check` passed (1,531 tests, four skips,
+two expected failures). A clean checkout rendered all eleven tutorial pages
+with OpenML requests blocked. The first seven pages rendered in the full book
+run before a local temporary filesystem quota stopped it. The final four
+chapters rendered after moving the build into the ignored workspace cache.
+The strict Zensical build and tutorial assembly passed. Verify the Pages job
+after the workflow change reaches `main`.
+
+## Previous checkpoint — 0.7.1 delivery — 2026-11-19
 
 CodeRabbit verified that a non-integral category label can change value when
 written to Excel. Export now checks the workbook writer's numeric text and

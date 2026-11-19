@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.7.2 — 2026-11-19
+
+- Build the online tutorial from a verified copy of the freMTPL2 data so
+  documentation publishing can continue during OpenML outages.
+
 ## 0.7.1 — 2026-11-19
 
 - Reject Excel tariff exports before writing when a float category label would
